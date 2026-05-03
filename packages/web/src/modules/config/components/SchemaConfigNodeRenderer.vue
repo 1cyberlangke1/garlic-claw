@@ -20,6 +20,7 @@
             :node-schema="childSchema"
             :model-value="readChildValue(childKey)"
             :root-values="rootValues"
+            :scope-values="currentObjectScope"
             :special-options="specialOptions"
             @update:model-value="writeChildValue(childKey, $event)"
           />
@@ -33,6 +34,7 @@
                 :node-schema="childSchema"
                 :model-value="readChildValue(childKey)"
                 :root-values="rootValues"
+                :scope-values="currentObjectScope"
                 :special-options="specialOptions"
                 @update:model-value="writeChildValue(childKey, $event)"
               />
@@ -49,6 +51,7 @@
           :node-schema="childSchema"
           :model-value="readChildValue(childKey)"
           :root-values="rootValues"
+          :scope-values="currentObjectScope"
           :special-options="specialOptions"
           @update:model-value="writeChildValue(childKey, $event)"
         />
@@ -62,6 +65,7 @@
               :node-schema="childSchema"
               :model-value="readChildValue(childKey)"
               :root-values="rootValues"
+              :scope-values="currentObjectScope"
               :special-options="specialOptions"
               @update:model-value="writeChildValue(childKey, $event)"
             />
@@ -233,6 +237,7 @@ const props = defineProps<{
   nodeKey: string
   nodeSchema: PluginConfigNodeSchema
   rootValues: JsonObject
+  scopeValues: JsonObject
   specialOptions: {
     personas: PluginPersonaSummary[]
     providers: AiProviderSummary[]
@@ -259,7 +264,7 @@ const isVisible = computed(() => {
   }
 
   return Object.entries(condition).every(([path, expectedValue]) =>
-    readValueAtPath(props.rootValues, path) === expectedValue,
+    readConditionValue(path) === expectedValue,
   )
 })
 
@@ -268,6 +273,9 @@ const fieldLabel = computed(() => props.nodeSchema.description ?? props.nodeKey)
 const wrapperClass = computed(() =>
   props.isRoot ? 'config-root-wrapper' : 'config-node-wrapper',
 )
+const currentObjectScope = computed<JsonObject>(() =>
+  isRecord(props.modelValue) ? props.modelValue : {},
+)
 const primaryEntries = computed(() => visibleEntries.value.filter(([, schema]) => !schema.collapsed))
 const collapsedEntries = computed(() => visibleEntries.value.filter(([, schema]) => schema.collapsed))
 const visibleEntries = computed(() => {
@@ -275,7 +283,7 @@ const visibleEntries = computed(() => {
     return [] as Array<[string, PluginConfigNodeSchema]>
   }
   return Object.entries(props.nodeSchema.items).filter(([, schema]) =>
-    isNodeVisible(schema, props.rootValues),
+    isNodeVisible(schema, props.rootValues, currentObjectScope.value),
   )
 })
 const stringValue = computed(() =>
@@ -500,6 +508,14 @@ function toOptionView(option: PluginConfigOptionSchema): { label: string; value:
   }
 }
 
+function readConditionValue(path: string): JsonValue | undefined {
+  const scopedValue = readValueAtPath(props.scopeValues, path)
+  if (typeof scopedValue !== 'undefined') {
+    return scopedValue
+  }
+  return readValueAtPath(props.rootValues, path)
+}
+
 function readValueAtPath(source: JsonObject, path: string): JsonValue | undefined {
   let current: JsonValue | undefined = source
   for (const key of path.split('.')) {
@@ -514,6 +530,7 @@ function readValueAtPath(source: JsonObject, path: string): JsonValue | undefine
 function isNodeVisible(
   schema: PluginConfigNodeSchema,
   rootValues: JsonObject,
+  scopeValues: JsonObject,
 ): boolean {
   if (schema.invisible) {
     return false
@@ -521,9 +538,13 @@ function isNodeVisible(
   if (!schema.condition) {
     return true
   }
-  return Object.entries(schema.condition).every(([path, expectedValue]) =>
-    readValueAtPath(rootValues, path) === expectedValue,
-  )
+  return Object.entries(schema.condition).every(([path, expectedValue]) => {
+    const scopedValue = readValueAtPath(scopeValues, path)
+    if (typeof scopedValue !== 'undefined') {
+      return scopedValue === expectedValue
+    }
+    return readValueAtPath(rootValues, path) === expectedValue
+  })
 }
 
 function isRecord(value: JsonValue | undefined): value is JsonObject {
@@ -538,6 +559,7 @@ type CheckboxValueType = string | number | boolean
 .config-node-wrapper {
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .root-object,
@@ -545,12 +567,14 @@ type CheckboxValueType = string | number | boolean
 .collapsed-items {
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .config-section-card {
   display: grid;
   gap: 12px;
   padding: 1rem;
+  min-width: 0;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -574,9 +598,36 @@ type CheckboxValueType = string | number | boolean
   display: grid;
   gap: 6px;
   padding: 0.9rem;
+  width: 100%;
+  min-width: 0;
+  justify-items: stretch;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
+}
+
+.config-input,
+.config-textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.config-field :deep(.el-input),
+.config-field :deep(.el-select),
+.config-field :deep(.el-textarea),
+.config-field :deep(.el-input-number) {
+  width: 100%;
+  min-width: 0;
+}
+
+.config-field :deep(.el-input__wrapper),
+.config-field :deep(.el-select__wrapper),
+.config-field :deep(.el-textarea__inner),
+.config-field :deep(.el-input-number),
+.config-field :deep(.el-input-number .el-input__wrapper) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .field-label {

@@ -199,11 +199,40 @@ export type AiUtilityModelRolesConfig = Partial<
 >;
 
 /**
+ * 宿主聊天自动重试配置。
+ */
+export interface AiChatAutoRetryConfig {
+  /** 是否启用自动重试。 */
+  enabled: boolean;
+  /** 最大自动重试次数。 */
+  maxRetries: number;
+  /** 首次重试延迟（毫秒）。 */
+  initialDelayMs: number;
+  /** 退避最大延迟（毫秒）。 */
+  maxDelayMs: number;
+  /** 退避倍数。 */
+  backoffFactor: number;
+}
+
+/**
+ * 对齐 opencode 的默认聊天自动重试配置。
+ */
+export const DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG: AiChatAutoRetryConfig = {
+  enabled: true,
+  maxRetries: 2,
+  initialDelayMs: 2000,
+  maxDelayMs: 30000,
+  backoffFactor: 2,
+};
+
+/**
  * 宿主 AI 模型路由配置。
  */
 export interface AiHostModelRoutingConfig {
   /** 主聊天模型失败后的回退链。 */
   fallbackChatModels: AiModelRouteTarget[];
+  /** 主聊天模型失败后的自动退避重试。 */
+  chatAutoRetry?: AiChatAutoRetryConfig;
   /** 专用上下文压缩模型。 */
   compressionModel?: AiModelRouteTarget;
   /** 其他 utility role 的模型分配。 */

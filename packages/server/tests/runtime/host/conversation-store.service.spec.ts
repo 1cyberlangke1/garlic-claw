@@ -237,12 +237,14 @@ describe('ConversationStoreService', () => {
     const preview = service.previewConversationHistory(conversationId, {}) as {
       estimatedTokens: number;
       messageCount: number;
+      source: 'estimated' | 'provider';
       textBytes: number;
     };
     const expectedTextBytes = Buffer.byteLength('assistant\n你好', 'utf8');
     expect(preview).toEqual({
       estimatedTokens: Math.ceil(expectedTextBytes / 4),
       messageCount: 1,
+      source: 'estimated',
       textBytes: expectedTextBytes,
     });
 
@@ -309,6 +311,7 @@ describe('ConversationStoreService', () => {
     const preview = service.previewConversationHistory(conversationId, {}) as {
       estimatedTokens: number;
       messageCount: number;
+      source: 'estimated' | 'provider';
       textBytes: number;
     };
     const expectedTextBytes = Buffer.byteLength('assistant\n正常消息', 'utf8');
@@ -316,6 +319,7 @@ describe('ConversationStoreService', () => {
     expect(preview).toEqual({
       estimatedTokens: Math.ceil(expectedTextBytes / 4),
       messageCount: 2,
+      source: 'estimated',
       textBytes: expectedTextBytes,
     });
   });
@@ -454,6 +458,7 @@ describe('ConversationStoreService', () => {
     })).toEqual({
       estimatedTokens: 90,
       messageCount: 2,
+      source: 'provider',
       textBytes: Buffer.byteLength('user\n你好\nassistant\n世界', 'utf8'),
     });
   });
@@ -524,7 +529,155 @@ describe('ConversationStoreService', () => {
     })).toEqual({
       estimatedTokens: Math.ceil(expectedTextBytes / 4),
       messageCount: 2,
+      source: 'estimated',
       textBytes: expectedTextBytes,
+    });
+  });
+
+  it('reuses the latest provider total tokens for preview display when explicitly requested', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new ConversationStoreService();
+    const conversationId = (service.createConversation({ title: 'Latest Provider Usage Preview Chat' }) as { id: string }).id;
+    const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
+    const staleSignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '旧历史',
+        createdAt: '2026-04-19T09:59:00.000Z',
+        id: 'stale-message',
+        parts: [{ text: '旧历史', type: 'text' }],
+        role: 'assistant',
+        status: 'completed',
+        updatedAt: '2026-04-19T09:59:00.000Z',
+      },
+    ]);
+
+    service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [
+        {
+          content: '现在的第一条消息',
+          createdAt: '2026-04-19T10:00:00.000Z',
+          id: 'user-message',
+          parts: [{ text: '现在的第一条消息', type: 'text' }],
+          role: 'user',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:00:00.000Z',
+        },
+        {
+          content: '现在的第二条消息',
+          createdAt: '2026-04-19T10:01:00.000Z',
+          id: 'assistant-message',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  inputTokens: 77,
+                  modelId: 'gpt-5.4',
+                  outputTokens: 13,
+                  providerId: 'openai',
+                  responseHistorySignature: staleSignature,
+                  source: 'provider',
+                  totalTokens: 90,
+                },
+                owner: 'conversation.model-usage',
+                type: 'model-usage',
+                version: '1',
+              },
+            ],
+          },
+          parts: [{ text: '现在的第二条消息', type: 'text' }],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:01:00.000Z',
+        },
+      ],
+    });
+
+    expect(service.previewConversationHistory(conversationId, {
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      usagePreference: 'latest-provider',
+    })).toEqual({
+      estimatedTokens: 90,
+      messageCount: 2,
+      source: 'provider',
+      textBytes: Buffer.byteLength('user\n现在的第一条消息\nassistant\n现在的第二条消息', 'utf8'),
+    });
+  });
+
+  it('reuses the newest real provider total for preview display even when the selected model no longer matches', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new ConversationStoreService();
+    const conversationId = (service.createConversation({ title: 'Latest Provider Usage Fallback Preview Chat' }) as { id: string }).id;
+    const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
+
+    service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [
+        {
+          content: '前一条回复',
+          createdAt: '2026-04-19T10:00:00.000Z',
+          id: 'assistant-message-1',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  inputTokens: 70,
+                  modelId: 'gpt-5.4',
+                  outputTokens: 20,
+                  providerId: 'openai',
+                  source: 'provider',
+                  totalTokens: 90,
+                },
+                owner: 'conversation.model-usage',
+                type: 'model-usage',
+                version: '1',
+              },
+            ],
+          },
+          parts: [{ text: '前一条回复', type: 'text' }],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:00:00.000Z',
+        },
+        {
+          content: '最后一条真实回复',
+          createdAt: '2026-04-19T10:01:00.000Z',
+          id: 'assistant-message-2',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  inputTokens: 91,
+                  modelId: 'deepseek-v4-flash',
+                  outputTokens: 29,
+                  providerId: 'ds2api',
+                  source: 'provider',
+                  totalTokens: 120,
+                },
+                owner: 'conversation.model-usage',
+                type: 'model-usage',
+                version: '1',
+              },
+            ],
+          },
+          parts: [{ text: '最后一条真实回复', type: 'text' }],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:01:00.000Z',
+        },
+      ],
+    });
+
+    expect(service.previewConversationHistory(conversationId, {
+      modelId: 'claude-3-7-sonnet',
+      providerId: 'anthropic',
+      usagePreference: 'latest-provider',
+    })).toEqual({
+      estimatedTokens: 120,
+      messageCount: 2,
+      source: 'provider',
+      textBytes: Buffer.byteLength('assistant\n前一条回复\nassistant\n最后一条真实回复', 'utf8'),
     });
   });
 
@@ -585,8 +738,103 @@ describe('ConversationStoreService', () => {
     })).toEqual({
       estimatedTokens: Math.ceil(expectedTextBytes / 4),
       messageCount: 1,
+      source: 'estimated',
       textBytes: expectedTextBytes,
     });
+  });
+
+  it('counts compact tool facts without reintroducing the raw oversized payloads when estimating history preview tokens', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new ConversationStoreService();
+    const conversationId = (service.createConversation({ title: 'Tool Payload Preview Chat' }) as { id: string }).id;
+    const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
+
+    service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [
+        {
+          content: '请检查最近的工具结果。',
+          createdAt: '2026-05-02T10:00:00.000Z',
+          id: 'user-message',
+          parts: [{ text: '请检查最近的工具结果。', type: 'text' }],
+          role: 'user',
+          status: 'completed',
+          updatedAt: '2026-05-02T10:00:00.000Z',
+        },
+        {
+          content: '已经检查完成。',
+          createdAt: '2026-05-02T10:01:00.000Z',
+          id: 'assistant-message',
+          parts: [{ text: '已经检查完成。', type: 'text' }],
+          role: 'assistant',
+          status: 'completed',
+          toolCalls: [
+            {
+              input: {
+                command: 'echo verbose',
+                huge: 'x'.repeat(5000),
+              },
+              toolCallId: 'call-1',
+              toolName: 'bash',
+            },
+          ],
+          toolResults: [
+            {
+              output: {
+                data: {
+                  stderr: 'warn'.repeat(500),
+                  stdout: 'line'.repeat(2000),
+                },
+                kind: 'tool:text',
+                value: 'ok',
+              },
+              toolCallId: 'call-1',
+              toolName: 'bash',
+            },
+          ],
+          updatedAt: '2026-05-02T10:01:00.000Z',
+        },
+      ],
+    });
+
+    const plainTextBytes = Buffer.byteLength('user\n请检查最近的工具结果。\nassistant\n已经检查完成。', 'utf8');
+    const rawPayloadBytes = Buffer.byteLength(JSON.stringify({
+      toolCalls: [
+        {
+          input: {
+            command: 'echo verbose',
+            huge: 'x'.repeat(5000),
+          },
+          toolCallId: 'call-1',
+          toolName: 'bash',
+        },
+      ],
+      toolResults: [
+        {
+          output: {
+            data: {
+              stderr: 'warn'.repeat(500),
+              stdout: 'line'.repeat(2000),
+            },
+            kind: 'tool:text',
+            value: 'ok',
+          },
+          toolCallId: 'call-1',
+          toolName: 'bash',
+        },
+      ],
+    }), 'utf8');
+    const preview = service.previewConversationHistory(conversationId, {
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+    expect(preview).toEqual(expect.objectContaining({
+      messageCount: 2,
+      source: 'estimated',
+    }));
+    expect((preview as { textBytes: number }).textBytes).toBeGreaterThan(plainTextBytes);
+    expect((preview as { textBytes: number }).textBytes).toBeLessThan(rawPayloadBytes);
+    expect((preview as { estimatedTokens: number }).estimatedTokens).toBe(Math.ceil((preview as { textBytes: number }).textBytes / 4));
   });
 
   it('deletes runtime workspace together with the conversation', async () => {
@@ -639,8 +887,8 @@ describe('ConversationStoreService', () => {
     process.env[conversationTodosEnvKey] = todoStoragePath;
     const service = new ConversationStoreService();
     const todoService = new ConversationTodoService(service);
-    Object.assign(service as unknown as { runtimeHostConversationTodoService?: ConversationTodoService }, {
-      runtimeHostConversationTodoService: todoService,
+    Object.assign(service as unknown as { conversationTodoService?: ConversationTodoService }, {
+      conversationTodoService: todoService,
     });
     const parentConversationId = (service.createConversation({ title: 'Parent Chat', userId: 'user-1' }) as { id: string }).id;
     const childConversationId = (service.createConversation({
@@ -903,3 +1151,4 @@ describe('ConversationStoreService', () => {
     });
   });
 });
+

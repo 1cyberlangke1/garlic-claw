@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ChatMessagePart } from '@garlic-claw/shared';
+import { ConversationAfterResponseCompactionService } from '../../src/conversation/conversation-after-response-compaction.service';
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
@@ -29,7 +30,7 @@ describe('ConversationMessageLifecycleService', () => {
     buildToolSet: jest.fn().mockResolvedValue(undefined),
     listAvailableTools: jest.fn().mockResolvedValue([]),
   };
-  const runtimeHostPluginDispatchService = {
+  const pluginDispatch = {
     invokeHook: jest.fn(),
     listPlugins: jest.fn().mockReturnValue([]),
   };
@@ -41,11 +42,12 @@ describe('ConversationMessageLifecycleService', () => {
   let conversationId: string;
   let settingsConfigPath: string;
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
+  let contextGovernanceService: ContextGovernanceService;
   let storagePath: string;
   let conversationMessagePlanningService: ConversationMessagePlanningService;
-  let runtimeHostConversationRecordService: ConversationStoreService;
-  let runtimeHostConversationMessageService: ConversationMessageService;
-  let runtimeHostConversationTodoService: ConversationTodoService;
+  let conversationStore: ConversationStoreService;
+  let conversationMessages: ConversationMessageService;
+  let conversationTodos: ConversationTodoService;
   let service: ConversationMessageLifecycleService;
 
   beforeEach(() => {
@@ -70,8 +72,8 @@ describe('ConversationMessageLifecycleService', () => {
     aiVisionService.resolveMessageParts.mockReset();
     toolRegistryService.buildToolSet.mockReset();
     toolRegistryService.listAvailableTools.mockReset();
-    runtimeHostPluginDispatchService.invokeHook.mockReset();
-    runtimeHostPluginDispatchService.listPlugins.mockReset();
+    pluginDispatch.invokeHook.mockReset();
+    pluginDispatch.listPlugins.mockReset();
     personaService.readCurrentPersona.mockReset();
     aiVisionService.resolveMessageParts.mockImplementation(async (_conversationId, parts) => parts);
     aiManagementService.getDefaultProviderSelection.mockReturnValue({ modelId: 'gpt-5.4', providerId: 'openai', source: 'default' });
@@ -85,44 +87,49 @@ describe('ConversationMessageLifecycleService', () => {
     });
     toolRegistryService.buildToolSet.mockResolvedValue(undefined);
     toolRegistryService.listAvailableTools.mockResolvedValue([]);
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([]);
-    runtimeHostConversationRecordService = new ConversationStoreService();
-    runtimeHostConversationMessageService = new ConversationMessageService(
-      runtimeHostConversationRecordService,
+    pluginDispatch.listPlugins.mockReturnValue([]);
+    conversationStore = new ConversationStoreService();
+    conversationMessages = new ConversationMessageService(
+      conversationStore,
     );
-    runtimeHostConversationTodoService = new ConversationTodoService(
-      runtimeHostConversationRecordService,
+    conversationTodos = new ConversationTodoService(
+      conversationStore,
     );
     conversationTaskService = new ConversationTaskService(
-      runtimeHostConversationMessageService,
-      runtimeHostConversationRecordService,
+      conversationMessages,
+      conversationStore,
       new RuntimeToolPermissionService(),
-      runtimeHostConversationTodoService,
+      conversationTodos,
     );
     contextGovernanceSettingsService = new ContextGovernanceSettingsService();
+    contextGovernanceService = new ContextGovernanceService(
+      aiManagementService as never,
+      aiModelExecutionService as never,
+      contextGovernanceSettingsService,
+      conversationStore,
+    );
     conversationMessagePlanningService = new ConversationMessagePlanningService(
       aiModelExecutionService as never,
       aiVisionService as never,
-      new ContextGovernanceService(
-        aiManagementService as never,
-        aiModelExecutionService as never,
-        contextGovernanceSettingsService,
-        runtimeHostConversationRecordService,
+      new ConversationAfterResponseCompactionService(
+        contextGovernanceService,
+        conversationStore,
       ),
-      runtimeHostConversationRecordService,
+      contextGovernanceService,
+      conversationStore,
       personaService as never,
       toolRegistryService as never,
-      runtimeHostPluginDispatchService as never,
+      pluginDispatch as never,
     );
     service = new ConversationMessageLifecycleService(
-      runtimeHostConversationMessageService,
-      runtimeHostConversationRecordService,
+      conversationMessages,
+      conversationStore,
       conversationTaskService,
       conversationMessagePlanningService,
       personaService as never,
-      runtimeHostPluginDispatchService as never,
+      pluginDispatch as never,
     );
-    conversationId = (runtimeHostConversationRecordService.createConversation({ title: 'Conversation conversation-1', userId: 'user-1' }) as { id: string }).id;
+    conversationId = (conversationStore.createConversation({ title: 'Conversation conversation-1', userId: 'user-1' }) as { id: string }).id;
     activeConversationId = conversationId;
     personaService.readCurrentPersona.mockReturnValue({
       avatar: null,
@@ -175,16 +182,53 @@ describe('ConversationMessageLifecycleService', () => {
       status: 'pending',
     });
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: '你好', role: 'user' }],
       modelId: 'gpt-5.4',
       providerId: 'openai',
     });
-    expect(readConversation(runtimeHostConversationRecordService).messages).toMatchObject([
+    expect(readConversation(conversationStore).messages.filter((message) => message.role !== 'display')).toMatchObject([
       { content: '你好', role: 'user', status: 'completed' },
       { content: '真正的模型回复', model: 'gpt-5.4', provider: 'openai', role: 'assistant', status: 'completed' },
     ]);
     expect(events).toEqual([]);
+  });
+
+  it('persists provider usage onto the assistant message and makes it available to the current conversation state', async () => {
+    aiModelExecutionService.streamText.mockReturnValue(streamed('deepseek-v4-flash', 'ds2api', '真正的模型回复', {
+      cachedInputTokens: 19,
+      inputTokens: 321,
+      outputTokens: 87,
+      source: 'provider',
+      totalTokens: 408,
+    }));
+
+    await startAndWait(service, conversationTaskService, {
+      content: '你好',
+      model: 'deepseek-v4-flash',
+      provider: 'ds2api',
+    });
+
+    const assistantMessage = readConversation(conversationStore).messages[1];
+    expect(JSON.parse(String(assistantMessage.metadataJson))).toEqual(expect.objectContaining({
+      annotations: expect.arrayContaining([
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cachedInputTokens: 19,
+            inputTokens: 321,
+            modelId: 'deepseek-v4-flash',
+            outputTokens: 87,
+            providerId: 'ds2api',
+            responseHistorySignature: expect.any(String),
+            source: 'provider',
+            totalTokens: 408,
+          }),
+          owner: 'conversation.model-usage',
+          type: 'model-usage',
+          version: '1',
+        }),
+      ]),
+    }));
   });
 
   it('can read context window preview after a real message lifecycle round', async () => {
@@ -243,7 +287,7 @@ describe('ConversationMessageLifecycleService', () => {
       { image: 'data:image/png;base64,AAAA', mimeType: 'image/png', type: 'image' },
     ]);
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{
         content: [
           { text: '帮我看图', type: 'text' },
@@ -259,8 +303,8 @@ describe('ConversationMessageLifecycleService', () => {
 
   it('applies response hooks before persisting the assistant message and broadcasts after send', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '原始回复'));
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.response-recorder', ['response:before-send', 'response:after-send'])]);
-    runtimeHostPluginDispatchService.invokeHook.mockImplementation(async ({ hookName, payload }: { hookName: string; payload: { assistantContent?: string } }) =>
+    pluginDispatch.listPlugins.mockReturnValue([plugin('builtin.response-recorder', ['response:before-send', 'response:after-send'])]);
+    pluginDispatch.invokeHook.mockImplementation(async ({ hookName, payload }: { hookName: string; payload: { assistantContent?: string } }) =>
       hookName === 'response:before-send'
         ? { action: 'mutate', assistantContent: 'hook 改写后的回复', assistantParts: [{ text: 'hook 改写后的回复', type: 'text' }] }
         : hookName === 'response:after-send'
@@ -270,24 +314,24 @@ describe('ConversationMessageLifecycleService', () => {
 
     const started = await startAndWait(service, conversationTaskService, { content: '你好', model: 'gpt-5.4', provider: 'openai' });
 
-    expect(readConversation(runtimeHostConversationRecordService).messages[1]).toMatchObject({
+    expect(readConversation(conversationStore).messages[1]).toMatchObject({
       content: 'hook 改写后的回复',
       role: 'assistant',
       status: 'completed',
     });
-    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenNthCalledWith(1, expect.objectContaining({ hookName: 'response:before-send', pluginId: 'builtin.response-recorder' }));
-    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenNthCalledWith(2, expect.objectContaining({ hookName: 'response:after-send', pluginId: 'builtin.response-recorder' }));
+    expect(pluginDispatch.invokeHook).toHaveBeenNthCalledWith(1, expect.objectContaining({ hookName: 'response:before-send', pluginId: 'builtin.response-recorder' }));
+    expect(pluginDispatch.invokeHook).toHaveBeenNthCalledWith(2, expect.objectContaining({ hookName: 'response:after-send', pluginId: 'builtin.response-recorder' }));
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' });
   });
 
   it('runs response after-send only after the assistant message has been persisted', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型回复'));
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.after-send-recorder', ['response:after-send'])]);
-    runtimeHostPluginDispatchService.invokeHook.mockImplementation(async ({ hookName, payload }: { hookName: string; payload: { assistantContent?: string } }) => {
+    pluginDispatch.listPlugins.mockReturnValue([plugin('builtin.after-send-recorder', ['response:after-send'])]);
+    pluginDispatch.invokeHook.mockImplementation(async ({ hookName, payload }: { hookName: string; payload: { assistantContent?: string } }) => {
       if (hookName !== 'response:after-send') {
         return null;
       }
-      expect(readConversation(runtimeHostConversationRecordService).messages[1]).toMatchObject({
+      expect(readConversation(conversationStore).messages[1]).toMatchObject({
         content: '模型回复',
         role: 'assistant',
         status: 'completed',
@@ -301,8 +345,8 @@ describe('ConversationMessageLifecycleService', () => {
 
   it('keeps the assistant message completed when response after-send hook fails', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型回复'));
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.after-send-failure', ['response:after-send'])]);
-    runtimeHostPluginDispatchService.invokeHook.mockImplementation(async ({ hookName }: { hookName: string }) => {
+    pluginDispatch.listPlugins.mockReturnValue([plugin('builtin.after-send-failure', ['response:after-send'])]);
+    pluginDispatch.invokeHook.mockImplementation(async ({ hookName }: { hookName: string }) => {
       if (hookName === 'response:after-send') {
         throw new Error('after-send hook failed');
       }
@@ -311,13 +355,12 @@ describe('ConversationMessageLifecycleService', () => {
 
     await startAndWait(service, conversationTaskService, { content: '你好', model: 'gpt-5.4', provider: 'openai' });
 
-    expect(readConversation(runtimeHostConversationRecordService).messages[1]).toMatchObject({
+    expect(readConversation(conversationStore).messages[1]).toMatchObject({
       content: '模型回复',
-      error: null,
       role: 'assistant',
       status: 'completed',
     });
-    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenCalledWith(expect.objectContaining({
+    expect(pluginDispatch.invokeHook).toHaveBeenCalledWith(expect.objectContaining({
       hookName: 'response:after-send',
       pluginId: 'builtin.after-send-failure',
     }));
@@ -325,8 +368,8 @@ describe('ConversationMessageLifecycleService', () => {
 
   it('applies chat after-model hooks before response hooks', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型原始回复'));
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.after-model-recorder', ['chat:after-model', 'response:before-send'])]);
-    runtimeHostPluginDispatchService.invokeHook.mockImplementation(async ({ hookName }: { hookName: string }) =>
+    pluginDispatch.listPlugins.mockReturnValue([plugin('builtin.after-model-recorder', ['chat:after-model', 'response:before-send'])]);
+    pluginDispatch.invokeHook.mockImplementation(async ({ hookName }: { hookName: string }) =>
       hookName === 'chat:after-model'
         ? { action: 'mutate', assistantContent: 'after-model 改写后的回复', assistantParts: [{ text: 'after-model 改写后的回复', type: 'text' }] }
         : { action: 'mutate', assistantContent: 'before-send 最终回复', assistantParts: [{ text: 'before-send 最终回复', type: 'text' }] },
@@ -334,29 +377,29 @@ describe('ConversationMessageLifecycleService', () => {
 
     await startAndWait(service, conversationTaskService, { content: '你好', model: 'gpt-5.4', provider: 'openai' });
 
-    expect(readConversation(runtimeHostConversationRecordService).messages[1]).toMatchObject({
+    expect(readConversation(conversationStore).messages[1]).toMatchObject({
       content: 'before-send 最终回复',
       role: 'assistant',
       status: 'completed',
     });
-    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenNthCalledWith(1, expect.objectContaining({ hookName: 'chat:after-model' }));
-    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenNthCalledWith(2, expect.objectContaining({ hookName: 'response:before-send' }));
+    expect(pluginDispatch.invokeHook).toHaveBeenNthCalledWith(1, expect.objectContaining({ hookName: 'chat:after-model' }));
+    expect(pluginDispatch.invokeHook).toHaveBeenNthCalledWith(2, expect.objectContaining({ hookName: 'response:before-send' }));
   });
 
   it('applies message created hooks to the persisted user message before model execution', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型回复'));
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.message-created-recorder', ['message:created'])]);
-    runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({ action: 'mutate', content: 'hook 改写后的用户消息' });
+    pluginDispatch.listPlugins.mockReturnValue([plugin('builtin.message-created-recorder', ['message:created'])]);
+    pluginDispatch.invokeHook.mockResolvedValue({ action: 'mutate', content: 'hook 改写后的用户消息' });
 
     await startAndWait(service, conversationTaskService, { content: '原始用户消息', model: 'gpt-5.4', provider: 'openai' });
 
-    expect(readConversation(runtimeHostConversationRecordService).messages[0]).toMatchObject({
+    expect(readConversation(conversationStore).messages[0]).toMatchObject({
       content: 'hook 改写后的用户消息',
       role: 'user',
       status: 'completed',
     });
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: 'hook 改写后的用户消息', role: 'user' }],
       modelId: 'gpt-5.4',
       providerId: 'openai',
@@ -365,8 +408,8 @@ describe('ConversationMessageLifecycleService', () => {
 
   it('applies message received hooks before persisting the user message and selecting the model', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('claude-3-7-sonnet', 'anthropic', '模型回复'));
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.message-received-recorder', ['message:received'])]);
-    runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({
+    pluginDispatch.listPlugins.mockReturnValue([plugin('builtin.message-received-recorder', ['message:received'])]);
+    pluginDispatch.invokeHook.mockResolvedValue({
       action: 'mutate',
       content: 'hook 改写后的入站消息',
       modelId: 'claude-3-7-sonnet',
@@ -375,9 +418,9 @@ describe('ConversationMessageLifecycleService', () => {
 
     await startAndWait(service, conversationTaskService, { content: '原始入站消息' });
 
-    expect(readConversation(runtimeHostConversationRecordService).messages[0]).toMatchObject({ content: 'hook 改写后的入站消息', role: 'user' });
+    expect(readConversation(conversationStore).messages[0]).toMatchObject({ content: 'hook 改写后的入站消息', role: 'user' });
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: 'hook 改写后的入站消息', role: 'user' }],
       modelId: 'claude-3-7-sonnet',
       providerId: 'anthropic',
@@ -385,7 +428,7 @@ describe('ConversationMessageLifecycleService', () => {
   });
 
   it('blocks starting a second active assistant generation', async () => {
-    runtimeHostConversationMessageService.createMessage(conversationId, {
+    conversationMessages.createMessage(conversationId, {
       content: '',
       model: 'gpt-5.4',
       provider: 'openai',
@@ -399,7 +442,7 @@ describe('ConversationMessageLifecycleService', () => {
   });
 
   it('blocks starting a second generation when a display result is still active', async () => {
-    runtimeHostConversationMessageService.createMessage(conversationId, {
+    conversationMessages.createMessage(conversationId, {
       content: '命令执行中',
       metadata: {
         annotations: [
@@ -423,7 +466,7 @@ describe('ConversationMessageLifecycleService', () => {
   });
 
   it('rejects retrying a non-assistant message', async () => {
-    const userMessage = runtimeHostConversationMessageService.createMessage(conversationId, {
+    const userMessage = conversationMessages.createMessage(conversationId, {
       content: '普通用户消息',
       parts: [{ text: '普通用户消息', type: 'text' }],
       role: 'user',
@@ -436,7 +479,7 @@ describe('ConversationMessageLifecycleService', () => {
   });
 
   it('blocks retry when the conversation already has an active assistant reply', async () => {
-    runtimeHostConversationMessageService.createMessage(conversationId, {
+    conversationMessages.createMessage(conversationId, {
       content: '已完成回复',
       model: 'gpt-5.4',
       parts: [{ text: '已完成回复', type: 'text' }],
@@ -444,7 +487,7 @@ describe('ConversationMessageLifecycleService', () => {
       role: 'assistant',
       status: 'completed',
     });
-    const activeAssistantMessage = runtimeHostConversationMessageService.createMessage(conversationId, {
+    const activeAssistantMessage = conversationMessages.createMessage(conversationId, {
       content: '',
       model: 'gpt-5.4',
       parts: [],
@@ -459,7 +502,7 @@ describe('ConversationMessageLifecycleService', () => {
   });
 
   it('blocks retry when the conversation already has an active display result reply', async () => {
-    runtimeHostConversationMessageService.createMessage(conversationId, {
+    conversationMessages.createMessage(conversationId, {
       content: '已完成回复',
       model: 'gpt-5.4',
       parts: [{ text: '已完成回复', type: 'text' }],
@@ -467,7 +510,7 @@ describe('ConversationMessageLifecycleService', () => {
       role: 'assistant',
       status: 'completed',
     });
-    const assistantMessage = runtimeHostConversationMessageService.createMessage(conversationId, {
+    const assistantMessage = conversationMessages.createMessage(conversationId, {
       content: '可重试的回复',
       model: 'gpt-5.4',
       parts: [{ text: '可重试的回复', type: 'text' }],
@@ -475,7 +518,7 @@ describe('ConversationMessageLifecycleService', () => {
       role: 'assistant',
       status: 'completed',
     });
-    runtimeHostConversationMessageService.createMessage(conversationId, {
+    conversationMessages.createMessage(conversationId, {
       content: '命令执行中',
       metadata: {
         annotations: [
@@ -499,7 +542,7 @@ describe('ConversationMessageLifecycleService', () => {
   });
 
   it('stops a display result message and writes back stopped when runtime task is already gone', async () => {
-    const displayResultMessage = runtimeHostConversationMessageService.createMessage(conversationId, {
+    const displayResultMessage = conversationMessages.createMessage(conversationId, {
       content: '命令执行中',
       metadata: {
         annotations: [
@@ -521,7 +564,7 @@ describe('ConversationMessageLifecycleService', () => {
       service.stopMessageGeneration(conversationId, String(displayResultMessage.id), 'user-1'),
     ).resolves.toEqual({ message: 'Generation stopped' });
 
-    expect(readConversation(runtimeHostConversationRecordService).messages).toEqual(
+    expect(readConversation(conversationStore).messages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: String(displayResultMessage.id),
@@ -534,7 +577,7 @@ describe('ConversationMessageLifecycleService', () => {
 
   it('includes user and active persona in hook context payloads', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型回复'));
-    runtimeHostConversationRecordService.rememberConversationActivePersona(conversationId, 'persona-1');
+    conversationStore.rememberConversationActivePersona(conversationId, 'persona-1');
     personaService.readCurrentPersona.mockReturnValue({
       avatar: null,
       beginDialogs: [],
@@ -550,12 +593,12 @@ describe('ConversationMessageLifecycleService', () => {
       toolNames: null,
       updatedAt: '2026-04-18T00:00:00.000Z',
     });
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.before-model-recorder', ['chat:before-model'])]);
-    runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({ action: 'pass' });
+    pluginDispatch.listPlugins.mockReturnValue([plugin('builtin.before-model-recorder', ['chat:before-model'])]);
+    pluginDispatch.invokeHook.mockResolvedValue({ action: 'pass' });
 
     await startAndWait(service, conversationTaskService, { content: '原始模型输入' }, 'user-1');
 
-    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenCalledWith(expect.objectContaining({
+    expect(pluginDispatch.invokeHook).toHaveBeenCalledWith(expect.objectContaining({
       context: expect.objectContaining({
         activePersonaId: 'persona-1',
         conversationId,
@@ -569,8 +612,8 @@ describe('ConversationMessageLifecycleService', () => {
     toolRegistryService.listAvailableTools.mockResolvedValue([
       { description: 'search memory', name: 'memory.search', parameters: {}, pluginId: 'builtin.memory', sourceId: 'builtin.memory', sourceKind: 'plugin' },
     ]);
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.before-model-recorder', ['chat:before-model'])]);
-    runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({
+    pluginDispatch.listPlugins.mockReturnValue([plugin('builtin.before-model-recorder', ['chat:before-model'])]);
+    pluginDispatch.invokeHook.mockResolvedValue({
       action: 'mutate',
       messages: [{ content: 'hook 改写后的模型输入', role: 'user' }],
       modelId: 'claude-3-7-sonnet',
@@ -580,9 +623,9 @@ describe('ConversationMessageLifecycleService', () => {
 
     await startAndWait(service, conversationTaskService, { content: '原始模型输入' });
 
-    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenCalledWith(expect.objectContaining({ hookName: 'chat:before-model', pluginId: 'builtin.before-model-recorder' }));
+    expect(pluginDispatch.invokeHook).toHaveBeenCalledWith(expect.objectContaining({ hookName: 'chat:before-model', pluginId: 'builtin.before-model-recorder' }));
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: 'hook 改写后的模型输入', role: 'user' }],
       modelId: 'claude-3-7-sonnet',
       providerId: 'anthropic',
@@ -591,7 +634,7 @@ describe('ConversationMessageLifecycleService', () => {
   });
 
   it('runs conversation history rewrite before chat before-model and model execution', async () => {
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       {
         content: '旧历史消息',
         createdAt: '2026-04-19T09:00:00.000Z',
@@ -602,11 +645,11 @@ describe('ConversationMessageLifecycleService', () => {
       },
     ]);
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型回复'));
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([
+    pluginDispatch.listPlugins.mockReturnValue([
       plugin('builtin.history-rewrite', ['conversation:history-rewrite']),
       plugin('builtin.before-model-recorder', ['chat:before-model']),
     ]);
-    runtimeHostPluginDispatchService.invokeHook.mockImplementation(async ({
+    pluginDispatch.invokeHook.mockImplementation(async ({
       hookName,
       payload,
     }: {
@@ -629,7 +672,7 @@ describe('ConversationMessageLifecycleService', () => {
         expect(payload.history?.revision).toEqual(expect.any(String));
         expect(latestUserMessage).toBeTruthy();
         expect(pendingAssistantMessage).toBeTruthy();
-        runtimeHostConversationRecordService.replaceConversationHistory(conversationId, {
+        conversationStore.replaceConversationHistory(conversationId, {
           expectedRevision: payload.history!.revision,
           messages: [
             {
@@ -661,16 +704,16 @@ describe('ConversationMessageLifecycleService', () => {
       provider: 'openai',
     });
 
-    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenNthCalledWith(1, expect.objectContaining({
+    expect(pluginDispatch.invokeHook).toHaveBeenNthCalledWith(1, expect.objectContaining({
       hookName: 'conversation:history-rewrite',
       pluginId: 'builtin.history-rewrite',
     }));
-    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenNthCalledWith(2, expect.objectContaining({
+    expect(pluginDispatch.invokeHook).toHaveBeenNthCalledWith(2, expect.objectContaining({
       hookName: 'chat:before-model',
       pluginId: 'builtin.before-model-recorder',
     }));
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [
         {
           content: [
@@ -681,7 +724,7 @@ describe('ConversationMessageLifecycleService', () => {
           ],
           role: 'assistant',
         },
-        { content: [], role: 'user' },
+        { content: '新的用户问题', role: 'user' },
       ],
       modelId: 'gpt-5.4',
       providerId: 'openai',
@@ -780,7 +823,7 @@ describe('ConversationMessageLifecycleService', () => {
       provider: 'openai',
     }, 'user-1')
 
-    expect(readConversation(runtimeHostConversationRecordService).messages[1]).toMatchObject({
+    expect(readConversation(conversationStore).messages[1]).toMatchObject({
       error: '当前人格暂时无法完成请求。',
       role: 'assistant',
       status: 'error',
@@ -811,7 +854,7 @@ describe('ConversationMessageLifecycleService', () => {
       provider: 'anthropic',
     })
 
-    expect(readConversation(runtimeHostConversationRecordService).messages).toMatchObject([
+    expect(readConversation(conversationStore).messages).toMatchObject([
       { content: '你好', role: 'user', status: 'completed' },
       {
         content: '部分输出',
@@ -825,6 +868,222 @@ describe('ConversationMessageLifecycleService', () => {
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
   })
 
+  it('auto-continues after after-response compaction even when the completed reply has no tool activity', async () => {
+    jest.spyOn(conversationMessagePlanningService, 'broadcastAfterSend')
+      .mockResolvedValueOnce({
+        compactionTriggered: true,
+        continuation: {
+          content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+          metadata: { annotations: [{ data: { role: 'continue', synthetic: true, trigger: 'after-response' }, owner: 'conversation.context-governance', type: 'context-compaction', version: '1' }] },
+          parts: [{ text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.', type: 'text' }],
+        },
+      })
+      .mockResolvedValue({ compactionTriggered: false, continuation: null })
+    aiModelExecutionService.streamText
+      .mockReturnValueOnce(streamed('gpt-5.4', 'openai', '第一轮先完成这里，再继续后续步骤。'))
+      .mockReturnValueOnce(streamed('gpt-5.4', 'openai', '压缩后已自动继续执行。'))
+
+    const started = await startAndWait(service, conversationTaskService, {
+      content: '请先完成第一步，然后继续后续步骤。',
+      model: 'gpt-5.4',
+      provider: 'openai',
+    }, 'user-1')
+
+    await waitForConversationToSettle(conversationTaskService, conversationStore)
+
+    const messages = readConversation(conversationStore).messages
+    const syntheticContinueMessage = messages.find(hasContextCompactionContinueAnnotation)
+
+    expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
+    expect(conversationMessagePlanningService.broadcastAfterSend).toHaveBeenCalledTimes(2)
+    expect(aiModelExecutionService.streamText).toHaveBeenCalledTimes(2)
+    expect(syntheticContinueMessage).toBeTruthy()
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        content: '第一轮先完成这里，再继续后续步骤。',
+        role: 'assistant',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        content: '压缩后已自动继续执行。',
+        role: 'assistant',
+        status: 'completed',
+      }),
+    ]))
+  })
+
+  it('auto-continues after after-response compaction even when the completed reply already includes final assistant text', async () => {
+    jest.spyOn(conversationMessagePlanningService, 'broadcastAfterSend')
+      .mockResolvedValueOnce({
+        compactionTriggered: true,
+        continuation: {
+          content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+          metadata: { annotations: [{ data: { role: 'continue', synthetic: true, trigger: 'after-response' }, owner: 'conversation.context-governance', type: 'context-compaction', version: '1' }] },
+          parts: [{ text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.', type: 'text' }],
+        },
+      })
+      .mockResolvedValue({ compactionTriggered: false, continuation: null })
+    aiModelExecutionService.streamText
+      .mockReturnValueOnce(streamedWithToolActivity('gpt-5.4', 'openai', '第一轮先调用工具，再继续后续步骤。'))
+      .mockReturnValueOnce(streamed('gpt-5.4', 'openai', '压缩后继续执行补充步骤。'))
+
+    const started = await startAndWait(service, conversationTaskService, {
+      content: '请先调用工具，再继续后续步骤。',
+      model: 'gpt-5.4',
+      provider: 'openai',
+    }, 'user-1')
+
+    await waitForConversationToSettle(conversationTaskService, conversationStore)
+
+    const messages = readConversation(conversationStore).messages
+    const syntheticContinueMessage = messages.find((message) => (
+      message.role === 'user'
+      && message.content === 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.'
+      && hasContextCompactionContinueAnnotation(message)
+    ))
+
+    expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
+    expect(conversationMessagePlanningService.broadcastAfterSend).toHaveBeenCalledTimes(2)
+    expect(aiModelExecutionService.streamText).toHaveBeenCalledTimes(2)
+    expect(syntheticContinueMessage).toBeTruthy()
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        content: '第一轮先调用工具，再继续后续步骤。',
+        role: 'assistant',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        content: '压缩后继续执行补充步骤。',
+        role: 'assistant',
+        status: 'completed',
+      }),
+    ]))
+  })
+
+  it('auto-continues after after-response compaction when the completed reply only has tool activity and no final assistant text', async () => {
+    jest.spyOn(conversationMessagePlanningService, 'broadcastAfterSend')
+      .mockResolvedValueOnce({
+        compactionTriggered: true,
+        continuation: {
+          content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+          metadata: { annotations: [{ data: { role: 'continue', synthetic: true, trigger: 'after-response' }, owner: 'conversation.context-governance', type: 'context-compaction', version: '1' }] },
+          parts: [{ text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.', type: 'text' }],
+        },
+      })
+      .mockResolvedValue({ compactionTriggered: false, continuation: null })
+    aiModelExecutionService.streamText
+      .mockReturnValueOnce(streamedWithToolActivity('gpt-5.4', 'openai', ''))
+      .mockReturnValueOnce(streamed('gpt-5.4', 'openai', '压缩后已自动继续执行，下面是后续步骤。'))
+
+    const started = await startAndWait(service, conversationTaskService, {
+      content: '请先调用工具，再继续后续步骤。',
+      model: 'gpt-5.4',
+      provider: 'openai',
+    }, 'user-1')
+
+    await waitForConversationToSettle(conversationTaskService, conversationStore)
+
+    const messages = readConversation(conversationStore).messages
+    const syntheticContinueMessage = messages.find((message) => (
+      message.role === 'user'
+      && message.content === 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.'
+      && hasContextCompactionContinueAnnotation(message)
+    ))
+
+    expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
+    expect(conversationMessagePlanningService.broadcastAfterSend).toHaveBeenCalledTimes(2)
+    expect(aiModelExecutionService.streamText).toHaveBeenCalledTimes(2)
+    expect(syntheticContinueMessage).toBeTruthy()
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        content: '',
+        role: 'assistant',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        content: '压缩后已自动继续执行，下面是后续步骤。',
+        role: 'assistant',
+        status: 'completed',
+      }),
+    ]))
+    expect(aiModelExecutionService.streamText).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      allowFallbackChatModels: false,
+      messages: expect.arrayContaining([
+        {
+          content: [
+            {
+              text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+              type: 'text',
+            },
+          ],
+          role: 'user',
+        },
+      ]),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    }))
+  })
+
+  it('marks the assistant message as error when pre-model auto compaction still cannot fit the context', async () => {
+    aiManagementService.getProviderModel.mockReturnValue({
+      contextLength: 256,
+      id: 'gpt-5.4',
+      providerId: 'openai',
+    })
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 1,
+        enabled: true,
+        keepRecentMessages: 6,
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    })
+    conversationStore.replaceMessages(conversationId, [
+      createHistoryMessage('history-1', 'user', '请直接写一篇超长文章。'),
+      createHistoryMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300)),
+    ])
+    aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '不应触发的模型回复'))
+
+    await conversationMessagePlanningService.broadcastAfterSend(
+      { conversationId, userId: 'user-1' },
+      {
+        assistantMessageId: 'assistant-final',
+        content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300),
+        continuationState: {
+          hasAssistantTextOutput: true,
+          hasToolActivity: false,
+        },
+        conversationId,
+        modelId: 'gpt-5.4',
+        parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300), type: 'text' }],
+        providerId: 'openai',
+        toolCalls: [],
+        toolResults: [],
+      },
+      'model',
+    )
+
+    await startAndWait(service, conversationTaskService, {
+      content: '继续',
+      model: 'gpt-5.4',
+      provider: 'openai',
+    }, 'user-1')
+
+    const messages = readConversation(conversationStore).messages
+    const latestAssistant = messages.at(-1)
+
+    expect(aiModelExecutionService.streamText).not.toHaveBeenCalled()
+    expect(messages.filter((message) => message.role === 'display')).toHaveLength(0)
+    expect(latestAssistant).toMatchObject({
+      content: '',
+      error: expect.stringContaining('压缩后的上下文仍超过预算'),
+      role: 'assistant',
+      status: 'error',
+    })
+  })
+
   it('short-circuits the conversation mainline for internal context governance commands', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
@@ -832,14 +1091,14 @@ describe('ConversationMessageLifecycleService', () => {
         strategy: 'summary',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createHistoryMessage('history-1', 'user', '第一条历史消息'),
       createHistoryMessage('history-2', 'assistant', '第二条历史回复'),
       createHistoryMessage('history-3', 'user', '第三条历史追问'),
     ]);
 
     const started = await startAndWait(service, conversationTaskService, { content: '/compact' }, 'user-1');
-    const displayMessages = readConversation(runtimeHostConversationRecordService).messages
+    const displayMessages = readConversation(conversationStore).messages
       .filter((message) => message.role === 'display');
 
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
@@ -895,7 +1154,7 @@ describe('ConversationMessageLifecycleService', () => {
         strategy: 'summary',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createHistoryMessage('history-1', 'user', '第一条历史消息'),
       createHistoryMessage('history-2', 'assistant', '第二条历史回复'),
       createHistoryMessage('history-3', 'user', '第三条历史追问'),
@@ -903,7 +1162,7 @@ describe('ConversationMessageLifecycleService', () => {
 
     await startAndWait(service, conversationTaskService, { content: '/compact' }, 'user-1');
 
-    const displayMessages = readConversation(runtimeHostConversationRecordService).messages
+    const displayMessages = readConversation(conversationStore).messages
       .filter((message) => message.role === 'display');
 
     expect(displayMessages.map((message) => message.content)).toEqual([
@@ -920,7 +1179,7 @@ describe('ConversationMessageLifecycleService', () => {
         strategy: 'summary',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createHistoryMessage('history-1', 'user', '第一条历史消息'),
       createHistoryMessage('history-2', 'assistant', '第二条历史回复'),
       createHistoryMessage('history-3', 'user', '第三条历史追问'),
@@ -929,7 +1188,7 @@ describe('ConversationMessageLifecycleService', () => {
     await startAndWait(service, conversationTaskService, { content: '/compact' }, 'user-1');
     await startAndWait(service, conversationTaskService, { content: '/compress' }, 'user-1');
 
-    const displayMessages = readConversation(runtimeHostConversationRecordService).messages
+    const displayMessages = readConversation(conversationStore).messages
       .filter((message) => message.role === 'display');
     const commandAndResultMessages = displayMessages.filter(isDisplayCommandOrResultMessage);
 
@@ -980,7 +1239,7 @@ describe('ConversationMessageLifecycleService', () => {
       provider: 'openai',
     }, 'user-1');
 
-    expect(readConversation(runtimeHostConversationRecordService).messages).toMatchObject([
+    expect(readConversation(conversationStore).messages.filter((message) => message.role !== 'display')).toMatchObject([
       {
         content: '/unknown test',
         role: 'user',
@@ -995,7 +1254,7 @@ describe('ConversationMessageLifecycleService', () => {
     expect(started.userMessage).toMatchObject({ role: 'user' });
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' });
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: '/unknown test', role: 'user' }],
       modelId: 'gpt-5.4',
       providerId: 'openai',
@@ -1003,8 +1262,8 @@ describe('ConversationMessageLifecycleService', () => {
   });
 
   it('short-circuits model execution when chat before-model returns an assistant response', async () => {
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.before-model-short-circuit', ['chat:before-model'])]);
-    runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({
+    pluginDispatch.listPlugins.mockReturnValue([plugin('builtin.before-model-short-circuit', ['chat:before-model'])]);
+    pluginDispatch.invokeHook.mockResolvedValue({
       action: 'short-circuit',
       assistantContent: 'hook 直接返回的回复',
       assistantParts: [{ text: 'hook 直接返回的回复', type: 'text' }],
@@ -1015,7 +1274,7 @@ describe('ConversationMessageLifecycleService', () => {
     await startAndWait(service, conversationTaskService, { content: '原始模型输入' });
 
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
-    expect(readConversation(runtimeHostConversationRecordService).messages[1]).toMatchObject({
+    expect(readConversation(conversationStore).messages[1]).toMatchObject({
       content: 'hook 直接返回的回复',
       model: 'claude-3-7-sonnet',
       provider: 'anthropic',
@@ -1039,8 +1298,8 @@ function plugin(id: string, hookNames: string[]) {
   };
 }
 
-function readConversation(runtimeHostConversationRecordService: ConversationStoreService) {
-  return runtimeHostConversationRecordService.requireConversation(
+function readConversation(conversationStore: ConversationStoreService) {
+  return conversationStore.requireConversation(
     activeConversationId,
   );
 }
@@ -1056,10 +1315,39 @@ async function startAndWait(
   return started;
 }
 
-function streamed(modelId: string, providerId: string, text: string) {
+function streamed(
+  modelId: string,
+  providerId: string,
+  text: string,
+  usage?: {
+    cachedInputTokens?: number;
+    inputTokens: number;
+    outputTokens: number;
+    source: 'estimated' | 'provider';
+    totalTokens: number;
+  },
+) {
   return {
     finishReason: Promise.resolve('stop'),
     fullStream: (async function* () {
+      yield { text, type: 'text-delta' };
+    })(),
+    modelId,
+    providerId,
+    ...(usage ? { usage: Promise.resolve(usage) } : {}),
+  };
+}
+
+function streamedWithToolActivity(
+  modelId: string,
+  providerId: string,
+  text: string,
+) {
+  return {
+    finishReason: Promise.resolve('stop'),
+    fullStream: (async function* () {
+      yield { input: { content: '自动续跑验证' }, toolCallId: 'tool-call-1', toolName: 'save_memory', type: 'tool-call' };
+      yield { output: { kind: 'tool:text', value: '保存完成' }, toolCallId: 'tool-call-1', toolName: 'save_memory', type: 'tool-result' };
       yield { text, type: 'text-delta' };
     })(),
     modelId,
@@ -1110,4 +1398,48 @@ function readMessageAnnotations(message: Record<string, unknown>): Array<Record<
   return Array.isArray(metadata?.annotations)
     ? metadata.annotations.filter(isRecord)
     : [];
+}
+
+function hasContextCompactionContinueAnnotation(message: Record<string, unknown>): boolean {
+  return readMessageAnnotations(message).some((annotation) => (
+    annotation.owner === 'conversation.context-governance'
+    && annotation.type === 'context-compaction'
+    && isRecord(annotation.data)
+    && annotation.data.role === 'continue'
+    && annotation.data.synthetic === true
+  ));
+}
+
+async function waitForConversationToSettle(
+  conversationTaskService: ConversationTaskService,
+  conversationStore: ConversationStoreService,
+): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const conversation = readConversation(conversationStore);
+    const activeAssistant = [...conversation.messages].reverse().find((message) => (
+      message.role === 'assistant'
+      && (message.status === 'pending' || message.status === 'streaming')
+    ));
+    if (activeAssistant?.id) {
+      await conversationTaskService.waitForTask(String(activeAssistant.id));
+      continue;
+    }
+    const lastMessage = conversation.messages.at(-1);
+    if (lastMessage && hasContextCompactionContinueAnnotation(lastMessage)) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      continue;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const refreshedConversation = readConversation(conversationStore);
+    const refreshedActiveAssistant = [...refreshedConversation.messages].reverse().find((message) => (
+      message.role === 'assistant'
+      && (message.status === 'pending' || message.status === 'streaming')
+    ));
+    if (!refreshedActiveAssistant?.id) {
+      return;
+    }
+    await conversationTaskService.waitForTask(String(refreshedActiveAssistant.id));
+  }
+  throw new Error('等待自动续跑稳定超时');
 }

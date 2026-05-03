@@ -1,17 +1,21 @@
-import type { AiModelUsage, ChatMessageCustomBlock, ChatMessageMetadata, ChatMessagePart, ChatMessageStatus, JsonValue, PluginSubagentToolCall, PluginSubagentToolResult, SSEEvent } from '@garlic-claw/shared';
+import type { AiChatAutoRetryConfig, AiModelUsage, ChatMessageCustomBlock, ChatMessageMetadata, ChatMessagePart, ChatMessageStatus, JsonValue, PluginSubagentToolCall, PluginSubagentToolResult, SSEEvent } from '@garlic-claw/shared';
+import { DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG } from '@garlic-claw/shared';
+import { APICallError } from '@ai-sdk/provider';
 import { Injectable } from '@nestjs/common';
+import { AiProviderSettingsService } from '../ai-management/ai-provider-settings.service';
 import { createConversationHistorySignatureFromHistoryMessages } from './conversation-history-signature';
+import type { ConversationCompactionContinuationState } from './conversation-compaction-continuation';
 import { appendConversationModelUsageMetadata, readConversationModelUsageAnnotation } from './conversation-model-usage.annotation';
 import { RuntimeToolPermissionService } from '../execution/runtime/runtime-tool-permission.service';
 import { ConversationMessageService } from '../runtime/host/conversation-message.service';
-import { ConversationStoreService } from '../runtime/host/conversation-store.service';
+import { ConversationStoreService, serializeConversationMessage } from '../runtime/host/conversation-store.service';
 import { ConversationTodoService } from '../runtime/host/conversation-todo.service';
 import { cloneJsonValue, readAssistantRawCustomBlocks, readAssistantStreamPart } from '../runtime/host/host-input.codec';
 import { createServerLogger } from '../../core/logging/server-logger';
 
 export type ConversationTaskToolCall = PluginSubagentToolCall & Record<string, JsonValue>;
 export type ConversationTaskToolResult = PluginSubagentToolResult & Record<string, JsonValue>;
-export type ConversationTaskEvent = Extract<SSEEvent, { type: 'finish' | 'message-metadata' | 'message-patch' | 'permission-request' | 'permission-resolved' | 'status' | 'todo-updated' | 'text-delta' | 'tool-call' | 'tool-result' }>;
+export type ConversationTaskEvent = Extract<SSEEvent, { type: 'finish' | 'message-metadata' | 'message-patch' | 'message-start' | 'permission-request' | 'permission-resolved' | 'retry' | 'status' | 'todo-updated' | 'text-delta' | 'tool-call' | 'tool-result' }>;
 export type ResolvedConversationTaskStreamSource = {
   modelId: string;
   providerId: string;
@@ -22,6 +26,7 @@ export type ResolvedConversationTaskStreamSource = {
 export interface CompletedConversationTaskResult {
   assistantMessageId: string;
   content: string;
+  continuationState: ConversationCompactionContinuationState;
   conversationId: string;
   metadata?: ChatMessageMetadata;
   modelId: string;
@@ -52,7 +57,14 @@ type ConversationTaskOutcome = { status: 'completed' | 'stopped' } | { error: st
 type ConversationTaskSnapshot = Omit<CompletedConversationTaskResult, 'assistantMessageId' | 'conversationId'>;
 type ConversationTaskRuntime = Omit<StartConversationTaskInput, 'createStream'> & {
   requestHistorySignature?: string;
-  state: { content: string; metadata?: ChatMessageMetadata; toolCalls: ConversationTaskToolCall[]; toolResults: ConversationTaskToolResult[] };
+  state: {
+    content: string;
+    hasAssistantTextOutput: boolean;
+    hasToolActivity: boolean;
+    metadata?: ChatMessageMetadata;
+    toolCalls: ConversationTaskToolCall[];
+    toolResults: ConversationTaskToolResult[];
+  };
 };
 
 interface ConversationTaskHandle {
@@ -61,16 +73,19 @@ interface ConversationTaskHandle {
   listeners: Set<(event: ConversationTaskEvent) => void>;
 }
 
+type ResolvedConversationTaskRetryConfig = AiChatAutoRetryConfig;
+
 @Injectable()
 export class ConversationTaskService {
   private readonly logger = createServerLogger(ConversationTaskService.name);
   private readonly tasks = new Map<string, ConversationTaskHandle>();
 
   constructor(
-    private readonly runtimeHostConversationMessageService: ConversationMessageService,
-    private readonly runtimeHostConversationRecordService: ConversationStoreService,
+    private readonly conversationMessages: ConversationMessageService,
+    private readonly conversationStore: ConversationStoreService,
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
-    private readonly runtimeHostConversationTodoService: ConversationTodoService,
+    private readonly conversationTodos: ConversationTodoService,
+    private readonly aiProviderSettingsService: AiProviderSettingsService = new AiProviderSettingsService(),
   ) {}
 
   startTask(input: StartConversationTaskInput): void {
@@ -99,42 +114,74 @@ export class ConversationTaskService {
   }
 
   private async runTask(task: ConversationTaskHandle, input: StartConversationTaskInput): Promise<void> {
-    const runtime: ConversationTaskRuntime = { ...input, state: { content: '', toolCalls: [], toolResults: [] } };
+    const runtime: ConversationTaskRuntime = {
+      ...input,
+      state: {
+        content: '',
+        hasAssistantTextOutput: false,
+        hasToolActivity: false,
+        toolCalls: [],
+        toolResults: [],
+      },
+    };
+    const retryConfig = resolveConversationTaskRetryConfig(
+      this.aiProviderSettingsService.getHostModelRoutingConfig().chatAutoRetry,
+    );
     const unsubscribePermission = this.runtimeToolPermissionService.subscribe(input.conversationId, (event) => {
       this.emit(task, toConversationTaskPermissionEvent(event, input.assistantMessageId));
     });
-    const unsubscribeTodo = this.runtimeHostConversationTodoService.subscribe(input.conversationId, (event) => {
+    const unsubscribeTodo = this.conversationTodos.subscribe(input.conversationId, (event) => {
       this.emit(task, { conversationId: event.sessionId, todos: cloneJsonValue(event.todos), type: 'todo-updated' });
     });
 
     try {
-      const streamSource = await input.createStream(task.abortController.signal);
-      const stream = normalizeConversationTaskStream(streamSource.stream);
-      runtime.requestHistorySignature = streamSource.requestHistorySignature;
-      runtime.modelId = streamSource.modelId;
-      runtime.providerId = streamSource.providerId;
-      await this.writeTaskSnapshot(runtime, 'streaming');
-      this.emit(task, { messageId: runtime.assistantMessageId, status: 'streaming', type: 'status' });
+      let retryAttempt = 0;
+      while (true) {
+        try {
+          const streamSource = await input.createStream(task.abortController.signal);
+          const stream = normalizeConversationTaskStream(streamSource.stream);
+          runtime.requestHistorySignature = streamSource.requestHistorySignature;
+          runtime.modelId = streamSource.modelId;
+          runtime.providerId = streamSource.providerId;
+          await this.writeTaskSnapshot(runtime, 'streaming');
+          this.emit(task, { messageId: runtime.assistantMessageId, status: 'streaming', type: 'status' });
 
-      for await (const rawPart of stream.fullStream) {
-        const events = readConversationTaskEvents(runtime.state, runtime.assistantMessageId, runtime.providerId, rawPart);
-        if (events.length === 0) {continue;}
-        await this.writeTaskSnapshot(runtime, 'streaming');
-        this.emitAll(task, events);
-      }
+          for await (const rawPart of stream.fullStream) {
+            const events = readConversationTaskEvents(runtime.state, runtime.assistantMessageId, runtime.providerId, rawPart);
+            if (events.length === 0) {continue;}
+            await this.writeTaskSnapshot(runtime, 'streaming');
+            this.emitAll(task, events);
+          }
 
-      const usage = await readConversationTaskUsage(stream.usage);
-      if (usage) {
-        runtime.state.metadata = appendConversationModelUsageMetadata(runtime.state.metadata, {
-          ...usage,
-          modelId: runtime.modelId,
-          providerId: runtime.providerId,
-          ...(runtime.requestHistorySignature ? { requestHistorySignature: runtime.requestHistorySignature } : {}),
-        });
+          const usage = await readConversationTaskUsage(stream.usage);
+          if (usage) {
+            runtime.state.metadata = appendConversationModelUsageMetadata(runtime.state.metadata, {
+              ...usage,
+              modelId: runtime.modelId,
+              providerId: runtime.providerId,
+              ...(runtime.requestHistorySignature ? { requestHistorySignature: runtime.requestHistorySignature } : {}),
+            });
+          }
+          await this.finishTask(task, runtime, { status: task.abortController.signal.aborted ? 'stopped' : 'completed' });
+          return;
+        } catch (error) {
+          const retryMessage = readConversationTaskRetryMessage(error);
+          if (!task.abortController.signal.aborted && retryMessage && shouldRetryConversationTask(retryAttempt, retryConfig, error)) {
+            retryAttempt += 1;
+            const delayMs = readConversationTaskRetryDelay(retryAttempt, retryConfig, error);
+            await this.prepareTaskRetry(task, runtime, retryAttempt, retryMessage, delayMs);
+            try {
+              await waitForConversationTaskRetry(delayMs, task.abortController.signal);
+            } catch {
+              await this.finishTask(task, runtime, { status: 'stopped' });
+              return;
+            }
+            continue;
+          }
+          await this.finishTask(task, runtime, await readConversationTaskOutcome(task.abortController.signal, runtime.resolveErrorMessage, error));
+          return;
+        }
       }
-      await this.finishTask(task, runtime, { status: task.abortController.signal.aborted ? 'stopped' : 'completed' });
-    } catch (error) {
-      await this.finishTask(task, runtime, await readConversationTaskOutcome(task.abortController.signal, runtime.resolveErrorMessage, error));
     } finally {
       unsubscribePermission();
       unsubscribeTodo();
@@ -156,11 +203,19 @@ export class ConversationTaskService {
     let finalResult = patched ?? completed;
 
     if (patched && hasPatchedTaskResult(completed, patched)) {
-      await this.runtimeHostConversationMessageService.writeMessage(runtime.conversationId, runtime.assistantMessageId, readConversationTaskMessageBody(patched, 'completed'));
+      await this.conversationMessages.writeMessage(runtime.conversationId, runtime.assistantMessageId, readConversationTaskMessageBody(patched, 'completed'));
       this.emit(task, { content: patched.content, messageId: runtime.assistantMessageId, ...(patched.parts.length > 0 ? { parts: patched.parts } : {}), type: 'message-patch' });
     }
 
-    finalResult = await this.attachResponseHistoryUsageSignature(runtime, finalResult);
+    const usageAnnotatedResult = await this.attachResponseHistoryUsageSignature(runtime, finalResult);
+    if (JSON.stringify(finalResult.metadata ?? null) !== JSON.stringify(usageAnnotatedResult.metadata ?? null)) {
+      this.emit(task, {
+        messageId: runtime.assistantMessageId,
+        metadata: cloneJsonValue(usageAnnotatedResult.metadata ?? {}),
+        type: 'message-metadata',
+      });
+    }
+    finalResult = usageAnnotatedResult;
     this.emit(task, { messageId: runtime.assistantMessageId, status: 'completed', type: 'finish' });
     try {
       await runtime.onSent?.(finalResult);
@@ -174,6 +229,10 @@ export class ConversationTaskService {
   private async writeTaskSnapshot(runtime: ConversationTaskRuntime, status: ChatMessageStatus, error: string | null = null): Promise<ConversationTaskSnapshot> {
     const snapshot: ConversationTaskSnapshot = {
       content: runtime.state.content.trim(),
+      continuationState: {
+        hasAssistantTextOutput: runtime.state.hasAssistantTextOutput,
+        hasToolActivity: runtime.state.hasToolActivity,
+      },
       ...(runtime.state.metadata ? { metadata: finalizeConversationTaskMetadata(runtime.state.metadata, status) } : {}),
       modelId: runtime.modelId,
       parts: toAssistantParts(runtime.state.content),
@@ -181,8 +240,39 @@ export class ConversationTaskService {
       toolCalls: runtime.state.toolCalls.map((entry) => ({ ...entry })),
       toolResults: runtime.state.toolResults.map((entry) => ({ ...entry })),
     };
-    await this.runtimeHostConversationMessageService.writeMessage(runtime.conversationId, runtime.assistantMessageId, readConversationTaskMessageBody(snapshot, status, error));
+    await this.conversationMessages.writeMessage(runtime.conversationId, runtime.assistantMessageId, readConversationTaskMessageBody(snapshot, status, error));
     return snapshot;
+  }
+
+  private async prepareTaskRetry(
+    task: ConversationTaskHandle,
+    runtime: ConversationTaskRuntime,
+    attempt: number,
+    message: string,
+    delayMs: number,
+  ): Promise<void> {
+    resetConversationTaskState(runtime);
+    await this.writeTaskSnapshot(runtime, 'pending');
+    const assistantMessage = this.conversationStore.requireConversation(runtime.conversationId).messages.find(
+      (entry) => entry.id === runtime.assistantMessageId,
+    );
+    if (assistantMessage) {
+      const serializedAssistantMessage = serializeConversationMessage(assistantMessage as never) as unknown as Extract<
+        ConversationTaskEvent,
+        { type: 'message-start' }
+      >['assistantMessage'];
+      this.emit(task, {
+        assistantMessage: serializedAssistantMessage,
+        type: 'message-start',
+      });
+    }
+    this.emit(task, {
+      attempt,
+      message,
+      messageId: runtime.assistantMessageId,
+      next: Date.now() + Math.max(0, delayMs),
+      type: 'retry',
+    });
   }
 
   private emit(task: ConversationTaskHandle, event: ConversationTaskEvent): void { for (const listener of task.listeners) {listener(event);} }
@@ -199,7 +289,7 @@ export class ConversationTaskService {
     if (!usage) {
       return result;
     }
-    const history = this.runtimeHostConversationRecordService.readConversationHistory(
+    const history = this.conversationStore.readConversationHistory(
       runtime.conversationId,
     ) as { messages?: unknown };
     if (!Array.isArray(history.messages)) {
@@ -219,7 +309,7 @@ export class ConversationTaskService {
       return result;
     }
     const nextResult = { ...result, metadata };
-    await this.runtimeHostConversationMessageService.writeMessage(
+    await this.conversationMessages.writeMessage(
       runtime.conversationId,
       runtime.assistantMessageId,
       readConversationTaskMessageBody(nextResult, 'completed'),
@@ -267,6 +357,18 @@ function readConversationTaskMessageBody(
   return { content: input.content, error, metadata: input.metadata, model: input.modelId, parts: input.parts, provider: input.providerId, status, toolCalls: input.toolCalls, toolResults: input.toolResults };
 }
 
+function resetConversationTaskState(runtime: ConversationTaskRuntime): void {
+  runtime.requestHistorySignature = undefined;
+  runtime.state = {
+    content: '',
+    hasAssistantTextOutput: false,
+    hasToolActivity: false,
+    metadata: undefined,
+    toolCalls: [],
+    toolResults: [],
+  };
+}
+
 function readConversationTaskEvents(
   state: ConversationTaskRuntime['state'],
   messageId: string,
@@ -278,14 +380,134 @@ function readConversationTaskEvents(
   if (!part) {return metadataEvents;}
   if (part.type === 'text-delta') {
     state.content += part.text;
+    state.hasAssistantTextOutput = state.hasAssistantTextOutput || part.text.trim().length > 0;
     return [...metadataEvents, { messageId, text: part.text, type: 'text-delta' }];
   }
   if (part.type === 'tool-call') {
+    state.hasToolActivity = true;
     state.toolCalls.push({ input: part.input, toolCallId: part.toolCallId, toolName: part.toolName });
     return [...metadataEvents, { input: part.input, messageId, toolCallId: part.toolCallId, toolName: part.toolName, type: 'tool-call' }];
   }
-  state.toolResults.push({ output: part.output, toolCallId: part.toolCallId, toolName: part.toolName });
-  return [...metadataEvents, { messageId, output: part.output, toolCallId: part.toolCallId, toolName: part.toolName, type: 'tool-result' }];
+  const output = compactConversationToolResultOutput(part.output);
+  state.hasToolActivity = true;
+  state.toolResults.push({ output, toolCallId: part.toolCallId, toolName: part.toolName });
+  return [...metadataEvents, { messageId, output, toolCallId: part.toolCallId, toolName: part.toolName, type: 'tool-result' }];
+}
+
+function resolveConversationTaskRetryConfig(config?: AiChatAutoRetryConfig): ResolvedConversationTaskRetryConfig {
+  return {
+    ...DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG,
+    ...(config ?? {}),
+    maxRetries: normalizeRetryInt(config?.maxRetries, DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG.maxRetries),
+    initialDelayMs: normalizeRetryInt(config?.initialDelayMs, DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG.initialDelayMs),
+    maxDelayMs: normalizeRetryInt(config?.maxDelayMs, DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG.maxDelayMs),
+    backoffFactor: normalizeRetryFactor(config?.backoffFactor, DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG.backoffFactor),
+  };
+}
+
+function shouldRetryConversationTask(
+  completedRetries: number,
+  config: ResolvedConversationTaskRetryConfig,
+  error: unknown,
+): boolean {
+  return config.enabled && completedRetries < config.maxRetries && Boolean(readConversationTaskRetryMessage(error));
+}
+
+function readConversationTaskRetryMessage(error: unknown): string | null {
+  if (APICallError.isInstance(error)) {
+    if (!error.isRetryable && !(typeof error.statusCode === 'number' && error.statusCode >= 500)) {
+      return null;
+    }
+    if (typeof error.responseBody === 'string' && error.responseBody.includes('FreeUsageLimitError')) {
+      return null;
+    }
+    return error.message.includes('Overloaded') ? 'Provider is overloaded' : error.message;
+  }
+  if (!(error instanceof Error)) {
+    return null;
+  }
+  const lower = error.message.toLowerCase();
+  if (
+    lower.includes('rate limit')
+    || lower.includes('too many requests')
+    || lower.includes('overloaded')
+    || lower.includes('network')
+    || lower.includes('fetch')
+    || lower.includes('econnreset')
+    || lower.includes('econnrefused')
+    || lower.includes('timedout')
+    || lower.includes('socket hang up')
+  ) {
+    return error.message;
+  }
+  return null;
+}
+
+function readConversationTaskRetryDelay(
+  attempt: number,
+  config: ResolvedConversationTaskRetryConfig,
+  error: unknown,
+): number {
+  const headerDelay = APICallError.isInstance(error)
+    ? readConversationTaskRetryAfterHeader(error.responseHeaders)
+    : null;
+  if (headerDelay !== null) {
+    return headerDelay;
+  }
+  const baseDelay = config.initialDelayMs * Math.pow(config.backoffFactor, Math.max(0, attempt - 1));
+  return Math.min(Math.max(0, Math.ceil(baseDelay)), Math.max(0, config.maxDelayMs));
+}
+
+function readConversationTaskRetryAfterHeader(headers?: Record<string, string>): number | null {
+  if (!headers) {
+    return null;
+  }
+  const retryAfterMs = headers['retry-after-ms'];
+  if (retryAfterMs) {
+    const parsed = Number.parseFloat(retryAfterMs);
+    if (!Number.isNaN(parsed) && parsed >= 0) {
+      return Math.ceil(parsed);
+    }
+  }
+  const retryAfter = headers['retry-after'];
+  if (!retryAfter) {
+    return null;
+  }
+  const parsedSeconds = Number.parseFloat(retryAfter);
+  if (!Number.isNaN(parsedSeconds) && parsedSeconds >= 0) {
+    return Math.ceil(parsedSeconds * 1000);
+  }
+  const parsedDateDelay = Date.parse(retryAfter) - Date.now();
+  return Number.isNaN(parsedDateDelay) || parsedDateDelay < 0 ? null : Math.ceil(parsedDateDelay);
+}
+
+async function waitForConversationTaskRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (delayMs <= 0) {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function normalizeRetryInt(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : fallback;
+}
+
+function normalizeRetryFactor(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 1 ? value : fallback;
 }
 
 function readConversationTaskMetadataEvents(
@@ -336,6 +558,20 @@ function readConversationTaskCustomBlock(
   return update.kind === 'text'
     ? { ...base, kind: 'text', text: `${currentBlock?.kind === 'text' ? currentBlock.text : ''}${update.value}` }
     : { ...base, data: cloneJsonValue(update.value), kind: 'json' };
+}
+
+function compactConversationToolResultOutput(value: JsonValue): JsonValue {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return cloneJsonValue(value);
+  }
+  const record = value as Record<string, JsonValue>;
+  if ((record.kind === 'tool:text' && typeof record.value === 'string') || record.kind === 'tool:json') {
+    return cloneJsonValue({
+      kind: record.kind,
+      value: cloneJsonValue(record.value ?? null),
+    });
+  }
+  return cloneJsonValue(value);
 }
 
 function finalizeConversationTaskMetadata(metadata: ChatMessageMetadata | undefined, status: ChatMessageStatus): ChatMessageMetadata | undefined {

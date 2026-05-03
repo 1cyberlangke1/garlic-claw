@@ -147,12 +147,12 @@ describe('AutomationService', () => {
   });
 
   it('routes device_command actions through runtime kernel execution', async () => {
-    const runtimeHostPluginDispatchService = {
+    const pluginDispatch = {
       executeTool: jest.fn().mockResolvedValue({ saved: true, id: 'memory-1' }),
       invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
       listPlugins: jest.fn().mockReturnValue([]),
     };
-    service = createService({ runtimeHostPluginDispatchService });
+    service = createService({ pluginDispatch });
 
     service.create('user-1', {
       actions: [
@@ -178,7 +178,7 @@ describe('AutomationService', () => {
         },
       ],
     });
-    expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenCalledWith({
+    expect(pluginDispatch.executeTool).toHaveBeenCalledWith({
       pluginId: 'builtin.memory',
       toolName: 'save_memory',
       params: { content: '自动化保存的记忆' },
@@ -187,12 +187,12 @@ describe('AutomationService', () => {
   });
 
   it('records error logs when automation execution returns error status', async () => {
-    const runtimeHostPluginDispatchService = {
+    const pluginDispatch = {
       executeTool: jest.fn().mockRejectedValue(new Error('tool failed')),
       invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
       listPlugins: jest.fn().mockReturnValue([]),
     };
-    service = createService({ runtimeHostPluginDispatchService });
+    service = createService({ pluginDispatch });
 
     service.create('user-1', {
       actions: [
@@ -225,7 +225,7 @@ describe('AutomationService', () => {
   });
 
   it('runs automation:after-run hooks even when action execution fails', async () => {
-    const runtimeHostPluginDispatchService = {
+    const pluginDispatch = {
       executeTool: jest.fn().mockRejectedValue(new Error('tool failed')),
       invokeHook: jest.fn().mockImplementation(async ({ hookName }: { hookName: string }) => {
         if (hookName === 'automation:after-run') {
@@ -247,7 +247,7 @@ describe('AutomationService', () => {
         },
       ]),
     };
-    service = createService({ runtimeHostPluginDispatchService });
+    service = createService({ pluginDispatch });
 
     service.create('user-1', {
       actions: [
@@ -266,7 +266,7 @@ describe('AutomationService', () => {
       status: 'after-error',
       results: [{ action: 'hook', result: 'after-error rewrite' }],
     });
-    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenCalledWith({
+    expect(pluginDispatch.invokeHook).toHaveBeenCalledWith({
       context: { source: 'automation', userId: 'user-1', automationId: 'automation-1' },
       hookName: 'automation:after-run',
       pluginId: 'builtin.automation-recorder',
@@ -285,13 +285,13 @@ describe('AutomationService', () => {
         ],
       },
     });
-    expect(runtimeHostPluginDispatchService.executeTool.mock.invocationCallOrder[0]).toBeLessThan(
-      runtimeHostPluginDispatchService.invokeHook.mock.invocationCallOrder[0],
+    expect(pluginDispatch.executeTool.mock.invocationCallOrder[0]).toBeLessThan(
+      pluginDispatch.invokeHook.mock.invocationCallOrder[0],
     );
   });
 
   it('supports automation:before-run short-circuit and skips action execution', async () => {
-    const runtimeHostPluginDispatchService = {
+    const pluginDispatch = {
       executeTool: jest.fn(),
       invokeHook: jest.fn().mockResolvedValue({
         action: 'short-circuit',
@@ -308,7 +308,7 @@ describe('AutomationService', () => {
         },
       ]),
     };
-    service = createService({ runtimeHostPluginDispatchService });
+    service = createService({ pluginDispatch });
 
     service.create('user-1', {
       actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: '原始内容' } }],
@@ -320,11 +320,11 @@ describe('AutomationService', () => {
       status: 'success',
       results: [{ action: 'hook', result: '由插件直接完成' }],
     });
-    expect(runtimeHostPluginDispatchService.executeTool).not.toHaveBeenCalled();
+    expect(pluginDispatch.executeTool).not.toHaveBeenCalled();
   });
 
   it('supports automation:after-run mutations on status and results', async () => {
-    const runtimeHostPluginDispatchService = {
+    const pluginDispatch = {
       executeTool: jest.fn().mockResolvedValue({ saved: true }),
       invokeHook: jest.fn().mockImplementation(async ({ hookName }: { hookName: string }) => {
         if (hookName === 'automation:after-run') {
@@ -346,7 +346,7 @@ describe('AutomationService', () => {
         },
       ]),
     };
-    service = createService({ runtimeHostPluginDispatchService });
+    service = createService({ pluginDispatch });
 
     service.create('user-1', {
       actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: '原始结果' } }],
@@ -358,10 +358,10 @@ describe('AutomationService', () => {
       status: 'mutated',
       results: [{ action: 'hook', result: 'after-run rewrite' }],
     });
-    expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenCalledTimes(1);
-    expect(runtimeHostPluginDispatchService.listPlugins).toHaveBeenCalledTimes(2);
-    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenCalledTimes(1);
-    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenCalledWith({
+    expect(pluginDispatch.executeTool).toHaveBeenCalledTimes(1);
+    expect(pluginDispatch.listPlugins).toHaveBeenCalledTimes(2);
+    expect(pluginDispatch.invokeHook).toHaveBeenCalledTimes(1);
+    expect(pluginDispatch.invokeHook).toHaveBeenCalledWith({
       context: { source: 'automation', userId: 'user-1', automationId: 'automation-1' },
       hookName: 'automation:after-run',
       pluginId: 'builtin.automation-recorder',
@@ -391,18 +391,18 @@ describe('AutomationService', () => {
         ],
       },
     });
-    expect(runtimeHostPluginDispatchService.executeTool.mock.invocationCallOrder[0]).toBeLessThan(
-      runtimeHostPluginDispatchService.invokeHook.mock.invocationCallOrder[0],
+    expect(pluginDispatch.executeTool.mock.invocationCallOrder[0]).toBeLessThan(
+      pluginDispatch.invokeHook.mock.invocationCallOrder[0],
     );
   });
 
   it('routes ai_message actions through the unified message.send chain', async () => {
-    const runtimeHostPluginDispatchService = {
+    const pluginDispatch = {
       executeTool: jest.fn(),
       invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
       listPlugins: jest.fn().mockReturnValue([]),
     };
-    const runtimeHostConversationMessageService = {
+    const conversationMessages = {
       sendMessage: jest.fn().mockResolvedValue({
         id: 'message-1',
         target: {
@@ -418,7 +418,7 @@ describe('AutomationService', () => {
         updatedAt: '2026-03-29T15:00:00.000Z',
       }),
     };
-    service = createService({ runtimeHostPluginDispatchService, conversationMessageService: runtimeHostConversationMessageService });
+    service = createService({ pluginDispatch, conversationMessageService: conversationMessages });
 
     service.create('user-1', {
       actions: [{ type: 'ai_message', message: '咖啡已经煮好了', target: { type: 'conversation', id: 'conversation-1' } }],
@@ -445,14 +445,14 @@ describe('AutomationService', () => {
         },
       ],
     });
-    expect(runtimeHostConversationMessageService.sendMessage).toHaveBeenCalledWith(
+    expect(conversationMessages.sendMessage).toHaveBeenCalledWith(
       { source: 'automation', userId: 'user-1', automationId: 'automation-1', conversationId: 'conversation-1' },
       { content: '咖啡已经煮好了', target: { type: 'conversation', id: 'conversation-1' } },
     );
   });
 
   it('passes the first conversation target into later device_command action context', async () => {
-    const runtimeHostPluginDispatchService = {
+    const pluginDispatch = {
       executeTool: jest.fn().mockResolvedValue({ conversationId: 'subagent-conversation-1' }),
       invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
       listPlugins: jest.fn().mockReturnValue([]),
@@ -460,7 +460,7 @@ describe('AutomationService', () => {
     const toolRegistryService = {
       executeRegisteredTool: jest.fn().mockResolvedValue({ conversationId: 'subagent-conversation-1' }),
     };
-    const runtimeHostConversationMessageService = {
+    const conversationMessages = {
       sendMessage: jest.fn().mockResolvedValue({
         id: 'message-1',
         target: {
@@ -476,8 +476,8 @@ describe('AutomationService', () => {
       }),
     };
     service = createService({
-      runtimeHostPluginDispatchService,
-      conversationMessageService: runtimeHostConversationMessageService,
+      pluginDispatch,
+      conversationMessageService: conversationMessages,
       toolRegistryService,
     });
 
@@ -541,12 +541,12 @@ describe('AutomationService', () => {
   });
 
   it('schedules enabled cron automations and runs them on interval', async () => {
-    const runtimeHostPluginDispatchService = {
+    const pluginDispatch = {
       executeTool: jest.fn().mockResolvedValue({ saved: true }),
       invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
       listPlugins: jest.fn().mockReturnValue([]),
     };
-    service = createService({ runtimeHostPluginDispatchService });
+    service = createService({ pluginDispatch });
 
     service.create('user-1', {
       actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: '定时执行' } }],
@@ -556,7 +556,7 @@ describe('AutomationService', () => {
 
     await jest.advanceTimersByTimeAsync(10000);
 
-    expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenCalledWith({
+    expect(pluginDispatch.executeTool).toHaveBeenCalledWith({
       pluginId: 'builtin.memory',
       toolName: 'save_memory',
       params: { content: '定时执行' },
@@ -565,12 +565,12 @@ describe('AutomationService', () => {
   });
 
   it('supports standard cron expressions for scheduled automations', async () => {
-    const runtimeHostPluginDispatchService = {
+    const pluginDispatch = {
       executeTool: jest.fn().mockResolvedValue({ saved: true }),
       invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
       listPlugins: jest.fn().mockReturnValue([]),
     };
-    service = createService({ runtimeHostPluginDispatchService });
+    service = createService({ pluginDispatch });
 
     service.create('user-1', {
       actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: 'cron 表达式执行' } }],
@@ -580,7 +580,7 @@ describe('AutomationService', () => {
 
     await jest.advanceTimersByTimeAsync(1000);
 
-    expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenCalledWith({
+    expect(pluginDispatch.executeTool).toHaveBeenCalledWith({
       pluginId: 'builtin.memory',
       toolName: 'save_memory',
       params: { content: 'cron 表达式执行' },
@@ -707,12 +707,12 @@ describe('AutomationService', () => {
   });
 
   it('restores cron automations on module init after restart', async () => {
-    const runtimeHostPluginDispatchService = {
+    const pluginDispatch = {
       executeTool: jest.fn().mockResolvedValue({ saved: true }),
       invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
       listPlugins: jest.fn().mockReturnValue([]),
     };
-    service = createService({ runtimeHostPluginDispatchService });
+    service = createService({ pluginDispatch });
 
     service.create(SINGLE_USER_ID, {
       actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: '恢复执行' } }],
@@ -726,7 +726,7 @@ describe('AutomationService', () => {
       invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
       listPlugins: jest.fn().mockReturnValue([]),
     };
-    const reloaded = createService({ runtimeHostPluginDispatchService: reloadedKernel });
+    const reloaded = createService({ pluginDispatch: reloadedKernel });
     reloaded.onModuleInit();
 
     await jest.advanceTimersByTimeAsync(10000);
@@ -773,7 +773,7 @@ describe('AutomationService', () => {
 function createService(input?: {
   conversationMessageService?: Pick<ConversationMessageService, 'sendMessage'>;
   conversationRecordService?: ConversationStoreService;
-  runtimeHostPluginDispatchService?: {
+  pluginDispatch?: {
     executeTool: (...args: unknown[]) => Promise<unknown>;
     invokeHook: (...args: unknown[]) => Promise<unknown>;
     listPlugins: () => unknown[];
@@ -782,20 +782,20 @@ function createService(input?: {
     executeRegisteredTool: (...args: unknown[]) => Promise<unknown>;
   };
 }): AutomationService {
-  const runtimeHostPluginDispatchService = input?.runtimeHostPluginDispatchService ?? {
+  const pluginDispatch = input?.pluginDispatch ?? {
     executeTool: jest.fn(),
     invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
     listPlugins: jest.fn().mockReturnValue([]),
   };
   const automationExecutionService = new AutomationExecutionService(
-    runtimeHostPluginDispatchService as never,
+    pluginDispatch as never,
     (input?.conversationMessageService ?? {
       sendMessage: async () => {
         throw new Error('ConversationMessageService is not available');
       },
     }) as never,
     (input?.toolRegistryService ?? {
-      executeRegisteredTool: async ({ context, params, sourceId, toolName }: { context: unknown; params: unknown; sourceId: string; toolName: string }) => runtimeHostPluginDispatchService.executeTool({ context, params, pluginId: sourceId, toolName }),
+      executeRegisteredTool: async ({ context, params, sourceId, toolName }: { context: unknown; params: unknown; sourceId: string; toolName: string }) => pluginDispatch.executeTool({ context, params, pluginId: sourceId, toolName }),
     }) as never,
   );
   return new AutomationService(
@@ -815,3 +815,4 @@ function createConversationServices(): {
     conversationRecordService,
   };
 }
+

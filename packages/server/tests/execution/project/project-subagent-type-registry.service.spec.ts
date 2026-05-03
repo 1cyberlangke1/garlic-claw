@@ -25,53 +25,81 @@ describe('ProjectSubagentTypeRegistryService', () => {
       {
         id: 'explore',
         name: '探索',
-        description: '偏向资料探索与技能加载。默认开放 webfetch 与 skill，并附带探索导向提示词。',
+        description: '只读探索。适合检索资料、读取代码、收集上下文与加载技能，不主动修改文件。',
       },
       {
         id: 'general',
         name: '通用',
-        description: '默认子代理类型。沿用当前请求显式指定的模型与系统提示词，不额外裁剪工具。',
+        description: '通用执行。适合需要读写文件、串联工具并产出最终结果的普通任务。沿用当前请求显式指定的模型与系统提示词，不额外裁剪工具。',
+      },
+      {
+        id: 'review',
+        name: '审阅',
+        description: '审阅挑错。适合复核方案、找风险、列缺口，优先给出证据与结论，不主动修改文件。',
+      },
+      {
+        id: 'writer',
+        name: '写作',
+        description: '写作整理。适合草拟文案、总结、改写与创意写作，优先直接产出可复用文本。',
       },
     ]);
     expect(fs.existsSync(path.join(storageRoot, 'general', 'subagent.json'))).toBe(true);
     expect(fs.existsSync(path.join(storageRoot, 'explore', 'subagent.json'))).toBe(true);
+    expect(fs.existsSync(path.join(storageRoot, 'review', 'subagent.json'))).toBe(true);
+    expect(fs.existsSync(path.join(storageRoot, 'writer', 'subagent.json'))).toBe(true);
     expect(fs.readFileSync(path.join(storageRoot, 'explore', 'prompt.md'), 'utf-8')).toBe('你是一个专注于探索与信息收集的子代理。\n优先检索、抓取、整理上下文，不主动修改文件。\n如果信息不足，先继续检索，再给出结论。');
+    expect(JSON.parse(fs.readFileSync(path.join(storageRoot, 'explore', 'subagent.json'), 'utf-8'))).toEqual({
+      id: 'explore',
+      name: '探索',
+      description: '只读探索。适合检索资料、读取代码、收集上下文与加载技能，不主动修改文件。',
+      toolNames: ['read', 'glob', 'grep', 'webfetch', 'skill'],
+    });
 
-    fs.mkdirSync(path.join(storageRoot, 'review'), { recursive: true });
-    fs.writeFileSync(path.join(storageRoot, 'review', 'subagent.json'), JSON.stringify({
-      id: 'review',
-      name: '审阅',
-      description: '聚焦审阅与风险检查。',
+    fs.mkdirSync(path.join(storageRoot, 'planner'), { recursive: true });
+    fs.writeFileSync(path.join(storageRoot, 'planner', 'subagent.json'), JSON.stringify({
+      id: 'planner',
+      name: '规划',
+      description: '聚焦规划与拆解。',
       providerId: 'openai',
       modelId: 'gpt-5.4',
       toolNames: ['webfetch'],
     }, null, 2), 'utf-8');
-    fs.writeFileSync(path.join(storageRoot, 'review', 'prompt.md'), '你是一个审阅子代理。\n优先指出风险与缺口。', 'utf-8');
+    fs.writeFileSync(path.join(storageRoot, 'planner', 'prompt.md'), '你是一个规划子代理。\n优先拆解任务与安排步骤。', 'utf-8');
 
     expect(service.listTypes()).toEqual([
       {
         id: 'explore',
         name: '探索',
-        description: '偏向资料探索与技能加载。默认开放 webfetch 与 skill，并附带探索导向提示词。',
+        description: '只读探索。适合检索资料、读取代码、收集上下文与加载技能，不主动修改文件。',
       },
       {
         id: 'general',
         name: '通用',
-        description: '默认子代理类型。沿用当前请求显式指定的模型与系统提示词，不额外裁剪工具。',
+        description: '通用执行。适合需要读写文件、串联工具并产出最终结果的普通任务。沿用当前请求显式指定的模型与系统提示词，不额外裁剪工具。',
+      },
+      {
+        id: 'planner',
+        name: '规划',
+        description: '聚焦规划与拆解。',
       },
       {
         id: 'review',
         name: '审阅',
-        description: '聚焦审阅与风险检查。',
+        description: '审阅挑错。适合复核方案、找风险、列缺口，优先给出证据与结论，不主动修改文件。',
+      },
+      {
+        id: 'writer',
+        name: '写作',
+        description: '写作整理。适合草拟文案、总结、改写与创意写作，优先直接产出可复用文本。',
       },
     ]);
-    expect(service.getType('review')).toEqual({
-      description: '聚焦审阅与风险检查。',
-      id: 'review',
+    expect(service.getType('planner')).toEqual({
+      description: '聚焦规划与拆解。',
+      id: 'planner',
       modelId: 'gpt-5.4',
-      name: '审阅',
+      name: '规划',
       providerId: 'openai',
-      system: '你是一个审阅子代理。\n优先指出风险与缺口。',
+      system: '你是一个规划子代理。\n优先拆解任务与安排步骤。',
       toolNames: ['webfetch'],
     });
   });

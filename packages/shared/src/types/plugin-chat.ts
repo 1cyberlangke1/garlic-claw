@@ -3,6 +3,7 @@ import type {
   ChatMessagePart,
   ChatMessageStatus,
 } from './chat';
+import type { AiModelUsage } from './ai';
 import type { JsonValue } from './json';
 import type { PluginCallContext } from './plugin';
 import type { PluginLlmMessage } from './plugin-ai';
@@ -61,6 +62,7 @@ export interface PluginConversationHistoryPreviewParams {
 /** 会话历史预览结果。 */
 export interface PluginConversationHistoryPreviewResult {
   estimatedTokens: number;
+  source: AiModelUsage['source'];
   messageCount: number;
   textBytes: number;
 }

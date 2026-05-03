@@ -138,6 +138,168 @@ describe('dispatchSendMessage', () => {
     })
   })
 
+  it('requests an immediate conversation snapshot refresh when auto-compaction continuation starts', async () => {
+    vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
+      async (_conversationId, _payload, onEvent) => {
+        onEvent({
+          type: 'message-start',
+          assistantMessage: {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            status: 'pending',
+          },
+        })
+        onEvent({
+          type: 'message-start',
+          userMessage: {
+            id: 'user-continue-1',
+            role: 'user',
+            content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+            partsJson: JSON.stringify([
+              {
+                type: 'text',
+                text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+              },
+            ]),
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: JSON.stringify({
+              annotations: [
+                {
+                  data: {
+                    role: 'continue',
+                    synthetic: true,
+                    trigger: 'after-response',
+                  },
+                  owner: 'conversation.context-governance',
+                  type: 'context-compaction',
+                  version: '1',
+                },
+              ],
+            }),
+            provider: null,
+            model: null,
+            status: 'completed',
+            error: null,
+            createdAt: '2026-05-03T14:00:00.000Z',
+            updatedAt: '2026-05-03T14:00:00.000Z',
+          },
+          assistantMessage: {
+            id: 'assistant-2',
+            role: 'assistant',
+            content: '',
+            partsJson: null,
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: null,
+            provider: 'demo-provider',
+            model: 'demo-model',
+            status: 'pending',
+            error: null,
+            createdAt: '2026-05-03T14:00:01.000Z',
+            updatedAt: '2026-05-03T14:00:01.000Z',
+          },
+        } as unknown as Parameters<typeof onEvent>[0])
+      },
+    )
+    const state = createState()
+    const refreshConversationSnapshot = vi.fn().mockResolvedValue(undefined)
+
+    const params = {
+      refreshConversationSnapshot,
+    } as Parameters<typeof dispatchSendMessage>[2]
+
+    await dispatchSendMessage(
+      state,
+      {
+        content: 'hello',
+      },
+      params,
+    )
+
+    expect(refreshConversationSnapshot).toHaveBeenCalledTimes(1)
+  })
+
+  it('requests an immediate conversation snapshot refresh when retry enters auto-compaction continuation', async () => {
+    vi.mocked(chatConversationData.retryConversationMessage).mockImplementation(
+      async (_conversationId, _messageId, _payload, onEvent) => {
+        onEvent({
+          type: 'message-start',
+          userMessage: {
+            id: 'user-continue-1',
+            role: 'user',
+            content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+            partsJson: JSON.stringify([
+              {
+                type: 'text',
+                text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+              },
+            ]),
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: JSON.stringify({
+              annotations: [
+                {
+                  data: {
+                    role: 'continue',
+                    synthetic: true,
+                    trigger: 'after-response',
+                  },
+                  owner: 'conversation.context-governance',
+                  type: 'context-compaction',
+                  version: '1',
+                },
+              ],
+            }),
+            provider: null,
+            model: null,
+            status: 'completed',
+            error: null,
+            createdAt: '2026-05-03T14:00:00.000Z',
+            updatedAt: '2026-05-03T14:00:00.000Z',
+          },
+          assistantMessage: {
+            id: 'assistant-2',
+            role: 'assistant',
+            content: '',
+            partsJson: null,
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: null,
+            provider: 'demo-provider',
+            model: 'demo-model',
+            status: 'pending',
+            error: null,
+            createdAt: '2026-05-03T14:00:01.000Z',
+            updatedAt: '2026-05-03T14:00:01.000Z',
+          },
+        } as unknown as Parameters<typeof onEvent>[0])
+      },
+    )
+    const state = createState([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'old',
+        status: 'completed',
+      },
+    ])
+    const refreshConversationSnapshot = vi.fn().mockResolvedValue(undefined)
+
+    const params = {
+      refreshConversationSnapshot,
+    } as Parameters<typeof dispatchRetryMessage>[2]
+
+    await dispatchRetryMessage(
+      state,
+      'assistant-1',
+      params,
+    )
+
+    expect(refreshConversationSnapshot).toHaveBeenCalledTimes(1)
+  })
+
   it('applies message-start immediately so display command messages do not wait for stream completion', async () => {
     let capturedState: ReturnType<typeof createState> | null = null
     vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
@@ -623,5 +785,80 @@ describe('dispatchSendMessage', () => {
         content: 'new conversation message',
       }),
     ])
+  })
+
+  it('kicks off an immediate detail recovery when send ends but the local stream is still marked active', async () => {
+    vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
+      async (_conversationId, _payload, onEvent) => {
+        onEvent({
+          type: 'message-start',
+          assistantMessage: {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            status: 'pending',
+          },
+        })
+      },
+    )
+    const state = createState()
+    const loadConversationDetail = vi.fn().mockResolvedValue(undefined)
+    const refreshConversationState = vi.fn().mockResolvedValue(undefined)
+
+    await dispatchSendMessage(
+      state,
+      {
+        content: 'hello',
+      },
+      {
+        loadConversationDetail,
+        refreshConversationState,
+      },
+    )
+
+    expect(refreshConversationState).toHaveBeenCalledTimes(1)
+    expect(state.streaming.value).toBe(true)
+    expect(loadConversationDetail).toHaveBeenCalledTimes(1)
+    expect(loadConversationDetail).toHaveBeenCalledWith('conversation-1')
+  })
+
+  it('kicks off an immediate detail recovery when retry ends but the local stream is still marked active', async () => {
+    vi.mocked(chatConversationData.retryConversationMessage).mockImplementation(
+      async (_conversationId, _messageId, _payload, onEvent) => {
+        onEvent({
+          type: 'message-start',
+          assistantMessage: {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            status: 'pending',
+          },
+        })
+      },
+    )
+    const state = createState([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'old',
+        status: 'completed',
+      },
+    ])
+    const loadConversationDetail = vi.fn().mockResolvedValue(undefined)
+    const refreshConversationState = vi.fn().mockResolvedValue(undefined)
+
+    await dispatchRetryMessage(
+      state,
+      'assistant-1',
+      {
+        loadConversationDetail,
+        refreshConversationState,
+      },
+    )
+
+    expect(refreshConversationState).toHaveBeenCalledTimes(1)
+    expect(state.streaming.value).toBe(true)
+    expect(loadConversationDetail).toHaveBeenCalledTimes(1)
+    expect(loadConversationDetail).toHaveBeenCalledWith('conversation-1')
   })
 })

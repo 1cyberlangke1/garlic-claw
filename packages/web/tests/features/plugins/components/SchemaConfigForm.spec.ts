@@ -37,6 +37,16 @@ vi.mock('@/modules/plugins/api/plugins', () => ({
       id: 'explore',
       name: '探索',
     },
+    {
+      id: 'review',
+      name: '审阅',
+      description: '优先找风险与缺口',
+    },
+    {
+      id: 'writer',
+      name: '写作',
+      description: '优先产出可复用文本',
+    },
   ]),
 }))
 
@@ -104,7 +114,12 @@ function mountSchemaConfigForm(options: Parameters<typeof mount<typeof SchemaCon
 
 describe('SchemaConfigForm', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('emits nested config values from object-tree schema', async () => {
@@ -253,6 +268,8 @@ describe('SchemaConfigForm', () => {
     const options = wrapper.findAll('option').map((node) => node.text())
     expect(options).toContain('通用')
     expect(options).toContain('探索')
+    expect(options).toContain('审阅')
+    expect(options).toContain('写作')
     expect(options).toContain('使用默认子代理类型')
   })
 
@@ -396,6 +413,60 @@ describe('SchemaConfigForm', () => {
     expect(wrapper.text()).not.toContain('隐藏字段')
   })
 
+  it('resolves nested field conditions against the current object scope', async () => {
+    const wrapper = mountSchemaConfigForm({
+      props: {
+        saving: false,
+        snapshot: {
+          schema: {
+            type: 'object',
+            items: {
+              contextCompaction: {
+                type: 'object',
+                description: '上下文压缩',
+                items: {
+                  strategy: {
+                    type: 'string',
+                    description: '策略',
+                    options: [
+                      {
+                        value: 'summary',
+                        label: '摘要压缩',
+                      },
+                      {
+                        value: 'sliding',
+                        label: '滑动窗口',
+                      },
+                    ],
+                  },
+                  compressionThreshold: {
+                    type: 'int',
+                    description: '自动触发阈值',
+                    condition: {
+                      strategy: 'summary',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          values: {
+            contextCompaction: {
+              strategy: 'summary',
+              compressionThreshold: 72,
+            },
+          },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('自动触发阈值')
+
+    await wrapper.findAll('select')[0].setValue('sliding')
+
+    expect(wrapper.text()).not.toContain('自动触发阈值')
+  })
+
   it('shows a clear error when list fields contain invalid JSON', async () => {
     const wrapper = mountSchemaConfigForm({
       props: {
@@ -429,6 +500,19 @@ describe('SchemaConfigForm', () => {
           schema: {
             type: 'object',
             items: {
+              approvalMode: {
+                type: 'string',
+                options: [
+                  {
+                    value: 'review',
+                    label: '审批确认',
+                  },
+                  {
+                    value: 'yolo',
+                    label: 'YOLO 直通',
+                  },
+                ],
+              },
               shellBackend: {
                 type: 'string',
                 options: process.platform === 'win32'
@@ -478,6 +562,7 @@ describe('SchemaConfigForm', () => {
             },
           },
           values: {
+            approvalMode: 'review',
             shellBackend: 'native-shell',
             bashOutput: {
               maxLines: 80,
@@ -489,7 +574,11 @@ describe('SchemaConfigForm', () => {
       },
     })
 
-    const backendInput = wrapper.get('select.config-input')
+    const selects = wrapper.findAll('select.config-input')
+    const approvalModeInput = selects[0]
+    const backendInput = selects[1]
+    expect((approvalModeInput.element as HTMLSelectElement).value).toBe('review')
+    await approvalModeInput.setValue('yolo')
     expect((backendInput.element as HTMLSelectElement).value).toBe('native-shell')
     await backendInput.setValue(process.platform === 'win32' ? 'just-bash' : 'native-shell')
 
@@ -499,6 +588,7 @@ describe('SchemaConfigForm', () => {
     expect(wrapper.emitted('save')).toEqual([
       [
         {
+          approvalMode: 'yolo',
           shellBackend: process.platform === 'win32' ? 'just-bash' : 'native-shell',
           bashOutput: {
             maxLines: 80,
@@ -555,11 +645,123 @@ describe('SchemaConfigForm', () => {
         scope: 'provider-models',
       },
     }))
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await vi.advanceTimersByTimeAsync(0)
     await flushPromises()
 
     const options = wrapper.findAll('option').map((node) => node.text())
     expect(options).toContain('OpenAI')
     expect(options).toContain('DeepSeek')
+  })
+
+  it('retries auto-save after a failed save when the snapshot has not caught up', async () => {
+    const wrapper = mountSchemaConfigForm({
+      props: {
+        autoSave: true,
+        saving: false,
+        showSaveButton: false,
+        snapshot: {
+          schema: {
+            type: 'object',
+            items: {
+              prompt: {
+                type: 'string',
+              },
+            },
+          },
+          values: {
+            prompt: 'alpha',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('.config-input input').setValue('beta')
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(wrapper.emitted('save')).toEqual([
+      [
+        {
+          prompt: 'beta',
+        },
+      ],
+    ])
+
+    await wrapper.setProps({ saving: true })
+    await wrapper.setProps({ saving: false })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(wrapper.emitted('save')).toEqual([
+      [
+        {
+          prompt: 'beta',
+        },
+      ],
+      [
+        {
+          prompt: 'beta',
+        },
+      ],
+    ])
+  })
+
+  it('does not retry auto-save after the snapshot catches up to the pending draft', async () => {
+    const wrapper = mountSchemaConfigForm({
+      props: {
+        autoSave: true,
+        saving: false,
+        showSaveButton: false,
+        snapshot: {
+          schema: {
+            type: 'object',
+            items: {
+              prompt: {
+                type: 'string',
+              },
+            },
+          },
+          values: {
+            prompt: 'alpha',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('.config-input input').setValue('beta')
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(wrapper.emitted('save')).toEqual([
+      [
+        {
+          prompt: 'beta',
+        },
+      ],
+    ])
+
+    await wrapper.setProps({ saving: true })
+    await wrapper.setProps({
+      snapshot: {
+        schema: {
+          type: 'object',
+          items: {
+            prompt: {
+              type: 'string',
+            },
+          },
+        },
+        values: {
+          prompt: 'beta',
+        },
+      },
+    })
+    await wrapper.setProps({ saving: false })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(wrapper.emitted('save')).toEqual([
+      [
+        {
+          prompt: 'beta',
+        },
+      ],
+    ])
   })
 })

@@ -51,7 +51,7 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
 
   constructor(
     private readonly automationExecutionService: AutomationExecutionService,
-    private readonly runtimeHostConversationRecordService?: ConversationStoreService,
+    private readonly conversationStore?: ConversationStoreService,
   ) {
     const restored = readAutomationState(this.storagePath);
     this.automationSequence = restored.sequence;
@@ -140,11 +140,11 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
     if (!cronChildTarget) {
       return automation;
     }
-    if (!this.runtimeHostConversationRecordService) {
+    if (!this.conversationStore) {
       throw new Error('ConversationStoreService is not available');
     }
-    this.runtimeHostConversationRecordService.requireConversation(cronChildTarget.parentConversationId, automation.userId);
-    const childConversation = this.runtimeHostConversationRecordService.createConversation({
+    this.conversationStore.requireConversation(cronChildTarget.parentConversationId, automation.userId);
+    const childConversation = this.conversationStore.createConversation({
       parentId: cronChildTarget.parentConversationId,
       title: createAutomationRunConversationTitle(automation.name, startedAt),
       userId: automation.userId,
@@ -172,7 +172,7 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
         continue;
       }
       try {
-        this.runtimeHostConversationRecordService?.requireConversation(conversationId, automation.userId);
+        this.conversationStore?.requireConversation(conversationId, automation.userId);
         existingConversationIds.push(conversationId);
       } catch {
         // 用户手动删掉旧会话时，自动从历史索引里移除。
@@ -184,7 +184,7 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
     const keptConversationIds = nextConversationIds.slice(overflowCount);
     for (const conversationId of deletedConversationIds) {
       try {
-        await this.runtimeHostConversationRecordService?.deleteConversation(conversationId, automation.userId);
+        await this.conversationStore?.deleteConversation(conversationId, automation.userId);
       } catch {
         // 历史裁剪以尽力清理为主，不把已删除或清理失败放大成运行失败。
       }

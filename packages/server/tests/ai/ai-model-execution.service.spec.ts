@@ -37,6 +37,15 @@ describe('AiModelExecutionService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGenerateText.mockReset();
+    mockStreamText.mockReset();
+    mockIsLoopFinished.mockClear();
+    mockOpenAiChat.mockClear();
+    mockCreateOpenAI.mockClear();
+    mockAnthropicModel.mockClear();
+    mockCreateAnthropic.mockClear();
+    mockGeminiModel.mockClear();
+    mockCreateGoogleGenerativeAI.mockClear();
     settingsPath = path.join(os.tmpdir(), `gc-server-ai-${Date.now()}-${Math.random()}`);
     process.env.GARLIC_CLAW_AI_SETTINGS_PATH = settingsPath;
     mockGenerateText.mockResolvedValue({
@@ -282,6 +291,41 @@ describe('AiModelExecutionService', () => {
     });
   });
 
+  it('derives total tokens from input and output when the provider omits totalTokens in generate mode', async () => {
+    const service = createService();
+    mockGenerateText.mockResolvedValueOnce({
+      finishReason: 'stop',
+      text: 'partial usage response',
+      usage: {
+        inputTokens: 12,
+        outputTokens: 7,
+      },
+    });
+
+    await expect(service.generateText({
+      messages: [
+        {
+          content: 'hello',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    })).resolves.toEqual({
+      customBlockOrigin: 'ai-sdk.response-body',
+      finishReason: 'stop',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      text: 'partial usage response',
+      usage: {
+        inputTokens: 12,
+        outputTokens: 7,
+        source: 'provider',
+        totalTokens: 19,
+      },
+    });
+  });
+
   it.each([
     ['openai', 'deepseek-reasoner'],
     ['anthropic', 'claude-3-7-sonnet'],
@@ -406,6 +450,89 @@ describe('AiModelExecutionService', () => {
         source: 'estimated',
         totalTokens: 5,
       },
+    });
+  });
+
+  it('derives total tokens from input and output for stream-collect when the provider omits totalTokens', async () => {
+    const service = createService();
+    mockStreamText.mockReturnValueOnce({
+      finishReason: Promise.resolve('stop'),
+      fullStream: (async function* () {
+        yield {
+          text: 'streamed partial usage',
+          type: 'text-delta',
+        };
+      })(),
+      totalUsage: Promise.resolve({
+        inputTokens: 12,
+        outputTokens: 7,
+      }),
+    });
+
+    await expect(service.generateText({
+      messages: [
+        {
+          content: 'hello',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      transportMode: 'stream-collect',
+    })).resolves.toEqual({
+      customBlockOrigin: 'ai-sdk.raw',
+      finishReason: 'stop',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      text: 'streamed partial usage',
+      usage: {
+        inputTokens: 12,
+        outputTokens: 7,
+        source: 'provider',
+        totalTokens: 19,
+      },
+    });
+  });
+
+  it('normalizes nested snake_case usage fields from openai-compatible stream responses', async () => {
+    const service = createService();
+    mockStreamText.mockReturnValueOnce({
+      finishReason: Promise.resolve('stop'),
+      fullStream: (async function* () {
+        yield {
+          text: 'streamed nested usage',
+          type: 'text-delta',
+        };
+      })(),
+      totalUsage: Promise.resolve({
+        usage: {
+          completion_tokens: 34,
+          prompt_tokens: 123,
+          prompt_tokens_details: {
+            cached_tokens: 17,
+          },
+          total_tokens: 157,
+        },
+      }),
+    });
+
+    const streamed = service.streamText({
+      messages: [
+        {
+          content: 'hello',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+
+    await expect(streamed.usage).resolves.toEqual({
+      cachedInputTokens: 17,
+      inputTokens: 123,
+      outputTokens: 34,
+      source: 'provider',
+      totalTokens: 157,
     });
   });
 
@@ -561,20 +688,19 @@ describe('AiModelExecutionService', () => {
     await expect(streamed.usage).resolves.toBeUndefined();
   });
 
-  it('preserves fullStream when the ai sdk exposes it as a non-enumerable property', async () => {
+  it('preserves stream getters when the ai sdk exposes them as non-enumerable properties', async () => {
     const service = createService();
-    const rawStream = {
-      finishReason: Promise.resolve('stop'),
-      totalUsage: Promise.resolve({
-        inputTokens: 1,
-        outputTokens: 1,
-        totalTokens: 2,
-      }),
-    } as {
-      finishReason: Promise<string>;
+    const rawStream = {} as {
+      finishReason?: Promise<string>;
       fullStream?: AsyncIterable<unknown>;
-      totalUsage: Promise<{ inputTokens: number; outputTokens: number; totalTokens: number }>;
+      totalUsage?: Promise<{ inputTokens: number; outputTokens: number; totalTokens: number }>;
     };
+    Object.defineProperty(rawStream, 'finishReason', {
+      configurable: true,
+      enumerable: false,
+      value: Promise.resolve('stop'),
+      writable: true,
+    });
     Object.defineProperty(rawStream, 'fullStream', {
       configurable: true,
       enumerable: false,
@@ -584,6 +710,16 @@ describe('AiModelExecutionService', () => {
           type: 'text-delta' as const,
         };
       })(),
+      writable: true,
+    });
+    Object.defineProperty(rawStream, 'totalUsage', {
+      configurable: true,
+      enumerable: false,
+      value: Promise.resolve({
+        inputTokens: 1,
+        outputTokens: 1,
+        totalTokens: 2,
+      }),
       writable: true,
     });
     mockStreamText.mockReturnValueOnce(rawStream as never);
@@ -604,6 +740,13 @@ describe('AiModelExecutionService', () => {
       parts.push(part);
     }
 
+    await expect(streamed.finishReason).resolves.toBe('stop');
+    await expect(streamed.usage).resolves.toEqual({
+      inputTokens: 1,
+      outputTokens: 1,
+      source: 'provider',
+      totalTokens: 2,
+    });
     expect(parts).toEqual([
       {
         text: 'non-enumerable stream',

@@ -5,7 +5,8 @@ import * as path from 'node:path';
 import { uuidv7 } from 'uuidv7';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
 import { createConversationHistorySignatureFromHistoryMessages } from '../../conversation/conversation-history-signature';
-import { readConversationModelUsageAnnotation } from '../../conversation/conversation-model-usage.annotation';
+import { buildConversationVisibleModelMessages, readConversationVisiblePreviewText } from '../../conversation/conversation-model-visible-history';
+import { readConversationModelUsageAnnotation, readLatestConversationModelUsageAnnotation } from '../../conversation/conversation-model-usage.annotation';
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../../../core/runtime/server-workspace-paths';
@@ -26,9 +27,9 @@ export class ConversationStoreService {
   private readonly conversations: Map<string, RuntimeConversationRecord>;
 
   constructor(
-    @Optional() private readonly runtimeHostPluginDispatchService?: PluginDispatchService,
+    @Optional() private readonly pluginDispatch?: PluginDispatchService,
     @Optional() private readonly runtimeSessionEnvironmentService?: RuntimeSessionEnvironmentService,
-    @Optional() @Inject(forwardRef(() => ConversationTodoService)) private readonly runtimeHostConversationTodoService?: ConversationTodoService,
+    @Optional() @Inject(forwardRef(() => ConversationTodoService)) private readonly conversationTodoService?: ConversationTodoService,
   ) {
     const stored = this.readStoredConversations();
     this.conversationSessions = stored.sessions;
@@ -63,7 +64,7 @@ export class ConversationStoreService {
     this.requireConversation(conversationId, userId);
     const conversationIds = this.collectConversationTreeIds(conversationId, userId);
     for (const currentConversationId of conversationIds) {
-      this.runtimeHostConversationTodoService?.deleteSessionTodo(currentConversationId);
+      this.conversationTodoService?.deleteSessionTodo(currentConversationId);
       this.conversations.delete(currentConversationId);
       this.removeConversationSessions(currentConversationId);
       await this.runtimeSessionEnvironmentService?.deleteSessionEnvironment(currentConversationId);
@@ -155,8 +156,23 @@ export class ConversationStoreService {
   }
 
   previewConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
-    const messages = params.messages === undefined ? this.requireConversation(conversationId, userId).messages.map((message) => cloneJsonValue(message)) : readConversationHistoryMessages(params.messages), textBytes = Buffer.byteLength(messages.map(readConversationHistoryMessageText).filter(Boolean).join('\n'), 'utf8');
-    return asJsonValue({ estimatedTokens: readConversationHistoryPreviewTokens(messages, { historySignature: createConversationHistorySignatureFromHistoryMessages(messages as unknown as Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0]), modelId: typeof params.modelId === 'string' ? params.modelId : null, providerId: typeof params.providerId === 'string' ? params.providerId : null, textBytes }), messageCount: messages.length, textBytes });
+    const messages = params.messages === undefined
+      ? this.requireConversation(conversationId, userId).messages.map((message) => cloneJsonValue(message))
+      : readConversationHistoryMessages(params.messages);
+    const visibleMessages = buildConversationVisibleModelMessages(
+      messages as unknown as Parameters<typeof buildConversationVisibleModelMessages>[0],
+    );
+    const textBytes = Buffer.byteLength(readConversationVisiblePreviewText(visibleMessages), 'utf8');
+    const preview = readConversationHistoryPreviewTokens(messages, {
+      historySignature: createConversationHistorySignatureFromHistoryMessages(
+        messages as unknown as Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0],
+      ),
+      modelId: typeof params.modelId === 'string' ? params.modelId : null,
+      preferLatestProviderUsage: params.usagePreference === 'latest-provider',
+      providerId: typeof params.providerId === 'string' ? params.providerId : null,
+      textBytes,
+    });
+    return asJsonValue({ ...preview, messageCount: messages.length, textBytes });
   }
 
   replaceConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
@@ -301,7 +317,7 @@ export class ConversationStoreService {
   }
 
   private async broadcastConversationCreated(conversation: JsonObject, userId: string): Promise<void> {
-    const kernel = this.runtimeHostPluginDispatchService;
+    const kernel = this.pluginDispatch;
     if (!kernel) {return;}
     const context = { conversationId: String(conversation.id), source: 'http-route' as const, userId };
     for (const pluginId of listDispatchableHookPluginIds({ context, hookName: 'conversation:created', kernel })) { await kernel.invokeHook({ context, hookName: 'conversation:created', payload: asJsonValue({ context, conversation }), pluginId }); }
@@ -454,18 +470,58 @@ function readStoredConversationMetadata(value: unknown): ChatMessageMetadata | n
   try { return JSON.parse(value) as ChatMessageMetadata; } catch { return null; }
 }
 
-function readConversationHistoryMessageText(message: JsonObject): string {
-  if (message.role === 'display') {return '';}
-  const partText = Array.isArray(message.parts) ? message.parts.flatMap((part) => { const object = readJsonObject(part); return object?.type === 'text' && typeof object.text === 'string' ? [object.text] : []; }).join('\n') : '';
-  return [typeof message.role === 'string' ? message.role : '', partText || (typeof message.content === 'string' ? message.content : ''), Array.isArray(message.toolCalls) ? JSON.stringify(message.toolCalls) : '', Array.isArray(message.toolResults) ? JSON.stringify(message.toolResults) : ''].filter(Boolean).join('\n');
+function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { historySignature: string; modelId: string | null; preferLatestProviderUsage?: boolean; providerId: string | null; textBytes: number }): { estimatedTokens: number; source: 'estimated' | 'provider' } {
+  if (input.preferLatestProviderUsage) {
+    const latestProviderUsage = readLatestConversationHistoryProviderUsage(messages, input);
+    if (latestProviderUsage) {
+      return { estimatedTokens: latestProviderUsage.totalTokens, source: 'provider' };
+    }
+  }
+  if (input.modelId && input.providerId) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const usage = readConversationModelUsageAnnotation(
+        readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined,
+        { modelId: input.modelId, providerId: input.providerId },
+      );
+      if (usage?.source !== 'provider') {
+        continue;
+      }
+      if (usage.responseHistorySignature === input.historySignature) {
+        return { estimatedTokens: usage.totalTokens, source: 'provider' };
+      }
+    }
+  }
+  return { estimatedTokens: Math.ceil(input.textBytes / 4), source: 'estimated' };
 }
 
-function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { historySignature: string; modelId: string | null; providerId: string | null; textBytes: number }): number {
-  if (input.modelId && input.providerId) {for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const usage = readConversationModelUsageAnnotation(readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined, { modelId: input.modelId, providerId: input.providerId });
-    if (usage?.source === 'provider' && usage.responseHistorySignature === input.historySignature) {return usage.totalTokens;}
-  }}
-  return Math.ceil(input.textBytes / 4);
+function readLatestConversationHistoryProviderUsage(
+  messages: JsonObject[],
+  input: { modelId: string | null; providerId: string | null },
+): { totalTokens: number } | null {
+  const target = input.modelId && input.providerId
+    ? { modelId: input.modelId, providerId: input.providerId }
+    : undefined;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const usage = readLatestConversationModelUsageAnnotation(
+      readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined,
+      target,
+    );
+    if (usage?.source === 'provider') {
+      return usage;
+    }
+  }
+  if (!target) {
+    return null;
+  }
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const usage = readLatestConversationModelUsageAnnotation(
+      readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined,
+    );
+    if (usage?.source === 'provider') {
+      return usage;
+    }
+  }
+  return null;
 }
 
 function readConversationHistoryPreviewMetadata(message: JsonObject | undefined, index: number): ChatMessageMetadata | null { return message ? (readConversationHistoryMetadata(message.metadata, index) ?? readStoredConversationMetadata(message.metadataJson)) : null; }

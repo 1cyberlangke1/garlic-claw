@@ -18,7 +18,7 @@ interface RuntimeLegacyConversationStoragePayload {
   todos?: Record<string, ConversationTodoItem[]>;
 }
 
-export interface RuntimeHostConversationTodoEvent {
+export interface ConversationTodoEvent {
   sessionId: string;
   todos: ConversationTodoItem[];
 }
@@ -27,11 +27,11 @@ export interface RuntimeHostConversationTodoEvent {
 export class ConversationTodoService {
   private readonly storagePath = resolveConversationTodoStoragePath();
   private readonly conversationTodos: Map<string, ConversationTodoItem[]>;
-  private readonly listeners = new Map<string, Set<(event: RuntimeHostConversationTodoEvent) => void>>();
+  private readonly listeners = new Map<string, Set<(event: ConversationTodoEvent) => void>>();
 
   constructor(
     @Inject(forwardRef(() => ConversationStoreService))
-    private readonly runtimeHostConversationRecordService: ConversationStoreService,
+    private readonly conversationStore: ConversationStoreService,
   ) {
     const { migrated, todos } = this.readStoredTodos();
     this.conversationTodos = todos;
@@ -54,7 +54,7 @@ export class ConversationTodoService {
 
   replaceSessionTodo(sessionId: string, todos: ConversationTodoItem[], userId?: string): JsonValue {
     const nextTodos = this.readClonedTodoItems(todos);
-    this.runtimeHostConversationRecordService.requireConversation(sessionId, userId);
+    this.conversationStore.requireConversation(sessionId, userId);
     this.conversationTodos.set(sessionId, nextTodos);
     this.persistTodos();
     this.emit(sessionId, nextTodos);
@@ -62,12 +62,12 @@ export class ConversationTodoService {
   }
 
   readSessionTodoItems(sessionId: string, userId?: string): ConversationTodoItem[] {
-    this.runtimeHostConversationRecordService.requireConversation(sessionId, userId);
+    this.conversationStore.requireConversation(sessionId, userId);
     return this.readClonedTodoItems(this.conversationTodos.get(sessionId) ?? []);
   }
 
-  subscribe(sessionId: string, listener: (event: RuntimeHostConversationTodoEvent) => void): () => void {
-    const listeners = this.listeners.get(sessionId) ?? new Set<(event: RuntimeHostConversationTodoEvent) => void>();
+  subscribe(sessionId: string, listener: (event: ConversationTodoEvent) => void): () => void {
+    const listeners = this.listeners.get(sessionId) ?? new Set<(event: ConversationTodoEvent) => void>();
     listeners.add(listener);
     this.listeners.set(sessionId, listeners);
     return () => {
@@ -97,7 +97,7 @@ export class ConversationTodoService {
   private readStoredTodos(): { migrated: boolean; todos: Map<string, ConversationTodoItem[]> } {
     const direct = readConversationTodoStoragePayload(this.storagePath);
     if (direct) {
-      return filterStoredTodos(this.runtimeHostConversationRecordService, direct);
+      return filterStoredTodos(this.conversationStore, direct);
     }
     const legacyStoragePath = resolveConversationStoragePath();
     const legacy = readLegacyConversationTodoStoragePayload(legacyStoragePath);
@@ -105,7 +105,7 @@ export class ConversationTodoService {
       return { migrated: false, todos: new Map() };
     }
     stripLegacyConversationTodoStoragePayload(legacyStoragePath);
-    const filtered = filterStoredTodos(this.runtimeHostConversationRecordService, legacy);
+    const filtered = filterStoredTodos(this.conversationStore, legacy);
     return {
       migrated: true,
       todos: filtered.todos,
@@ -190,13 +190,13 @@ function stripLegacyConversationTodoStoragePayload(storagePath: string): void {
 }
 
 function filterStoredTodos(
-  runtimeHostConversationRecordService: ConversationStoreService,
+  conversationStore: ConversationStoreService,
   todos: Map<string, ConversationTodoItem[]>,
 ): { migrated: boolean; todos: Map<string, ConversationTodoItem[]> } {
   const filtered = new Map(
     [...todos.entries()].flatMap(([conversationId, items]) => {
       try {
-        runtimeHostConversationRecordService.requireConversation(conversationId);
+        conversationStore.requireConversation(conversationId);
         return [[conversationId, items]] as const;
       } catch {
         return [];

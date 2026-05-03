@@ -1,4 +1,5 @@
 import type { JsonValue } from './json';
+import type { AiModelUsage } from './ai';
 import type {
   RuntimePermissionReplyResult,
   RuntimePermissionRequest,
@@ -321,6 +322,18 @@ export interface Message {
 }
 
 /**
+ * 一次自动重试中的运行态信息。
+ */
+export interface ChatRetryState {
+  /** 当前是第几次自动重试。 */
+  attempt: number;
+  /** 当前可见的重试原因摘要。 */
+  message: string;
+  /** 下一次自动重试的时间戳（毫秒）。 */
+  next: number;
+}
+
+/**
  * 对话详情。
  */
 export interface ConversationDetail extends Conversation {
@@ -342,6 +355,13 @@ export type SSEEvent =
       messageId: string;
       status: ChatMessageStatus;
       error?: string;
+    }
+  | {
+      type: 'retry';
+      messageId: string;
+      attempt: number;
+      message: string;
+      next: number;
     }
   | {
       type: 'text-delta';
@@ -446,9 +466,11 @@ export interface ConversationContextWindowPreview {
   excludedMessageIds: string[];
   /** 当前窗口的估算 token 数。 */
   estimatedTokens: number;
+  /** token 数来源。 */
+  source: AiModelUsage['source'];
   /** 当前模型总上下文长度。 */
   contextLength: number;
-  /** 无论何种策略都至少保留的最近消息数。 */
+  /** 无论何种策略都保留的最近消息数；允许为 0。 */
   keepRecentMessages: number;
   /** 前端本地最多缓存的最近消息数。 */
   frontendMessageWindowSize: number;

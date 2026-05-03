@@ -25,14 +25,14 @@ export async function bootstrapHttpApp(): Promise<void> {
     }),
   );
   const pluginBootstrapService = app.get(PluginBootstrapService);
-  const runtimeHostConversationRecordService = app.get(ConversationStoreService);
-  const runtimeHostPluginRuntimeService = app.get(PluginRuntimeService);
+  const conversationStore = app.get(ConversationStoreService);
+  const pluginRuntime = app.get(PluginRuntimeService);
   const runtimePluginGovernanceService = app.get(RuntimePluginGovernanceService);
   const toolManagementSettingsService = app.get(ToolManagementSettingsService);
   pluginBootstrapService.bootstrapBuiltins();
   pluginBootstrapService.bootstrapProjectPlugins((pluginId) => {
-    runtimeHostPluginRuntimeService.deletePluginRuntimeState(pluginId);
-    runtimeHostConversationRecordService.deletePluginConversationSessions(pluginId);
+    pluginRuntime.deletePluginRuntimeState(pluginId);
+    conversationStore.deletePluginConversationSessions(pluginId);
     runtimePluginGovernanceService.deletePluginRuntimeState(pluginId);
     toolManagementSettingsService.deleteSourceOverrides(`plugin:${pluginId}`);
   });

@@ -67,7 +67,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnModuleDes
 
   constructor(
     @Optional() private readonly pluginPersistenceService?: PluginPersistenceService,
-    @Optional() private readonly runtimeHostPluginDispatchService?: PluginDispatchService,
+    @Optional() private readonly pluginDispatch?: PluginDispatchService,
     @Optional() runtimeEventLogService?: RuntimeEventLogService,
   ) {
     this.runtimeEventLogService = runtimeEventLogService ?? new RuntimeEventLogService();
@@ -475,7 +475,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnModuleDes
     if (!plugin.manifest.hooks?.some((hook) => hook.name === 'cron:tick')) {
       return `Plugin ${job.pluginId} 未声明 cron:tick hook`;
     }
-    if (!this.runtimeHostPluginDispatchService) {
+    if (!this.pluginDispatch) {
       return 'PluginDispatchService 不可用';
     }
     const payload: PluginCronTickPayload = {
@@ -483,7 +483,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnModuleDes
       tickedAt,
     };
     try {
-      await this.runtimeHostPluginDispatchService.invokeHook({
+      await this.pluginDispatch.invokeHook({
         context: {
           cronJobId: job.id,
           metadata: {

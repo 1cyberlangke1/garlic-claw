@@ -326,6 +326,7 @@ function submit() {
 .field {
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .panel-body {
@@ -336,6 +337,11 @@ function submit() {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  min-width: 0;
+}
+
+.field-grid > * {
+  min-width: 0;
 }
 
 .field span {
@@ -349,6 +355,16 @@ function submit() {
 .field :deep(.el-input-number) {
   width: 100%;
   min-width: 0;
+}
+
+.field :deep(.el-input__wrapper),
+.field :deep(.el-select__wrapper),
+.field :deep(.el-textarea__inner),
+.field :deep(.el-input-number),
+.field :deep(.el-input-number .el-input__wrapper) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .model-picker {

@@ -9,7 +9,7 @@ import { AutomationExecutionService } from '../../../src/execution/automation/au
 import { AutomationService } from '../../../src/execution/automation/automation.service';
 import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
 import { EditToolService } from '../../../src/execution/edit/edit-tool.service';
-import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
+import { HostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
 import { GlobToolService } from '../../../src/execution/glob/glob-tool.service';
 import { GrepToolService } from '../../../src/execution/grep/grep-tool.service';
 import { ProjectSubagentTypeRegistryService } from '../../../src/execution/project/project-subagent-type-registry.service';
@@ -95,7 +95,7 @@ describe('PluginHostService', () => {
       pluginBootstrapService,
     );
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
+    const hostFilesystemBackend = new HostFilesystemBackendService(
       runtimeSessionEnvironmentService,
     );
     const runtimeCommandService = new RuntimeCommandService(
@@ -103,7 +103,7 @@ describe('PluginHostService', () => {
       new RuntimeCommandCaptureService(runtimeSessionEnvironmentService),
     );
     const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService([
-      runtimeHostFilesystemBackendService,
+      hostFilesystemBackend,
     ]);
     const _runtimeToolBackendService = new RuntimeToolBackendService(
       new RuntimeBackendRoutingService(),
@@ -115,26 +115,26 @@ describe('PluginHostService', () => {
       runtimeSessionEnvironmentService,
       new ProjectWorktreeRootService(),
     );
-    const runtimeHostPluginDispatchService = new PluginDispatchService(
+    const pluginDispatch = new PluginDispatchService(
       builtinPluginRegistryService,
       pluginBootstrapService,
       new RuntimeGatewayRemoteTransportService(runtimeGatewayConnectionLifecycleService),
     );
-    const runtimeHostConversationRecordService = new ConversationStoreService();
-    const runtimeHostService = new PluginHostService(
+    const conversationStore = new ConversationStoreService();
+    const pluginHost = new PluginHostService(
       pluginBootstrapService,
       {} as never,
       {} as never,
-      runtimeHostConversationRecordService,
+      conversationStore,
       {} as never,
       new AiManagementService(new AiProviderSettingsService()),
       new KnowledgeReaderService(),
-      runtimeHostPluginDispatchService,
+      pluginDispatch,
       new PluginRuntimeService(),
       {} as never,
       {} as never,
       new UserContextService(),
-      new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
+      new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), conversationStore),
     );
 
     (builtinPluginRegistryService as unknown as {
@@ -173,11 +173,11 @@ describe('PluginHostService', () => {
       },
     ];
 
-    runtimeHostService.onModuleInit();
+    pluginHost.onModuleInit();
     pluginBootstrapService.bootstrapBuiltins();
 
     await expect(
-      runtimeHostPluginDispatchService.executeTool({
+      pluginDispatch.executeTool({
         context: { source: 'plugin' },
         params: {},
         pluginId: 'builtin.host-roundtrip',
@@ -473,7 +473,7 @@ describe('PluginHostService', () => {
   it('records subagent failures without fabricating parent conversation messages', async () => {
     jest.useFakeTimers();
     const {
-      runtimeHostSubagentRunnerService,
+      subagentRunner,
       service,
     } = createFixture({
       permissions: ['subagent:run'],
@@ -498,7 +498,7 @@ describe('PluginHostService', () => {
       status: 'completed',
     });
 
-    (runtimeHostSubagentRunnerService as any).executeSubagent = async () => {
+    (subagentRunner as any).executeSubagent = async () => {
       throw new Error('subagent failed');
     };
     const failed = await memoryPluginCall(service, 'subagent.spawn', {
@@ -526,7 +526,7 @@ describe('PluginHostService', () => {
   });
 
   it('generates text and assistant output through runtime-owned llm host methods', async () => {
-    const { pluginBootstrapService, pluginPersistenceService, runtimeHostLlmService, service } = createFixture({
+    const { pluginBootstrapService, pluginPersistenceService, llmService, service } = createFixture({
       permissions: ['llm:generate'],
     });
     pluginBootstrapService.registerPlugin({
@@ -662,10 +662,10 @@ describe('PluginHostService', () => {
       },
     });
 
-    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(1, expect.objectContaining({
+    expect(llmService.generateText).toHaveBeenNthCalledWith(1, expect.objectContaining({
       transportMode: 'stream-collect',
     }));
-    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(2, expect.objectContaining({
+    expect(llmService.generateText).toHaveBeenNthCalledWith(2, expect.objectContaining({
       transportMode: 'stream-collect',
     }));
 
@@ -691,7 +691,7 @@ describe('PluginHostService', () => {
             kind: 'text',
             source: {
               key: 'reasoning_content',
-              origin: 'ai-sdk.response-body',
+              origin: 'ai-sdk.raw',
               providerId: 'openai',
             },
             state: 'done',
@@ -710,6 +710,9 @@ describe('PluginHostService', () => {
         totalTokens: 25,
       },
     });
+    expect(llmService.generateText).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      transportMode: 'stream-collect',
+    }));
 
     pluginPersistenceService.updatePluginLlmPreference('builtin.memory', {
       mode: 'override',
@@ -739,7 +742,7 @@ describe('PluginHostService', () => {
             kind: 'text',
             source: {
               key: 'reasoning_content',
-              origin: 'ai-sdk.response-body',
+              origin: 'ai-sdk.raw',
               providerId: 'ds2api',
             },
             state: 'done',
@@ -758,14 +761,65 @@ describe('PluginHostService', () => {
         totalTokens: 25,
       },
     });
+    expect(llmService.generateText).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      transportMode: 'stream-collect',
+    }));
 
-    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(3, expect.objectContaining({
+    await expect(
+      service.call({
+        context: {
+          activeModelId: 'gpt-5.4',
+          activeProviderId: 'openai',
+          source: 'plugin',
+          userId: 'user-1',
+        },
+        method: 'llm.generate-text',
+        params: {
+          modelId: 'gpt-5.4',
+          prompt: '请保留显式非流式接口',
+          providerId: 'openai',
+          transportMode: 'generate',
+        },
+        pluginId: 'builtin.memory',
+      }),
+    ).resolves.toEqual({
+      metadata: {
+        customBlocks: [
+          {
+            id: 'custom-field:reasoning_content',
+            kind: 'text',
+            source: {
+              key: 'reasoning_content',
+              origin: 'ai-sdk.response-body',
+              providerId: 'openai',
+            },
+            state: 'done',
+            text: '先生成标题再输出正文',
+            title: 'Reasoning Content',
+          },
+        ],
+      },
       modelId: 'gpt-5.4',
       providerId: 'openai',
+      text: 'Generated: 请保留显式非流式接口',
+      usage: {
+        inputTokens: 7,
+        outputTokens: 18,
+        source: 'provider',
+        totalTokens: 25,
+      },
+    });
+    expect(llmService.generateText).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      transportMode: 'generate',
     }));
-    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(4, expect.objectContaining({
+
+    expect(llmService.generateText).toHaveBeenNthCalledWith(4, expect.objectContaining({
       modelId: 'deepseek-reasoner',
       providerId: 'ds2api',
+    }));
+    expect(llmService.generateText).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
     }));
   });
 
@@ -903,6 +957,7 @@ describe('PluginHostService', () => {
     })).resolves.toEqual({
       estimatedTokens: Math.ceil(Buffer.byteLength('assistant\n压缩摘要', 'utf8') / 4),
       messageCount: 1,
+      source: 'estimated',
       textBytes: Buffer.byteLength('assistant\n压缩摘要', 'utf8'),
     });
 
@@ -972,9 +1027,9 @@ function createFixture(input?: {
     new PluginGovernanceService(),
     pluginPersistenceService,
   );
-  const runtimeHostConversationRecordService = new ConversationStoreService();
-  const runtimeHostConversationMessageService = new ConversationMessageService(
-    runtimeHostConversationRecordService,
+  const conversationStore = new ConversationStoreService();
+  const conversationMessages = new ConversationMessageService(
+    conversationStore,
   );
   const aiManagementService = new AiManagementService(new AiProviderSettingsService());
   aiManagementService.upsertProvider('openai', {
@@ -984,11 +1039,11 @@ function createFixture(input?: {
     models: ['gpt-5.4'],
     name: 'OpenAI',
   });
-  fixtureConversationId = (runtimeHostConversationRecordService.createConversation({
+  fixtureConversationId = (conversationStore.createConversation({
     title: fixtureConversationTitle,
     userId: 'user-1',
   }) as { id: string }).id;
-  const runtimeHostLlmService = {
+  const llmService = {
     generateText: jest.fn(async (input: {
       messages: Array<{ content: unknown }>;
       modelId?: string;
@@ -1037,9 +1092,9 @@ function createFixture(input?: {
     }
     return 'response';
   };
-  const runtimeHostSubagentRunnerService = new SubagentRunnerService(
+  const subagentRunner = new SubagentRunnerService(
     new AiModelExecutionService(),
-    runtimeHostConversationMessageService,
+    conversationMessages,
     {
       buildToolSet: jest.fn().mockResolvedValue(undefined),
     } as never,
@@ -1047,9 +1102,12 @@ function createFixture(input?: {
       invokeHook: jest.fn(),
     } as never,
     new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
-    runtimeHostConversationRecordService,
+    {
+      get: jest.fn().mockReturnValue(undefined),
+    } as never,
+    conversationStore,
   );
-  (runtimeHostSubagentRunnerService as any).executeSubagent = async ({ request }: any) => ({
+  (subagentRunner as any).executeSubagent = async ({ request }: any) => ({
     finishReason: 'stop',
     message: {
       content: `Generated: ${readStubLlmText(request)}`,
@@ -1067,7 +1125,7 @@ function createFixture(input?: {
       totalTokens: 25,
     },
   });
-  const runtimeHostAutomationService = new AutomationService(
+  const automationService = new AutomationService(
     new AutomationExecutionService(
       {
         executeTool: jest.fn(),
@@ -1109,15 +1167,15 @@ function createFixture(input?: {
   return {
     pluginPersistenceService,
     pluginBootstrapService,
-    runtimeHostConversationMessageService,
-    runtimeHostLlmService,
-    runtimeHostSubagentRunnerService,
+    conversationMessages,
+    llmService,
+    subagentRunner,
     service: (() => {
       const runtimeWorkspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-host-'));
       process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
       runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
       const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-      const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
+      const hostFilesystemBackend = new HostFilesystemBackendService(
         runtimeSessionEnvironmentService,
       );
       const runtimeBackendRoutingService = new RuntimeBackendRoutingService();
@@ -1125,7 +1183,7 @@ function createFixture(input?: {
         new RuntimeJustBashService(runtimeSessionEnvironmentService),
       ], new RuntimeCommandCaptureService(runtimeSessionEnvironmentService));
       const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService(
-        [runtimeHostFilesystemBackendService],
+        [hostFilesystemBackend],
       );
       const runtimeFileFreshnessService = {
         assertCanWrite: jest.fn().mockResolvedValue(undefined),
@@ -1137,7 +1195,7 @@ function createFixture(input?: {
         runtimeCommandService,
         runtimeFilesystemBackendService,
       );
-      const runtimeToolPermissionService = new RuntimeToolPermissionService(runtimeHostConversationRecordService);
+      const runtimeToolPermissionService = new RuntimeToolPermissionService(conversationStore);
       const bashToolService = new BashToolService(
         runtimeCommandService,
         runtimeSessionEnvironmentService,
@@ -1166,7 +1224,7 @@ function createFixture(input?: {
         runtimeFilesystemBackendService,
         runtimeFileFreshnessService,
       );
-      const runtimeHostRuntimeToolService = new ToolGatewayService(
+      const toolGateway = new ToolGatewayService(
         bashToolService,
         editToolService,
         globToolService,
@@ -1180,21 +1238,21 @@ function createFixture(input?: {
         new RuntimeToolsSettingsService(),
         writeToolService,
       );
-      const runtimeHostPluginDispatchService = { registerHostCaller: jest.fn() } as never;
+      const pluginDispatch = { registerHostCaller: jest.fn() } as never;
       const service = new PluginHostService(
         pluginBootstrapService,
-        runtimeHostAutomationService,
-        runtimeHostConversationMessageService,
-        runtimeHostConversationRecordService,
-        runtimeHostLlmService as never,
+        automationService,
+        conversationMessages,
+        conversationStore,
+        llmService as never,
         aiManagementService,
         new KnowledgeReaderService(),
-        runtimeHostPluginDispatchService,
+        pluginDispatch,
         new PluginRuntimeService(),
-        runtimeHostRuntimeToolService,
-        runtimeHostSubagentRunnerService,
+        toolGateway,
+        subagentRunner,
         new UserContextService(),
-        new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
+        new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), conversationStore),
       );
       service.onModuleInit();
       return service;
@@ -1257,3 +1315,5 @@ function memoryPluginCall(
 ) {
   return callMemory(service, method, params, pluginContext(context));
 }
+
+

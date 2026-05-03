@@ -1,7 +1,16 @@
 import type { ChatMessagePart, ConversationSubagentState, JsonObject, JsonValue, PluginCallContext, PluginLlmMessage, PluginSubagentCloseParams, PluginSubagentDetail, PluginSubagentExecutionResult, PluginSubagentHandle, PluginSubagentOverview, PluginSubagentRequest, PluginSubagentSendInputParams, PluginSubagentSpawnParams, PluginSubagentSummary, PluginSubagentWaitParams, PluginSubagentWaitResult, SubagentAfterRunHookResult, SubagentBeforeRunHookResult } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional, forwardRef } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { uuidv7 } from 'uuidv7';
 import { AiModelExecutionService } from '../../ai/ai-model-execution.service';
+import {
+  type ConversationCompactionContinuationState,
+} from '../../conversation/conversation-compaction-continuation';
+import {
+  ConversationAfterResponseCompactionService,
+  type AfterResponseCompactionContinuation,
+  type AfterResponseCompactionResult,
+} from '../../conversation/conversation-after-response-compaction.service';
 import { ProjectSubagentTypeRegistryService } from '../../execution/project/project-subagent-type-registry.service';
 import { ToolRegistryService } from '../../execution/tool/tool-registry.service';
 import { applyMutatingDispatchableHooks, runDispatchableHookChain } from '../kernel/runtime-plugin-hook-governance';
@@ -15,6 +24,10 @@ type RuntimeSubagentExecutionState = {
   abortController: AbortController;
   completion: Promise<PluginSubagentWaitResult>;
 };
+type ResolvedSubagentExecutionResult = {
+  continuationState: ConversationCompactionContinuationState;
+  result: PluginSubagentExecutionResult;
+};
 
 @Injectable()
 export class SubagentRunnerService {
@@ -24,11 +37,12 @@ export class SubagentRunnerService {
 
   constructor(
     private readonly aiModelExecutionService: AiModelExecutionService,
-    private readonly runtimeHostConversationMessageService: ConversationMessageService,
+    private readonly conversationMessages: ConversationMessageService,
     @Inject(forwardRef(() => ToolRegistryService)) private readonly toolRegistryService: ToolRegistryService,
-    @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService,
+    @Inject(PluginDispatchService) private readonly pluginDispatch: PluginDispatchService,
     private readonly projectSubagentTypeRegistryService: ProjectSubagentTypeRegistryService,
-    @Optional() private readonly runtimeHostConversationRecordService?: ConversationStoreService,
+    private readonly moduleRef: ModuleRef,
+    @Optional() private readonly conversationStore?: ConversationStoreService,
   ) {}
 
   resumePendingSubagents(pluginId?: string): void {
@@ -40,7 +54,7 @@ export class SubagentRunnerService {
       if (subagent.status === 'running') {
         const interruptedAt = new Date().toISOString();
         this.writeInterruptedAssistantMessage(conversation, '服务重启时中断了正在运行的子代理');
-        this.runtimeHostConversationRecordService?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
+        this.conversationStore?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
           nextSubagent: currentSubagent
             ? {
                 ...currentSubagent,
@@ -86,7 +100,7 @@ export class SubagentRunnerService {
     const request = this.resolveEffectiveSubagentRequest(readSubagentSpawnRequest(params));
     this.assertConversationSubagentCapacity(context, params);
     const timestamp = new Date().toISOString();
-    const conversation = this.runtimeHostConversationRecordService?.createConversation({
+    const conversation = this.conversationStore?.createConversation({
       kind: 'subagent',
       parentId: context.conversationId,
       subagent: {
@@ -121,7 +135,7 @@ export class SubagentRunnerService {
     }
     this.appendConversationMessages(conversation.id, request.request.messages);
     const assistantMessageId = this.appendConversationMessages(conversation.id, [{ content: '', role: 'assistant' }], 'pending')[0];
-    this.runtimeHostConversationRecordService?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
+    this.conversationStore?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
       nextSubagent: currentSubagent
         ? {
             ...currentSubagent,
@@ -186,7 +200,7 @@ export class SubagentRunnerService {
     });
     this.appendConversationMessages(conversation.id, request.request.messages);
     const assistantMessageId = this.appendConversationMessages(conversation.id, [{ content: '', role: 'assistant' }], 'pending')[0];
-    this.runtimeHostConversationRecordService?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
+    this.conversationStore?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
       nextSubagent: currentSubagent
         ? {
             ...currentSubagent,
@@ -214,7 +228,7 @@ export class SubagentRunnerService {
         : null,
       result: null,
     }), context.userId);
-    this.runtimeHostConversationRecordService?.writeConversationTitle(
+    this.conversationStore?.writeConversationTitle(
       conversation.id,
       readSubagentConversationTitle(request.request, request.subagentType?.name),
       context.userId,
@@ -234,7 +248,7 @@ export class SubagentRunnerService {
     this.clearScheduledExecution(conversation.id);
     const interruptedAt = new Date().toISOString();
     this.writeInterruptedAssistantMessage(conversation, '子代理已被手动中断');
-    this.runtimeHostConversationRecordService?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
+    this.conversationStore?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
       nextSubagent: currentSubagent
         ? {
             ...currentSubagent,
@@ -252,7 +266,7 @@ export class SubagentRunnerService {
 
   async closeSubagent(pluginId: string, params: PluginSubagentCloseParams, userId?: string): Promise<JsonValue> {
     await this.interruptSubagent(pluginId, params.conversationId, userId).catch(() => undefined);
-    this.runtimeHostConversationRecordService?.updateConversationSubagent(params.conversationId, (currentSubagent) => ({
+    this.conversationStore?.updateConversationSubagent(params.conversationId, (currentSubagent) => ({
       nextSubagent: currentSubagent
         ? {
             ...currentSubagent,
@@ -269,12 +283,12 @@ export class SubagentRunnerService {
   }
 
   private listRuntimeSubagentConversations(pluginId?: string): RuntimeConversationRecord[] {
-    return (this.runtimeHostConversationRecordService?.listSubagentConversationRecords() ?? [])
+    return (this.conversationStore?.listSubagentConversationRecords() ?? [])
       .filter((conversation) => !pluginId || conversation.subagent?.pluginId === pluginId);
   }
 
   private requireSubagentConversation(conversationId: string, pluginId?: string, userId?: string): RuntimeConversationRecord {
-    const conversation = this.runtimeHostConversationRecordService?.requireConversation(conversationId, userId);
+    const conversation = this.conversationStore?.requireConversation(conversationId, userId);
     if (!conversation || conversation.kind !== 'subagent' || !conversation.subagent) {
       throw new NotFoundException(`Subagent conversation not found: ${conversationId}`);
     }
@@ -360,7 +374,7 @@ export class SubagentRunnerService {
     if (!context.conversationId || !maxConversationSubagents) {
       return;
     }
-    const count = (this.runtimeHostConversationRecordService?.listChildConversations(context.conversationId) as Array<{ kind?: string }> | undefined)
+    const count = (this.conversationStore?.listChildConversations(context.conversationId) as Array<{ kind?: string }> | undefined)
       ?.filter((conversation) => conversation.kind === 'subagent')
       .length ?? 0;
     if (count >= maxConversationSubagents) {
@@ -400,7 +414,7 @@ export class SubagentRunnerService {
     if (subagent.status === 'closed' || subagent.status === 'interrupted') {
       return this.buildSubagentWaitResult(conversation);
     }
-    this.runtimeHostConversationRecordService?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
+    this.conversationStore?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
       nextSubagent: currentSubagent
         ? {
             ...currentSubagent,
@@ -412,57 +426,77 @@ export class SubagentRunnerService {
         : null,
       result: null,
     }));
-    const assistantMessageId = requireConversationSubagent(this.requireSubagentConversation(conversation.id)).activeAssistantMessageId
+    let assistantMessageId = requireConversationSubagent(this.requireSubagentConversation(conversation.id)).activeAssistantMessageId
       ?? this.appendConversationMessages(conversation.id, [{ content: '', role: 'assistant' }], 'pending')[0];
     try {
-      const refreshed = this.requireSubagentConversation(conversation.id);
-      const result = await this.executeSubagent({
-        abortSignal,
-        context: createSubagentContext(refreshed),
-        pluginId: subagent.pluginId,
-        request: this.buildSubagentDetail(refreshed).request,
-        onTextDelta: (text) => {
-          this.runtimeHostConversationMessageService.writeMessage(refreshed.id, assistantMessageId, { content: `${text}…`, status: 'streaming' });
-        },
-      });
-      this.runtimeHostConversationMessageService.writeMessage(refreshed.id, assistantMessageId, {
-        content: result.text,
-        model: result.modelId,
-        parts: result.message.content ? [{ text: result.message.content, type: 'text' as const }] : [],
-        provider: result.providerId,
-        status: 'completed',
-        toolCalls: result.toolCalls as unknown as JsonValue[],
-        toolResults: result.toolResults as unknown as JsonValue[],
-      });
-      this.runtimeHostConversationRecordService?.updateConversationSubagent(refreshed.id, (currentSubagent) => ({
-        nextSubagent: currentSubagent
-          ? {
-              ...currentSubagent,
-              activeAssistantMessageId: undefined,
-              error: undefined,
-              finishedAt: new Date().toISOString(),
-              modelId: result.modelId,
-              providerId: result.providerId,
-              resultPreview: result.text,
-              startedAt: currentSubagent.startedAt ?? new Date().toISOString(),
-              status: 'completed',
-            }
-          : null,
-        result: null,
-      }));
-      return this.buildSubagentWaitResult(this.requireSubagentConversation(refreshed.id, subagent.pluginId));
+      while (true) {
+        const refreshed = this.requireSubagentConversation(conversation.id);
+        const execution = normalizeResolvedSubagentExecution(await this.executeSubagent({
+          abortSignal,
+          context: createSubagentContext(refreshed),
+          pluginId: subagent.pluginId,
+          request: this.buildSubagentDetail(refreshed).request,
+          onTextDelta: (text) => {
+            this.conversationMessages.writeMessage(refreshed.id, assistantMessageId, { content: `${text}…`, status: 'streaming' });
+          },
+        }));
+        const { result } = execution;
+        this.conversationMessages.writeMessage(refreshed.id, assistantMessageId, {
+          content: result.text,
+          model: result.modelId,
+          parts: result.message.content ? [{ text: result.message.content, type: 'text' as const }] : [],
+          provider: result.providerId,
+          status: 'completed',
+          toolCalls: result.toolCalls as unknown as JsonValue[],
+          toolResults: result.toolResults as unknown as JsonValue[],
+        });
+        const compaction = await this.runSubagentPostCompletionCompaction({
+          conversationId: refreshed.id,
+          continuationState: execution.continuationState,
+          modelId: result.modelId,
+          providerId: result.providerId,
+          userId: refreshed.userId,
+        });
+        if (compaction.continuation) {
+          assistantMessageId = this.queueSubagentAutoCompactionContinuation({
+            conversationId: refreshed.id,
+            continuation: compaction.continuation,
+            modelId: result.modelId,
+            providerId: result.providerId,
+            userId: refreshed.userId,
+          });
+          continue;
+        }
+        this.conversationStore?.updateConversationSubagent(refreshed.id, (currentSubagent) => ({
+          nextSubagent: currentSubagent
+            ? {
+                ...currentSubagent,
+                activeAssistantMessageId: undefined,
+                error: undefined,
+                finishedAt: new Date().toISOString(),
+                modelId: result.modelId,
+                providerId: result.providerId,
+                resultPreview: result.text,
+                startedAt: currentSubagent.startedAt ?? new Date().toISOString(),
+                status: 'completed',
+              }
+            : null,
+          result: null,
+        }));
+        return this.buildSubagentWaitResult(this.requireSubagentConversation(refreshed.id, subagent.pluginId));
+      }
     } catch (error) {
       const message = abortSignal.aborted
         ? '子代理已被手动中断'
         : error instanceof Error
           ? error.message
           : '子代理执行失败';
-      this.runtimeHostConversationMessageService.writeMessage(conversation.id, assistantMessageId, {
+      this.conversationMessages.writeMessage(conversation.id, assistantMessageId, {
         content: message,
         error: message,
         status: abortSignal.aborted ? 'stopped' : 'error',
       });
-      this.runtimeHostConversationRecordService?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
+      this.conversationStore?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
         nextSubagent: currentSubagent
           ? {
               ...currentSubagent,
@@ -479,18 +513,90 @@ export class SubagentRunnerService {
     }
   }
 
-  private async executeSubagent(input: { abortSignal: AbortSignal; context: PluginCallContext; pluginId: string; request: PluginSubagentRequest; onTextDelta?: (text: string) => void }): Promise<PluginSubagentExecutionResult> {
+  private async runSubagentPostCompletionCompaction(input: {
+    conversationId: string;
+    continuationState: ConversationCompactionContinuationState;
+    modelId: string;
+    providerId: string;
+    userId?: string;
+  }): Promise<AfterResponseCompactionResult> {
+    try {
+      return await this.readAfterResponseCompactionService()?.run(input) ?? { compactionTriggered: false, continuation: null };
+    } catch {
+      // 上下文治理服务内部会自行记录失败并阻断后续轮次，这里不能把已完成子代理改写成错误态。
+      return { compactionTriggered: false, continuation: null };
+    }
+  }
+
+  private queueSubagentAutoCompactionContinuation(input: {
+    conversationId: string;
+    continuation: AfterResponseCompactionContinuation;
+    modelId: string;
+    providerId: string;
+    userId?: string;
+  }): string {
+    this.conversationMessages.createMessage(input.conversationId, {
+      content: input.continuation.content,
+      metadata: input.continuation.metadata,
+      model: input.modelId,
+      parts: input.continuation.parts,
+      provider: input.providerId,
+      role: 'user',
+      status: 'completed',
+    });
+    const assistantMessage = this.conversationMessages.createMessage(input.conversationId, {
+      content: '',
+      model: input.modelId,
+      parts: [],
+      provider: input.providerId,
+      role: 'assistant',
+      status: 'pending',
+    });
+    const assistantMessageId = typeof assistantMessage.id === 'string' ? assistantMessage.id : '';
+    this.conversationStore?.updateConversationSubagent(input.conversationId, (currentSubagent) => ({
+      nextSubagent: currentSubagent
+        ? {
+            ...currentSubagent,
+            activeAssistantMessageId: assistantMessageId || currentSubagent.activeAssistantMessageId,
+            error: undefined,
+            finishedAt: null,
+            modelId: input.modelId,
+            providerId: input.providerId,
+            resultPreview: undefined,
+            startedAt: currentSubagent.startedAt ?? new Date().toISOString(),
+            status: 'running',
+          }
+        : null,
+      result: null,
+    }), input.userId);
+    if (!assistantMessageId) {
+      throw new BadRequestException('创建自动续跑 assistant 消息失败');
+    }
+    return assistantMessageId;
+  }
+
+  private readAfterResponseCompactionService(): ConversationAfterResponseCompactionService | undefined {
+    return this.moduleRef.get(ConversationAfterResponseCompactionService, { strict: false });
+  }
+
+  private async executeSubagent(input: { abortSignal: AbortSignal; context: PluginCallContext; pluginId: string; request: PluginSubagentRequest; onTextDelta?: (text: string) => void }): Promise<ResolvedSubagentExecutionResult> {
     const beforeHooks = await runDispatchableHookChain<PluginSubagentRequest, SubagentBeforeRunHookResult, PluginSubagentExecutionResult>({
       applyResponse: (request, response) => readSubagentBeforeRunResponse(request, response),
       hookName: 'subagent:before-run',
-      kernel: this.runtimeHostPluginDispatchService,
+      kernel: this.pluginDispatch,
       mapPayload: (request) => asJsonValue({ context: input.context, pluginId: input.pluginId, request }) as JsonObject,
       initialState: cloneJsonValue(input.request) as PluginSubagentRequest,
       readContext: () => input.context,
       excludedPluginId: input.pluginId,
     });
     if ('shortCircuitResult' in beforeHooks) {
-      return beforeHooks.shortCircuitResult;
+      return {
+        continuationState: {
+          hasAssistantTextOutput: false,
+          hasToolActivity: false,
+        },
+        result: beforeHooks.shortCircuitResult,
+      };
     }
     const request = beforeHooks.state;
     const stream = this.aiModelExecutionService.streamText({
@@ -505,29 +611,32 @@ export class SubagentRunnerService {
       tools: await this.toolRegistryService.buildToolSet({ allowedToolNames: request.toolNames, context: input.context, excludedPluginId: input.pluginId, abortSignal: input.abortSignal }),
       variant: request.variant,
     });
-    const result = await collectSubagentRunResult({
+    const collected = await collectSubagentRunResult({
       finishReason: stream.finishReason,
       fullStream: stream.fullStream,
       modelId: stream.modelId,
       onTextDelta: input.onTextDelta,
       providerId: stream.providerId,
     });
-    return applyMutatingDispatchableHooks({
+    return {
+      continuationState: collected.continuationState,
+      result: await applyMutatingDispatchableHooks({
       applyMutation: (nextResult, response) => applySubagentAfterRunMutation(nextResult, response as unknown as Extract<SubagentAfterRunHookResult, { action: 'mutate' }>),
       hookName: 'subagent:after-run',
-      kernel: this.runtimeHostPluginDispatchService,
-      payload: result,
+      kernel: this.pluginDispatch,
+      payload: collected.result,
       mapPayload: (nextResult) => asJsonValue({ context: input.context, pluginId: input.pluginId, request, result: nextResult }) as JsonObject,
       readContext: () => input.context,
       excludedPluginId: input.pluginId,
-    });
+      }),
+    };
   }
 
   private appendConversationMessages(conversationId: string, messages: PluginLlmMessage[], status: 'completed' | 'pending' = 'completed'): string[] {
     if (messages.some((message) => message.role === 'tool')) {
       throw new BadRequestException('子代理会话暂不支持直接写入 tool 角色消息');
     }
-    const conversation = this.runtimeHostConversationRecordService?.requireConversation(conversationId);
+    const conversation = this.conversationStore?.requireConversation(conversationId);
     if (!conversation) {
       throw new NotFoundException(`Conversation not found: ${conversationId}`);
     }
@@ -536,7 +645,7 @@ export class SubagentRunnerService {
       ...conversation.messages,
       ...messages.map((message) => createStoredConversationMessage(message, timestamp, status)),
     ];
-    this.runtimeHostConversationRecordService?.replaceMessages(conversationId, nextMessages, conversation.userId);
+    this.conversationStore?.replaceMessages(conversationId, nextMessages, conversation.userId);
     return nextMessages.slice(-messages.length).map((message) => String(message.id));
   }
 
@@ -578,7 +687,7 @@ export class SubagentRunnerService {
     if (!targetMessageId) {
       return;
     }
-    this.runtimeHostConversationMessageService.writeMessage(conversation.id, targetMessageId, {
+    this.conversationMessages.writeMessage(conversation.id, targetMessageId, {
       error: errorMessage,
       status: 'stopped',
     });
@@ -823,7 +932,22 @@ function applySubagentAfterRunMutation(nextResult: PluginSubagentExecutionResult
   };
 }
 
-async function collectSubagentRunResult(input: { finishReason?: Promise<unknown> | unknown; fullStream: AsyncIterable<unknown>; modelId: string; providerId: string; onTextDelta?: (text: string) => void }): Promise<PluginSubagentExecutionResult> {
+function normalizeResolvedSubagentExecution(
+  value: ResolvedSubagentExecutionResult | PluginSubagentExecutionResult,
+): ResolvedSubagentExecutionResult {
+  if ('result' in value && 'continuationState' in value) {
+    return value;
+  }
+  return {
+    continuationState: {
+      hasAssistantTextOutput: typeof value.text === 'string' && value.text.trim().length > 0,
+      hasToolActivity: value.toolCalls.length > 0 || value.toolResults.length > 0,
+    },
+    result: value,
+  };
+}
+
+async function collectSubagentRunResult(input: { finishReason?: Promise<unknown> | unknown; fullStream: AsyncIterable<unknown>; modelId: string; providerId: string; onTextDelta?: (text: string) => void }): Promise<ResolvedSubagentExecutionResult> {
   let text = '';
   const toolCalls: PluginSubagentExecutionResult['toolCalls'] = [];
   const toolResults: PluginSubagentExecutionResult['toolResults'] = [];
@@ -841,17 +965,37 @@ async function collectSubagentRunResult(input: { finishReason?: Promise<unknown>
     if (part.type === 'tool-call') {
       toolCalls.push({ ...payload, input: asJsonValue(part.input) });
     } else {
-      toolResults.push({ ...payload, output: asJsonValue(part.output) });
+      toolResults.push({ ...payload, output: compactSubagentToolResultOutput(part.output) });
     }
   }
   const finishReason = await input.finishReason;
   return {
-    ...(finishReason !== undefined ? { finishReason: finishReason === null ? null : String(finishReason) } : {}),
-    message: { content: text, role: 'assistant' },
-    modelId: input.modelId,
-    providerId: input.providerId,
-    text,
-    toolCalls,
-    toolResults,
+    continuationState: {
+      hasAssistantTextOutput: text.trim().length > 0,
+      hasToolActivity: toolCalls.length > 0 || toolResults.length > 0,
+    },
+    result: {
+      ...(finishReason !== undefined ? { finishReason: finishReason === null ? null : String(finishReason) } : {}),
+      message: { content: text, role: 'assistant' },
+      modelId: input.modelId,
+      providerId: input.providerId,
+      text,
+      toolCalls,
+      toolResults,
+    },
   };
+}
+
+function compactSubagentToolResultOutput(value: unknown): JsonValue {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return asJsonValue(value);
+  }
+  const record = value as Record<string, unknown>;
+  if ((record.kind === 'tool:text' && typeof record.value === 'string') || record.kind === 'tool:json') {
+    return asJsonValue({
+      kind: record.kind,
+      value: asJsonValue(record.value ?? null),
+    });
+  }
+  return asJsonValue(value);
 }

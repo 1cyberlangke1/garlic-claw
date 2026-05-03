@@ -142,179 +142,92 @@ describe('ContextGovernanceService', () => {
     expect(conversationRecordService.requireConversation(conversationId, 'user-1').title).toBe('代码评审结论');
   });
 
-  it('compacts conversation history through the summary model when /compact is received', async () => {
-    settingsService.updateConfig({
-      contextCompaction: {
-        enabled: true,
-        keepRecentMessages: 1,
-        strategy: 'summary',
-        summaryPrompt: '请整理下面的对话摘要',
-      },
-    });
-    conversationRecordService.replaceMessages(conversationId, [
-      createHistoryMessage('message-1', 'user', '第一条历史消息，说明 smoke 需要真实 provider。'),
-      createHistoryMessage('message-2', 'assistant', '第二条历史回复，说明默认 provider 不能落到占位 key。'),
-      createHistoryMessage('message-3', 'user', '第三条历史消息，说明 subagent 结果需要回写。'),
-    ], 'user-1');
-    aiModelExecutionService.generateText.mockResolvedValue({
-      modelId: 'gpt-oss-20b',
-      providerId: 'nvidia',
-      text: '压缩摘要：真实 provider、默认选择、subagent 回写。',
-    });
-
-    const result = await service.applyMessageReceived({
+  it('does not intercept /compact at message-received stage anymore', async () => {
+    await expect(service.applyMessageReceived({
       content: '/compact',
       conversationId,
       modelId: 'gpt-oss-20b',
       parts: [{ text: '/compact', type: 'text' }],
       providerId: 'nvidia',
       userId: 'user-1',
-    });
+    })).resolves.toEqual({ action: 'continue' });
+  });
 
-    expect(result).toEqual(expect.objectContaining({
-      action: 'deferred-short-circuit',
-      deferred: expect.objectContaining({
-        commandId: 'internal.context-governance:/compact:command',
-        execute: expect.any(Function),
-      }),
-      modelId: 'context-compaction-command',
-      providerId: 'system',
-      reason: 'context-compaction:command',
+  it('does not secretly clamp the effective context budget to 256 when the configured context length is 10000', async () => {
+    aiManagementService.getProviderModel.mockImplementation((providerId: string, modelId: string) => ({
+      capabilities: {
+        input: { image: false, text: true },
+        output: { image: false, text: true },
+        reasoning: false,
+        toolCall: true,
+      },
+      contextLength: 10_000,
+      id: modelId,
+      name: modelId,
+      providerId,
+      status: 'active',
     }));
-    if (result.action !== 'deferred-short-circuit') {
-      throw new Error(`unexpected action: ${result.action}`);
-    }
-    const resolution = await result.deferred.execute({
-      assistantMessageId: 'assistant-1',
-      conversationId,
-      userId: 'user-1',
-      userMessageId: 'user-1',
-    });
-    expect(resolution).toEqual({
-      assistantContent: '已压缩上下文，覆盖 2 条历史消息。',
-      assistantParts: [{ text: '已压缩上下文，覆盖 2 条历史消息。', type: 'text' }],
-      modelId: 'context-compaction-command',
-      providerId: 'system',
-      reason: 'context-compaction:command',
-    });
-    expect(aiModelExecutionService.generateText).toHaveBeenCalledWith(expect.objectContaining({
-      allowFallbackChatModels: true,
-      modelId: 'gpt-oss-20b',
-      providerId: 'nvidia',
-      transportMode: 'generate',
-    }));
-    const history = conversationRecordService.readConversationHistory(conversationId, 'user-1') as {
-      messages: Array<{ content?: string; id: string; metadata?: { annotations?: Array<{ data?: Record<string, unknown>; owner?: string; type?: string }> }; role: string }>;
-    };
-    const summaryMessage = history.messages.find((message) => message.content === '压缩摘要：真实 provider、默认选择、subagent 回写。');
-    expect(summaryMessage?.role).toBe('display');
-    expect(summaryMessage?.metadata?.annotations?.some((annotation) =>
-      annotation.owner === 'conversation.context-governance'
-      && annotation.type === 'context-compaction'
-      && annotation.data?.role === 'summary')).toBe(true);
-  });
-
-  it('returns a clear failure message when /compact hits a compaction API error', async () => {
     settingsService.updateConfig({
       contextCompaction: {
+        compressionThreshold: 50,
         enabled: true,
-        keepRecentMessages: 1,
+        keepRecentMessages: 2,
+        reservedTokens: 12_000,
         strategy: 'summary',
         summaryPrompt: '请整理下面的对话摘要',
       },
     });
     conversationRecordService.replaceMessages(conversationId, [
-      createHistoryMessage('message-1', 'user', '第一条历史消息，说明 smoke 需要真实 provider。'),
-      createHistoryMessage('message-2', 'assistant', '第二条历史回复，说明默认 provider 不能落到占位 key。'),
-      createHistoryMessage('message-3', 'user', '第三条历史消息，说明 subagent 结果需要回写。'),
+      createHistoryMessage('message-1', 'user', '第一段历史消息，用来验证 10000 上下文长度不会被偷偷压成 256。'.repeat(12)),
+      createHistoryMessage('message-2', 'assistant', '第二段历史回复，用来让当前上下文占用明显高于 128，但仍远低于 10000 的 50%。'.repeat(12)),
+      createHistoryMessage('message-3', 'user', '第三段消息保留在最近窗口内。'),
     ], 'user-1');
-    aiModelExecutionService.generateText.mockRejectedValueOnce(new Error('compaction api failed'));
 
-    const result = await service.applyMessageReceived({
-      content: '/compact',
+    await service.rewriteHistoryBeforeModel({
       conversationId,
       modelId: 'gpt-oss-20b',
-      parts: [{ text: '/compact', type: 'text' }],
       providerId: 'nvidia',
       userId: 'user-1',
     });
 
-    expect(result.action).toBe('deferred-short-circuit');
-    if (result.action !== 'deferred-short-circuit') {
-      throw new Error(`unexpected action: ${result.action}`);
-    }
-    await expect(result.deferred.execute({
-      assistantMessageId: 'assistant-1',
+    const preview = await service.getContextWindowPreview({
       conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
       userId: 'user-1',
-      userMessageId: 'user-1',
-    })).resolves.toEqual({
-      assistantContent: '当前上下文已接近上限，但自动压缩失败，本轮已停止继续生成。请先手动执行 /compact，或清理部分历史后重试。\n原因：compaction api failed',
-      assistantParts: [{ text: '当前上下文已接近上限，但自动压缩失败，本轮已停止继续生成。请先手动执行 /compact，或清理部分历史后重试。\n原因：compaction api failed', type: 'text' }],
-      modelId: 'context-compaction-command',
-      providerId: 'system',
-      reason: 'context-compaction:command',
+    });
+    const beforeModel = await service.applyBeforeModel({
+      conversationId,
+      messages: [
+        { content: 'system prompt', role: 'system' },
+        { content: '继续下一步', role: 'user' },
+      ],
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      systemPrompt: '你是测试助手',
+      userId: 'user-1',
+    });
+
+    expect(preview.contextLength).toBe(10_000);
+    expect(preview.estimatedTokens).toBeGreaterThan(128);
+    expect(preview.estimatedTokens).toBeLessThan(5_000);
+    expect(preview.source).toBe('estimated');
+    expect(aiModelExecutionService.generateText).not.toHaveBeenCalled();
+    expect(beforeModel).toEqual({
+      action: 'continue',
+      messages: [
+        { content: 'system prompt', role: 'system' },
+        { content: '继续下一步', role: 'user' },
+      ],
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      systemPrompt: '你是测试助手',
     });
   });
 
-  it('does not report compaction as successful when the summary still leaves history over budget', async () => {
+  it('auto compacts history before model execution without fabricating a short-circuit reply', async () => {
     settingsService.updateConfig({
       contextCompaction: {
-        compressionThreshold: 1,
-        enabled: true,
-        keepRecentMessages: 1,
-        reservedTokens: 1,
-        strategy: 'summary',
-        summaryPrompt: '请整理下面的对话摘要',
-      },
-    });
-    conversationRecordService.replaceMessages(conversationId, [
-      createHistoryMessage('message-1', 'user', '第一条历史消息。'.repeat(20)),
-      createHistoryMessage('message-2', 'assistant', '第二条历史回复。'.repeat(20)),
-      createHistoryMessage('message-3', 'user', '第三条消息保留给最近窗口。'),
-    ], 'user-1');
-    aiModelExecutionService.generateText.mockResolvedValue({
-      modelId: 'gpt-oss-20b',
-      providerId: 'nvidia',
-      text: '仍然过长的摘要。'.repeat(40),
-    });
-
-    const result = await service.applyMessageReceived({
-      content: '/compact',
-      conversationId,
-      modelId: 'gpt-oss-20b',
-      parts: [{ text: '/compact', type: 'text' }],
-      providerId: 'nvidia',
-      userId: 'user-1',
-    });
-
-    expect(result.action).toBe('deferred-short-circuit');
-    if (result.action !== 'deferred-short-circuit') {
-      throw new Error(`unexpected action: ${result.action}`);
-    }
-    await expect(result.deferred.execute({
-      assistantMessageId: 'assistant-1',
-      conversationId,
-      userId: 'user-1',
-      userMessageId: 'user-1',
-    })).resolves.toEqual({
-      assistantContent: '压缩后的上下文仍超过预算，本次未替换历史。',
-      assistantParts: [{ text: '压缩后的上下文仍超过预算，本次未替换历史。', type: 'text' }],
-      modelId: 'context-compaction-command',
-      providerId: 'system',
-      reason: 'context-compaction:command',
-    });
-    const history = conversationRecordService.readConversationHistory(conversationId, 'user-1') as {
-      messages: Array<{ content?: string }>;
-    };
-    expect(history.messages).toHaveLength(3);
-    expect(history.messages.some((message) => typeof message.content === 'string' && message.content.includes('仍然过长的摘要'))).toBe(false);
-  });
-
-  it('auto compacts history before model execution and short-circuits the current reply when auto continue is disabled', async () => {
-    settingsService.updateConfig({
-      contextCompaction: {
-        allowAutoContinue: false,
         compressionThreshold: 20,
         enabled: true,
         keepRecentMessages: 1,
@@ -354,20 +267,27 @@ describe('ContextGovernanceService', () => {
     });
 
     expect(aiModelExecutionService.generateText).toHaveBeenCalledTimes(1);
-    expect(beforeModel).toEqual({
-      action: 'short-circuit',
-      assistantContent: '已完成上下文压缩，本轮不继续生成主回复。',
-      assistantParts: [{ text: '已完成上下文压缩，本轮不继续生成主回复。', type: 'text' }],
-      modelId: 'gpt-oss-20b',
-      providerId: 'nvidia',
-      reason: 'context-compaction:auto-stop',
-    });
+    expect(beforeModel.action).toBe('continue');
+    if (beforeModel.action !== 'continue') {
+      throw new Error(`unexpected action: ${beforeModel.action}`);
+    }
+    expect(beforeModel.modelId).toBe('gpt-oss-20b');
+    expect(beforeModel.providerId).toBe('nvidia');
+    expect(beforeModel.systemPrompt).toBe('你是测试助手');
+    expect(beforeModel.messages).toEqual([
+      { content: [{ text: '自动摘要。', type: 'text' }], role: 'assistant' },
+      { content: [{ text: '第三段消息保留给最近窗口。', type: 'text' }], role: 'user' },
+    ]);
+    const history = conversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+      messages: Array<{ content?: string }>;
+    };
+    expect(history.messages.some((message) => message.content === '自动摘要。')).toBe(true);
   });
 
   it('does not let stale provider usage suppress auto compaction threshold checks', async () => {
     settingsService.updateConfig({
       contextCompaction: {
-        compressionThreshold: 50,
+        compressionThreshold: 10,
         enabled: true,
         keepRecentMessages: 1,
         reservedTokens: 1,
@@ -387,9 +307,9 @@ describe('ContextGovernanceService', () => {
       },
     ]);
     conversationRecordService.replaceMessages(conversationId, [
-      createHistoryMessage('message-1', 'user', '第一段较长的历史消息，用来确保当前真实历史已经超过自动压缩阈值。'.repeat(8)),
+      createHistoryMessage('message-1', 'user', '第一段较长的历史消息，用来确保当前真实历史已经超过自动压缩阈值。'.repeat(20)),
       {
-        ...createHistoryMessage('message-2', 'assistant', '第二段较长的历史回复，附带的是上一轮旧 usage，不应该继续参与这轮阈值判断。'.repeat(8)),
+        ...createHistoryMessage('message-2', 'assistant', '第二段较长的历史回复，附带的是上一轮旧 usage，不应该继续参与这轮阈值判断。'.repeat(20)),
         metadataJson: JSON.stringify({
           annotations: [
             {
@@ -430,153 +350,339 @@ describe('ContextGovernanceService', () => {
     expect(history.messages.some((message) => message.content === '自动压缩摘要：当前历史过长，旧 usage 已失效。')).toBe(true);
   });
 
-  it('uses the configured compression model while keeping context window budget bound to the active chat model', async () => {
+  it('does not short-circuit the next reply when automatic compaction fails before model execution', async () => {
     settingsService.updateConfig({
       contextCompaction: {
-        compressionModel: {
-          modelId: 'gpt-4.1-mini',
-          providerId: 'openai',
-        },
+        compressionThreshold: 20,
         enabled: true,
         keepRecentMessages: 1,
+        reservedTokens: 900,
         strategy: 'summary',
         summaryPrompt: '请整理下面的对话摘要',
       },
     });
     conversationRecordService.replaceMessages(conversationId, [
-      createHistoryMessage('message-1', 'user', '第一条历史消息。'),
-      createHistoryMessage('message-2', 'assistant', '第二条历史回复。'),
-      createHistoryMessage('message-3', 'user', '第三条消息保留给最近窗口。'),
+      createHistoryMessage('message-1', 'user', '第一段较长的历史消息，用来触发自动压缩阈值。'.repeat(10)),
+      createHistoryMessage('message-2', 'assistant', '第二段较长的历史回复，用来确保压缩候选不为空。'.repeat(10)),
+      createHistoryMessage('message-3', 'user', '第三段消息保留给最近窗口。'),
     ], 'user-1');
-    aiModelExecutionService.generateText.mockResolvedValue({
-      modelId: 'gpt-4.1-mini',
-      providerId: 'openai',
-      text: '压缩摘要：改用独立压缩模型。',
-    });
+    aiModelExecutionService.generateText.mockRejectedValueOnce(new Error('compaction api failed'));
 
-    const result = await service.applyMessageReceived({
-      content: '/compact',
+    await service.rewriteHistoryBeforeModel({
       conversationId,
       modelId: 'gpt-oss-20b',
-      parts: [{ text: '/compact', type: 'text' }],
       providerId: 'nvidia',
       userId: 'user-1',
     });
-    expect(result.action).toBe('deferred-short-circuit');
-    if (result.action !== 'deferred-short-circuit') {
-      throw new Error(`unexpected action: ${result.action}`);
-    }
-    await result.deferred.execute({
-      assistantMessageId: 'assistant-1',
+
+    await expect(service.applyBeforeModel({
       conversationId,
+      messages: [
+        { content: 'system prompt', role: 'system' },
+        { content: '继续下一步', role: 'user' },
+      ],
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      systemPrompt: '你是测试助手',
       userId: 'user-1',
-      userMessageId: 'user-1',
+    })).resolves.toEqual({
+      action: 'continue',
+      messages: [
+        { content: 'system prompt', role: 'system' },
+        { content: '继续下一步', role: 'user' },
+      ],
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      systemPrompt: '你是测试助手',
+    });
+  });
+
+  it('does not run post-response summary compaction before the configured threshold is reached', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 90,
+        enabled: true,
+        keepRecentMessages: 1,
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    const currentHistory = [
+      createHistoryMessage('history-1', 'user', '这是一条很短的历史消息。'),
+      createHistoryMessage('assistant-final', 'assistant', '这是一条很短的完成回复。'),
+    ];
+    const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages(currentHistory);
+    conversationRecordService.replaceMessages(conversationId, [
+      currentHistory[0],
+      {
+        ...currentHistory[1],
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                inputTokens: 20,
+                modelId: 'gpt-oss-20b',
+                outputTokens: 8,
+                providerId: 'nvidia',
+                responseHistorySignature,
+                source: 'provider',
+                totalTokens: 28,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+    ], 'user-1');
+
+    await service.rewriteHistoryAfterCompletedResponse({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
     });
 
-    expect(aiModelExecutionService.generateText).toHaveBeenCalledWith(expect.objectContaining({
-      modelId: 'gpt-4.1-mini',
-      providerId: 'openai',
-      transportMode: 'generate',
-    }));
+    expect(aiModelExecutionService.generateText).not.toHaveBeenCalled();
+    expect(service.consumePendingPreModelStop(conversationId)).toBeNull();
     const history = conversationRecordService.readConversationHistory(conversationId, 'user-1') as {
-      messages: Array<{ content?: string; metadata?: { annotations?: Array<{ data?: Record<string, unknown> }> } }>;
+      messages: Array<{ content?: string }>;
     };
-    const summaryMessage = history.messages.find((message) => message.content === '压缩摘要：改用独立压缩模型。');
-    const summaryAnnotation = summaryMessage?.metadata?.annotations?.find((annotation) => annotation.data?.role === 'summary');
-    expect(summaryAnnotation?.data).toEqual(expect.objectContaining({
-      modelId: 'gpt-4.1-mini',
-      providerId: 'openai',
+    expect(history.messages.some((message) => message.content === '压缩后的历史摘要')).toBe(false);
+  });
+
+  it('surfaces provider token source in the context window preview when the current history matches real usage', async () => {
+    const previewMessages = [
+      {
+        content: '第一条消息',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'history-1',
+        parts: [{ text: '第一条消息', type: 'text' as const }],
+        role: 'user' as const,
+        status: 'completed' as const,
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+      {
+        content: '第二条消息',
+        createdAt: '2026-04-25T00:01:00.000Z',
+        id: 'history-2',
+        parts: [{ text: '第二条消息', type: 'text' as const }],
+        role: 'assistant' as const,
+        status: 'completed' as const,
+        updatedAt: '2026-04-25T00:01:00.000Z',
+      },
+    ];
+    const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages(previewMessages);
+    conversationRecordService.replaceMessages(conversationId, [
+      previewMessages[0],
+      {
+        ...previewMessages[1],
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                inputTokens: 88,
+                modelId: 'gpt-oss-20b',
+                outputTokens: 12,
+                providerId: 'nvidia',
+                responseHistorySignature,
+                source: 'provider',
+                totalTokens: 100,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+    ], 'user-1');
+
+    await expect(service.getContextWindowPreview({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
+      estimatedTokens: 100,
+      includedMessageIds: ['history-1', 'history-2'],
+      source: 'provider',
     }));
   });
 
-  it('compacts history after an assistant message records spawn_subagent and wait_subagent tool events', async () => {
+  it('reuses the latest provider total tokens for context window preview display after history rewrite invalidates the old response signature', async () => {
+    const staleSignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '旧历史',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'stale-history-1',
+        parts: [{ text: '旧历史', type: 'text' as const }],
+        role: 'assistant' as const,
+        status: 'completed' as const,
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+    ]);
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('history-1', 'user', '新的第一条消息'),
+      {
+        ...createHistoryMessage('history-2', 'assistant', '新的第二条消息'),
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                inputTokens: 88,
+                modelId: 'gpt-oss-20b',
+                outputTokens: 12,
+                providerId: 'nvidia',
+                responseHistorySignature: staleSignature,
+                source: 'provider',
+                totalTokens: 100,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+    ], 'user-1');
+
+    await expect(service.getContextWindowPreview({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
+      estimatedTokens: 100,
+      source: 'provider',
+    }));
+  });
+
+  it('reuses the newest real provider total for context window preview even when the selected model has changed', async () => {
+    conversationRecordService.replaceMessages(conversationId, [
+      {
+        ...createHistoryMessage('history-1', 'assistant', '前一条回复'),
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                inputTokens: 70,
+                modelId: 'gpt-oss-20b',
+                outputTokens: 20,
+                providerId: 'nvidia',
+                source: 'provider',
+                totalTokens: 90,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+      {
+        ...createHistoryMessage('history-2', 'assistant', '最后一条真实回复'),
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                inputTokens: 91,
+                modelId: 'deepseek-v4-flash',
+                outputTokens: 29,
+                providerId: 'ds2api',
+                source: 'provider',
+                totalTokens: 120,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+    ], 'user-1');
+
+    await expect(service.getContextWindowPreview({
+      conversationId,
+      modelId: 'claude-3-7-sonnet',
+      providerId: 'anthropic',
+      userId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
+      estimatedTokens: 120,
+      includedMessageIds: ['history-1', 'history-2'],
+      source: 'provider',
+    }));
+  });
+
+  it('does not block the next reply with “当前历史还不足以生成稳定摘要” when only raw tool payloads inflated the preview', async () => {
     settingsService.updateConfig({
       contextCompaction: {
+        compressionThreshold: 50,
         enabled: true,
         keepRecentMessages: 1,
+        reservedTokens: 900,
         strategy: 'summary',
         summaryPrompt: '请整理下面的对话摘要',
       },
     });
     conversationRecordService.replaceMessages(conversationId, [
-      createHistoryMessage('message-1', 'user', '先确认技能加载是否正常。'),
-      createHistoryMessage('message-2', 'assistant', '技能已经加载。'),
-      createHistoryMessage('message-3', 'user', '请创建一个子代理去探索 smoke 流程。'),
-      createHistoryMessage('message-4', 'assistant', '子代理已完成：Smoke HTTP Flow 用于后端烟测。', {
-        toolCalls: [
-          {
-            input: {
-              description: '探索 smoke 技能',
-              prompt: '请总结 smoke-http-flow 技能的用途',
-              subagentType: 'review',
-            },
-            toolCallId: 'call_smoke_subagent_0',
-            toolName: 'spawn_subagent',
-          },
-          {
-            input: {
-              conversationId: '019ddd0a-1234-7890-abcd-ef1234567890',
-            },
-            toolCallId: 'call_smoke_subagent_wait_0',
-            toolName: 'wait_subagent',
-          },
-        ],
+      {
+        content: '工具已经执行完了。',
+        createdAt: '2026-05-02T10:00:00.000Z',
+        id: 'assistant-tool-heavy',
+        parts: [{ text: '工具已经执行完了。', type: 'text' }],
+        role: 'assistant',
+        status: 'completed',
         toolResults: [
           {
             output: {
-              conversationId: '019ddd0a-1234-7890-abcd-ef1234567890',
-              description: '探索 smoke 技能',
-              status: 'queued',
-            },
-            toolCallId: 'call_smoke_subagent_0',
-            toolName: 'spawn_subagent',
-          },
-          {
-            output: {
-              conversationId: '019ddd0a-1234-7890-abcd-ef1234567890',
-              result: {
-                text: 'Smoke HTTP Flow 用于后端烟测。',
+              data: {
+                stderr: 'warn'.repeat(500),
+                stdout: 'line'.repeat(2500),
               },
-              status: 'completed',
+              kind: 'tool:text',
+              value: '执行完成',
             },
-            toolCallId: 'call_smoke_subagent_wait_0',
-            toolName: 'wait_subagent',
+            toolCallId: 'call-heavy-1',
+            toolName: 'bash',
           },
         ],
-      }),
-      createHistoryMessage('message-5', 'user', '最后再压缩一下上下文。'),
+        updatedAt: '2026-05-02T10:00:00.000Z',
+      } as JsonObject,
     ], 'user-1');
-    aiModelExecutionService.generateText.mockResolvedValue({
-      modelId: 'gpt-oss-20b',
-      providerId: 'nvidia',
-      text: '压缩摘要：技能加载、子代理探索、最终收口。',
-    });
 
-    const result = await service.applyMessageReceived({
-      content: '/compact',
+    await service.rewriteHistoryBeforeModel({
       conversationId,
       modelId: 'gpt-oss-20b',
-      parts: [{ text: '/compact', type: 'text' }],
       providerId: 'nvidia',
       userId: 'user-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
-      action: 'deferred-short-circuit',
-      reason: 'context-compaction:command',
-    }));
-    if (result.action !== 'deferred-short-circuit') {
-      throw new Error(`unexpected action: ${result.action}`);
-    }
-    await expect(result.deferred.execute({
-      assistantMessageId: 'assistant-1',
+    const beforeModel = await service.applyBeforeModel({
       conversationId,
+      messages: [
+        { content: 'system prompt', role: 'system' },
+        { content: '继续下一步', role: 'user' },
+      ],
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      systemPrompt: '你是测试助手',
       userId: 'user-1',
-      userMessageId: 'user-1',
-    })).resolves.toEqual(expect.objectContaining({
-      assistantContent: '已压缩上下文，覆盖 4 条历史消息。',
-      reason: 'context-compaction:command',
-    }));
+    });
+
+    expect(aiModelExecutionService.generateText).not.toHaveBeenCalled();
+    expect(beforeModel).toEqual({
+      action: 'continue',
+      messages: [
+        { content: 'system prompt', role: 'system' },
+        { content: '继续下一步', role: 'user' },
+      ],
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      systemPrompt: '你是测试助手',
+    });
   });
 });
 

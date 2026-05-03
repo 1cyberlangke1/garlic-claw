@@ -69,10 +69,10 @@ describe('resolveChatModelSelection', () => {
       modelId: 'broken-model',
     })
 
-    expect(selection).toEqual({
+    expect(selection).toEqual(expect.objectContaining({
       providerId: 'healthy-provider',
       modelId: 'healthy-default',
-    })
+    }))
   })
 
   it('still resolves the preferred model id from healthy providers when another provider fails', async () => {
@@ -92,14 +92,54 @@ describe('resolveChatModelSelection', () => {
       modelId: 'shared-model',
     })
 
-    expect(selection).toEqual({
+    expect(selection).toEqual(expect.objectContaining({
       providerId: 'healthy-provider',
       modelId: 'shared-model',
-    })
+    }))
   })
 })
 
 describe('dbMessageToChat', () => {
+  it('unwraps wrapped tool result payloads to the display value', () => {
+    const message = dbMessageToChat({
+      id: 'message-tool-result-1',
+      role: 'assistant',
+      content: '',
+      partsJson: null,
+      toolCalls: null,
+      toolResults: JSON.stringify([
+        {
+          toolCallId: 'call-1',
+          toolName: 'bash',
+          output: {
+            kind: 'tool:text',
+            value: '<bash_result>\nhello\n</bash_result>',
+            data: {
+              cwd: '/workspace',
+              stdout: 'hello\n',
+            },
+          },
+        },
+      ]),
+      provider: 'openai',
+      model: 'gpt-4.1',
+      status: 'completed',
+      error: null,
+      metadataJson: null,
+      createdAt: '2026-03-29T12:00:00.000Z',
+      updatedAt: '2026-03-29T12:00:00.000Z',
+    })
+
+    expect(message.toolResults).toEqual([
+      {
+        toolCallId: 'call-1',
+        toolName: 'bash',
+        output: '<bash_result>\nhello\n</bash_result>',
+        outputPreview: '<bash_result>\nhello\n</bash_result>',
+      },
+    ])
+  })
+
   it('parses persisted vision fallback metadata from message records', () => {
     const message = dbMessageToChat({
       id: 'message-1',

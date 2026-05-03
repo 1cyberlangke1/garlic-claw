@@ -64,9 +64,20 @@ export function parseToolResults(value: string | null): ChatMessage['toolResults
   return (JSON.parse(value) as Array<{ toolCallId?: string; toolName: string; output: JsonValue }>).map((item) => ({
     ...(typeof item.toolCallId === 'string' ? { toolCallId: item.toolCallId } : {}),
     toolName: item.toolName,
-    output: item.output,
-    outputPreview: stringifyPayload(item.output),
+    output: unwrapToolResultPayload(item.output),
+    outputPreview: stringifyPayload(unwrapToolResultPayload(item.output)),
   }))
+}
+
+function unwrapToolResultPayload(value: JsonValue): JsonValue {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value
+  }
+  const record = value as Record<string, JsonValue>
+  if ((record.kind === 'tool:text' || record.kind === 'tool:json') && 'value' in record) {
+    return record.value ?? null
+  }
+  return value
 }
 
 /**
@@ -161,6 +172,25 @@ export function isStoppableResponseMessage(message: ChatMessage): boolean {
   return message.role === 'display' && readDisplayMessageVariant(message) === 'result'
 }
 
+export function isTemporaryChatMessageId(messageId: string | null | undefined): boolean {
+  return typeof messageId === 'string' && messageId.startsWith('temp-')
+}
+
+export function isAutoCompactionContinueMessage(
+  message: Pick<ChatMessage, 'role' | 'metadata'>,
+): boolean {
+  if (message.role !== 'user') {
+    return false
+  }
+
+  return (message.metadata?.annotations ?? []).some((annotation) => (
+    annotation.type === 'context-compaction'
+    && annotation.owner === 'conversation.context-governance'
+    && annotation.version === '1'
+    && isContinueAnnotationData(annotation.data)
+  ))
+}
+
 function readDisplayMessageVariant(message: ChatMessage): 'command' | 'result' | null {
   const annotation = message.metadata?.annotations?.find(
     (entry) =>
@@ -177,4 +207,17 @@ function readDisplayMessageVariant(message: ChatMessage): 'command' | 'result' |
       : null
 
   return variant === 'command' || variant === 'result' ? variant : null
+}
+
+function isContinueAnnotationData(value: JsonValue | undefined): value is {
+  role: 'continue'
+  synthetic: true
+  trigger: 'after-response'
+} {
+  return typeof value === 'object'
+    && value !== null
+    && !Array.isArray(value)
+    && value.role === 'continue'
+    && value.synthetic === true
+    && value.trigger === 'after-response'
 }

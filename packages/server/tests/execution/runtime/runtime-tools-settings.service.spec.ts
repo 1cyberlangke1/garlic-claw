@@ -88,11 +88,15 @@ describe('RuntimeToolsSettingsService', () => {
 
   it('falls back to just-bash when native-shell is configured on Windows without PowerShell', () => {
     const originalPath = process.env.PATH;
+    const originalProgramFiles = process.env.ProgramFiles;
+    const originalProgramFilesX86 = process.env['ProgramFiles(x86)'];
     const originalSystemRoot = process.env.SystemRoot;
     const fakeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-tools-shell-'));
 
     try {
       process.env.PATH = fakeRoot;
+      process.env.ProgramFiles = path.join(fakeRoot, 'missing-program-files');
+      process.env['ProgramFiles(x86)'] = path.join(fakeRoot, 'missing-program-files-x86');
       process.env.SystemRoot = path.join(fakeRoot, 'missing-system-root');
 
       expect(readRuntimeToolsConfiguredShellBackend({ shellBackend: 'native-shell' }, 'win32' as NodeJS.Platform)).toBe('just-bash');
@@ -102,6 +106,16 @@ describe('RuntimeToolsSettingsService', () => {
       } else {
         process.env.PATH = originalPath;
       }
+      if (originalProgramFiles === undefined) {
+        delete process.env.ProgramFiles;
+      } else {
+        process.env.ProgramFiles = originalProgramFiles;
+      }
+      if (originalProgramFilesX86 === undefined) {
+        delete process.env['ProgramFiles(x86)'];
+      } else {
+        process.env['ProgramFiles(x86)'] = originalProgramFilesX86;
+      }
       if (originalSystemRoot === undefined) {
         delete process.env.SystemRoot;
       } else {
@@ -109,6 +123,66 @@ describe('RuntimeToolsSettingsService', () => {
       }
       fs.rmSync(fakeRoot, { force: true, recursive: true });
     }
+  });
+
+  it('persists toolOutputCapture settings and exposes them through the runtime snapshot', () => {
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = createTempConfigPath(tempFiles);
+    const service = new RuntimeToolsSettingsService();
+
+    const snapshot = service.updateConfig({
+      toolOutputCapture: {
+        enabled: true,
+        maxBytes: 2048,
+        maxFilesPerSession: 7,
+      },
+    });
+
+    expect(snapshot.values).toEqual({
+      toolOutputCapture: {
+        enabled: true,
+        maxBytes: 2048,
+        maxFilesPerSession: 7,
+      },
+    });
+    expect(service.readToolOutputCaptureOptions()).toEqual({
+      enabled: true,
+      maxBytes: 2048,
+      maxFilesPerSession: 7,
+    });
+    const toolOutputCaptureSchema = snapshot.schema?.type === 'object'
+      ? snapshot.schema.items.toolOutputCapture
+      : undefined;
+    expect(toolOutputCaptureSchema?.type).toBe('object');
+    if (!toolOutputCaptureSchema || toolOutputCaptureSchema.type !== 'object') {
+      throw new Error('toolOutputCapture schema is missing');
+    }
+    expect(toolOutputCaptureSchema.items.maxBytes?.type).toBe('int');
+    expect(toolOutputCaptureSchema.items.maxFilesPerSession?.type).toBe('int');
+  });
+
+  it('persists approvalMode and exposes review/yolo options in runtime-tools schema', () => {
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = createTempConfigPath(tempFiles);
+    const service = new RuntimeToolsSettingsService();
+
+    const snapshot = service.updateConfig({
+      approvalMode: 'yolo',
+    });
+
+    expect(snapshot.values).toEqual({
+      approvalMode: 'yolo',
+    });
+    const approvalModeSchema = snapshot.schema?.type === 'object'
+      ? snapshot.schema.items.approvalMode
+      : undefined;
+    expect(approvalModeSchema?.type).toBe('string');
+    if (!approvalModeSchema || approvalModeSchema.type !== 'string') {
+      throw new Error('approvalMode schema is missing');
+    }
+    expect(approvalModeSchema.defaultValue).toBe('review');
+    expect(approvalModeSchema.options).toEqual([
+      { label: '审批确认', value: 'review' },
+      { label: 'YOLO 直通', value: 'yolo' },
+    ]);
   });
 });
 

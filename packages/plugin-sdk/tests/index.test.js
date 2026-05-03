@@ -907,6 +907,22 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
   assert.deepEqual(
     readContextCompactionConfig({
       strategy: 'sliding',
+      keepRecentMessages: 0,
+      frontendMessageWindowSize: 160,
+      reservedTokens: 4096,
+      slidingWindowUsagePercent: 45,
+    }),
+    {
+      strategy: 'sliding',
+      keepRecentMessages: 0,
+      frontendMessageWindowSize: 160,
+      reservedTokens: 4096,
+      slidingWindowUsagePercent: 45,
+    },
+  );
+  assert.deepEqual(
+    readContextCompactionConfig({
+      strategy: 'sliding',
       keepRecentMessages: 3,
       frontendMessageWindowSize: 160,
       reservedTokens: 4096,
@@ -921,7 +937,6 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
     },
   );
   const contextCompactionRuntimeConfig = resolveContextCompactionRuntimeConfig({});
-  assert.equal(contextCompactionRuntimeConfig.allowAutoContinue, true);
   assert.equal(contextCompactionRuntimeConfig.compressionThreshold, CONTEXT_COMPACTION_DEFAULT_THRESHOLD);
   assert.equal(contextCompactionRuntimeConfig.enabled, true);
   assert.equal(contextCompactionRuntimeConfig.keepRecentMessages, CONTEXT_COMPACTION_DEFAULT_KEEP_RECENT);
@@ -932,7 +947,10 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
   assert.equal(contextCompactionRuntimeConfig.strategy, CONTEXT_COMPACTION_DEFAULT_STRATEGY);
   assert.equal(typeof contextCompactionRuntimeConfig.summaryPrompt, 'string');
   assert.ok(contextCompactionRuntimeConfig.summaryPrompt.length > 0);
+  assert.equal(resolveContextCompactionRuntimeConfig({ keepRecentMessages: 0 }).keepRecentMessages, 0);
+  assert.ok(contextCompactionRuntimeConfig.summaryPrompt.includes('最近用户目标 / 限制 / 待办 / 下一步事项'));
   assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.keepRecentMessages.type, 'int');
+  assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.keepRecentMessages.defaultValue, 0);
   assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.frontendMessageWindowSize.type, 'int');
   assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.strategy.type, 'string');
   assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.slidingWindowUsagePercent.type, 'int');
@@ -1017,7 +1035,7 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
       toolNames: ['recall_memory'],
     },
   );
-  assert.equal(shouldGenerateConversationTitle(' 新对话 ', '新的对话'), true);
+  assert.equal(shouldGenerateConversationTitle(' 新的对话 ', '新的对话'), true);
   assert.equal(shouldGenerateConversationTitle('已生成标题', '新的对话'), false);
   assert.match(
     buildConversationTitlePrompt([

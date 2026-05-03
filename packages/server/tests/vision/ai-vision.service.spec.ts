@@ -92,6 +92,7 @@ describe('AiVisionService', () => {
       ],
       modelId: 'gpt-4.1-mini',
       providerId: 'openai',
+      transportMode: 'stream-collect',
     });
     expect(resolved).toEqual({
       text: '图片里是一只可爱...',

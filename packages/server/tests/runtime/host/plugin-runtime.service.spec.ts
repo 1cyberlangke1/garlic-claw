@@ -232,11 +232,11 @@ function createService(
   const service = new PluginRuntimeService(pluginPersistenceService);
   if (dispatchService) {
     Object.assign(service as unknown as {
-      runtimeHostPluginDispatchService?: {
+      pluginDispatch?: {
         invokeHook: jest.Mock;
       };
     }, {
-      runtimeHostPluginDispatchService: dispatchService,
+      pluginDispatch: dispatchService,
     });
   }
   const lifecycleService = service as PluginRuntimeService & {
@@ -247,3 +247,4 @@ function createService(
   trackedServices.push(lifecycleService);
   return service;
 }
+

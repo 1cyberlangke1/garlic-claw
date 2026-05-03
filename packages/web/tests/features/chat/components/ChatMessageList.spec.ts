@@ -1,8 +1,12 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import ChatMessageList from '@/modules/chat/components/ChatMessageList.vue'
 
 describe('ChatMessageList', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('renders vision fallback chips and collapsible transcription details only when present', () => {
     const wrapper = mount(ChatMessageList, {
       props: {
@@ -143,7 +147,7 @@ describe('ChatMessageList', () => {
     expect(content.text()).toContain('正式回复')
   })
 
-  it('renders display-only context compaction summary with dedicated styling', () => {
+  it('renders a lightweight divider for display-only context compaction summaries', () => {
     const wrapper = mount(ChatMessageList, {
       props: {
         assistantPersona: {
@@ -188,23 +192,17 @@ describe('ChatMessageList', () => {
     })
 
     const displayMessage = wrapper.find('[data-message-id="display-summary"]')
-    const details = displayMessage.find('details.message-annotation-context-compaction')
-    const summary = displayMessage.find('.message-annotation-summary')
+    const divider = displayMessage.find('.message-compaction-divider')
 
-    expect(details.exists()).toBe(true)
-    expect((details.element as HTMLDetailsElement).open).toBe(false)
-    expect(summary.text()).toContain('上下文压缩')
-    expect(summary.text()).toContain('覆盖 3 条消息')
-    expect(displayMessage.text()).toContain('摘要')
-    expect(displayMessage.text()).toContain('仅展示，不进入 LLM 上下文')
-    expect(displayMessage.text()).toContain('压缩后的历史摘要')
+    expect(divider.exists()).toBe(true)
+    expect(divider.text()).toContain('会话已压缩')
+    expect(displayMessage.text()).not.toContain('覆盖 3 条消息')
+    expect(displayMessage.text()).not.toContain('Token 估算')
+    expect(displayMessage.text()).not.toContain('仅展示，不进入 LLM 上下文')
+    expect(displayMessage.text()).not.toContain('压缩后的历史摘要')
     expect(displayMessage.classes()).toContain('display')
-    expect(displayMessage.find('.message-context-visibility.excluded').exists()).toBe(true)
     expect(displayMessage.find('.message-role-avatar-image').exists()).toBe(false)
     expect(displayMessage.find('.retry-text').exists()).toBe(false)
-    expect(displayMessage.html().indexOf('message-annotation-context-compaction')).toBeLessThan(
-      displayMessage.html().indexOf('message-content'),
-    )
   })
 
   it('renders persisted display command and result messages with distinct variants', () => {
@@ -269,6 +267,74 @@ describe('ChatMessageList', () => {
     expect(resultMessage.text()).toContain('已压缩上下文，覆盖 2 条历史消息。')
   })
 
+  it('renders an auto-retry card for assistant messages that are waiting for the next retry attempt', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_777_000_000_000)
+
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'assistant-retry',
+            role: 'assistant',
+            content: '',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'pending',
+            error: null,
+            retryState: {
+              attempt: 1,
+              message: 'Provider is overloaded',
+              next: 1_777_000_003_000,
+            },
+          } as never,
+        ],
+      },
+    })
+
+    const assistant = wrapper.find('[data-message-id="assistant-retry"]')
+
+    expect(assistant.text()).toContain('自动重试')
+    expect(assistant.text()).toContain('Provider is overloaded')
+    expect(assistant.text()).toContain('3 秒后')
+    expect(assistant.text()).toContain('第 1 次')
+    expect(assistant.find('.cursor').exists()).toBe(false)
+    expect(assistant.find('.message-error').exists()).toBe(false)
+  })
+
+  it('does not render a retry button for temporary assistant placeholders', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'temp-assistant-1',
+            role: 'assistant',
+            content: '',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'error',
+            error: 'network down',
+          } as never,
+        ],
+      },
+    })
+
+    const assistant = wrapper.find('[data-message-id="temp-assistant-1"]')
+
+    expect(assistant.exists()).toBe(true)
+    expect(assistant.find('.retry-text').exists()).toBe(false)
+    expect(assistant.find('.delete-text').exists()).toBe(true)
+  })
+
   it('grays out messages excluded from the current LLM context window without deleting them', () => {
     const wrapper = mount(ChatMessageList, {
       props: {
@@ -284,6 +350,7 @@ describe('ChatMessageList', () => {
           frontendMessageWindowSize: 200,
           includedMessageIds: ['assistant-2'],
           keepRecentMessages: 2,
+          source: 'estimated',
           slidingWindowUsagePercent: 50,
           strategy: 'sliding',
         },
@@ -318,6 +385,112 @@ describe('ChatMessageList', () => {
     expect(excludedMessage.text()).toContain('已脱离当前 LLM 上下文')
     expect(excludedMessage.text()).toContain('这条消息已经脱离上下文窗口。')
     expect(includedMessage.classes()).not.toContain('excluded-from-context')
+  })
+
+  it('does not render sliding-window exclusion copy for summary compaction history', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        contextWindowPreview: {
+          contextLength: 10_000,
+          enabled: true,
+          estimatedTokens: 580,
+          excludedMessageIds: ['assistant-1'],
+          frontendMessageWindowSize: 200,
+          includedMessageIds: ['summary-1', 'assistant-2'],
+          keepRecentMessages: 0,
+          source: 'provider',
+          slidingWindowUsagePercent: 50,
+          strategy: 'summary',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '这条旧消息已经被摘要覆盖。',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'completed',
+            error: null,
+          },
+          {
+            id: 'summary-1',
+            role: 'display',
+            content: '压缩摘要',
+            status: 'completed',
+            error: null,
+            metadata: {
+              annotations: [
+                {
+                  data: {
+                    coveredCount: 1,
+                    role: 'summary',
+                  },
+                  owner: 'conversation.context-governance',
+                  type: 'context-compaction',
+                  version: '1',
+                },
+              ],
+            } as never,
+          },
+        ],
+      },
+    })
+
+    const excludedMessage = wrapper.find('[data-message-id="assistant-1"]')
+    expect(excludedMessage.classes()).not.toContain('excluded-from-context')
+    expect(excludedMessage.text()).not.toContain('已脱离当前 LLM 上下文')
+  })
+
+  it('recognizes after-response compaction summaries as context compaction annotations', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'summary-after-response',
+            role: 'display',
+            content: '压缩摘要：最近任务与约束。',
+            status: 'completed',
+            error: null,
+            metadata: {
+              annotations: [
+                {
+                  data: {
+                    afterPreview: { estimatedTokens: 420 },
+                    beforePreview: { estimatedTokens: 980 },
+                    coveredCount: 3,
+                    modelId: 'gpt-5.4',
+                    providerId: 'openai',
+                    role: 'summary',
+                    trigger: 'after-response',
+                  },
+                  owner: 'conversation.context-governance',
+                  type: 'context-compaction',
+                  version: '1',
+                },
+              ],
+            } as never,
+          },
+        ],
+      },
+    })
+
+    const summaryMessage = wrapper.find('[data-message-id="summary-after-response"]')
+    expect(summaryMessage.find('.message-compaction-divider').exists()).toBe(true)
+    expect(summaryMessage.text()).toContain('会话已压缩')
+    expect(summaryMessage.text()).not.toContain('自动触发')
+    expect(summaryMessage.text()).not.toContain('openai/gpt-5.4')
+    expect(summaryMessage.text()).not.toContain('Token 估算 980 -> 420')
+    expect(summaryMessage.text()).not.toContain('压缩摘要：最近任务与约束。')
   })
 
   it('renders tool calls and tool results as collapsed timeline blocks before the assistant reply', () => {
@@ -388,7 +561,7 @@ describe('ChatMessageList', () => {
     expect(assistant.text()).toContain('subagent-conversation-1')
   })
 
-  it('renders assistant usage details behind an info toggle and includes cached tokens only when provided', async () => {
+  it('hides inline usage text and only shows token details in the [i] panel', async () => {
     const wrapper = mount(ChatMessageList, {
       props: {
         assistantPersona: {
@@ -462,11 +635,12 @@ describe('ChatMessageList', () => {
               annotations: [
                 {
                   data: {
+                    cachedInputTokens: 7,
                     inputTokens: 42,
                     modelId: 'deepseek-v4-flash',
                     outputTokens: 21,
                     providerId: 'ds2api',
-                    source: 'provider',
+                    source: 'estimated',
                     totalTokens: 63,
                   },
                   owner: 'conversation.model-usage',
@@ -484,14 +658,18 @@ describe('ChatMessageList', () => {
     const secondAssistant = wrapper.find('[data-message-id="assistant-usage-2"]')
     const thirdAssistant = wrapper.find('[data-message-id="assistant-usage-3"]')
 
+    expect(firstAssistant.find('.message-usage-inline').exists()).toBe(false)
+    expect(secondAssistant.find('.message-usage-inline').exists()).toBe(false)
+    expect(thirdAssistant.find('.message-usage-inline').exists()).toBe(false)
     expect(firstAssistant.find('.usage-info-toggle').text()).toBe('[i]')
-    expect(firstAssistant.text()).not.toContain('输入 token')
     expect(thirdAssistant.find('.usage-info-toggle').text()).toBe('[i]')
 
     await firstAssistant.find('.usage-info-toggle').trigger('click')
 
     expect(firstAssistant.text()).toContain('输入 token')
     expect(firstAssistant.text()).toContain('320')
+    expect(firstAssistant.text()).toContain('总 token')
+    expect(firstAssistant.text()).toContain('440')
     expect(firstAssistant.text()).toContain('输出 token')
     expect(firstAssistant.text()).toContain('120')
     expect(firstAssistant.text()).toContain('缓存 token')
@@ -501,6 +679,8 @@ describe('ChatMessageList', () => {
 
     expect(secondAssistant.text()).toContain('输入 token')
     expect(secondAssistant.text()).toContain('180')
+    expect(secondAssistant.text()).toContain('总 token')
+    expect(secondAssistant.text()).toContain('220')
     expect(secondAssistant.text()).toContain('输出 token')
     expect(secondAssistant.text()).toContain('40')
     expect(secondAssistant.text()).not.toContain('缓存 token')
@@ -508,8 +688,12 @@ describe('ChatMessageList', () => {
     await thirdAssistant.find('.usage-info-toggle').trigger('click')
 
     expect(thirdAssistant.text()).toContain('输入 token')
-    expect(thirdAssistant.text()).toContain('42')
+    expect(thirdAssistant.text()).toContain('*42')
+    expect(thirdAssistant.text()).toContain('总 token')
+    expect(thirdAssistant.text()).toContain('*63')
+    expect(thirdAssistant.text()).toContain('缓存 token')
+    expect(thirdAssistant.text()).toContain('*7')
     expect(thirdAssistant.text()).toContain('输出 token')
-    expect(thirdAssistant.text()).toContain('21')
+    expect(thirdAssistant.text()).toContain('*21')
   })
 })

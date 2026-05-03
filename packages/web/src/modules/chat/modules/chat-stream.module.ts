@@ -19,7 +19,9 @@ import {
   stopChatRecoveryPolling,
 } from "@/modules/chat/modules/chat-recovery.polling";
 import {
+  dbMessageToChat,
   findActiveAssistantMessageId,
+  isAutoCompactionContinueMessage,
   normalizeSendInput,
 } from "@/modules/chat/store/chat-store.helpers";
 import {
@@ -51,6 +53,7 @@ const DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE = 200;
 
 interface ConversationRefreshParams {
   loadConversationDetail?: ((conversationId: string) => Promise<void>) | undefined;
+  refreshConversationSnapshot?: (() => Promise<void>) | undefined;
   refreshConversationSummary?: (() => Promise<void>) | undefined;
   refreshConversationState?: ((input: {
     summaryRefreshed: boolean;
@@ -202,6 +205,16 @@ function applyTodoUpdatedEvent(
   state.todoItems.value = event.todos;
 }
 
+function isAutoCompactionContinuationStart(
+  event: SSEEvent,
+): event is Extract<SSEEvent, { type: "message-start" }> {
+  if (event.type !== "message-start" || !event.userMessage) {
+    return false;
+  }
+
+  return isAutoCompactionContinueMessage(dbMessageToChat(event.userMessage));
+}
+
 export function abortChatStream(state: ChatStreamState) {
   state.streamController.value?.abort();
   state.streamController.value = null;
@@ -225,6 +238,29 @@ export function scheduleChatRecoveryWithState(
       await loadConversationDetail(conversationId);
     },
   });
+}
+
+function recoverStreamingConversationImmediately(
+  state: ChatStreamState,
+  conversationId: string,
+  loadConversationDetail: (conversationId: string) => Promise<void>,
+) {
+  if (state.currentConversationId.value !== conversationId) {
+    return;
+  }
+
+  if (!state.streaming.value) {
+    scheduleChatRecoveryWithState(state, loadConversationDetail);
+    return;
+  }
+
+  void loadConversationDetail(conversationId)
+    .catch(() => undefined)
+    .finally(() => {
+      if (state.currentConversationId.value === conversationId) {
+        scheduleChatRecoveryWithState(state, loadConversationDetail);
+      }
+    });
 }
 
 export async function dispatchSendMessage(
@@ -309,6 +345,9 @@ export async function dispatchSendMessage(
         });
         if (event.type === "message-start") {
           syncMessageList(state, nextMessages);
+          if (isAutoCompactionContinuationStart(event)) {
+            void params?.refreshConversationSnapshot?.().catch(() => undefined);
+          }
           return;
         }
 
@@ -345,8 +384,9 @@ export async function dispatchSendMessage(
       summaryRefreshed: didRefreshConversationStateDuringStream,
     }).catch(() => undefined);
     if (state.currentConversationId.value === requestConversationId) {
-      scheduleChatRecoveryWithState(
+      recoverStreamingConversationImmediately(
         state,
+        requestConversationId,
         params?.loadConversationDetail ?? (async () => undefined),
       );
     }
@@ -428,6 +468,9 @@ export async function dispatchRetryMessage(
         });
         if (event.type === "message-start") {
           syncMessageList(state, nextMessages);
+          if (isAutoCompactionContinuationStart(event)) {
+            void params?.refreshConversationSnapshot?.().catch(() => undefined);
+          }
           return;
         }
 
@@ -460,8 +503,9 @@ export async function dispatchRetryMessage(
       summaryRefreshed: didRefreshConversationStateDuringStream,
     }).catch(() => undefined);
     if (state.currentConversationId.value === requestConversationId) {
-      scheduleChatRecoveryWithState(
+      recoverStreamingConversationImmediately(
         state,
+        requestConversationId,
         params?.loadConversationDetail ?? (async () => undefined),
       );
     }

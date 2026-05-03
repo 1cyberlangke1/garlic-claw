@@ -25,11 +25,11 @@
                     {{ contextUsageSummary.percent }}%
                   </span>
                   <span class="toolbar-context-usage-tokens">
-                    {{ contextUsageSummary.estimatedTokens }} / {{ contextUsageSummary.contextLength }}
+                    {{ contextUsageSummary.tokenLabel }} / {{ contextUsageSummary.contextLength }}
                   </span>
                   <span
                     class="toolbar-context-progress"
-                    :title="`当前上下文估算占用 ${contextUsageSummary.percent}%`"
+                    :title="`当前上下文占用 ${contextUsageSummary.percent}%`"
                   >
                     <span
                       class="toolbar-context-progress-fill"
@@ -246,6 +246,7 @@ const contextUsageSummary = computed(() => {
     contextLength: preview.contextLength,
     estimatedTokens: preview.estimatedTokens,
     percent,
+    tokenLabel: `${preview.source === 'estimated' ? '*' : ''}${preview.estimatedTokens}`,
   }
 })
 

@@ -7,15 +7,16 @@ import { PluginDispatchService } from '../runtime/host/plugin-dispatch.service';
 import { PersonaService } from '../persona/persona.service';
 import { ConversationTaskService } from './conversation-task.service';
 import { ConversationMessagePlanningService, createShortCircuitStream, type ConversationResponseSource } from './conversation-message-planning.service';
+import type { AfterResponseCompactionContinuation } from './conversation-after-response-compaction.service';
 import type { DeferredInternalCommandAction } from './context-governance.service';
 
 @Injectable()
 // Keep lifecycle orchestration and hook mutation together to avoid recreating the removed single-consumer hook owner.
 export class ConversationMessageLifecycleService {
-  constructor(private readonly runtimeHostConversationMessageService: ConversationMessageService, private readonly runtimeHostConversationRecordService: ConversationStoreService, private readonly conversationTaskService: ConversationTaskService, private readonly conversationMessagePlanningService: ConversationMessagePlanningService, private readonly personaService: PersonaService, @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService) {}
+  constructor(private readonly conversationMessages: ConversationMessageService, private readonly conversationStore: ConversationStoreService, private readonly conversationTaskService: ConversationTaskService, private readonly conversationMessagePlanningService: ConversationMessagePlanningService, private readonly personaService: PersonaService, @Inject(PluginDispatchService) private readonly pluginDispatch: PluginDispatchService) {}
 
   async retryMessageGeneration(conversationId: string, messageId: string, dto: RetryMessagePayload, userId?: string) {
-    const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
+    const conversation = this.conversationStore.requireConversation(conversationId, userId);
     const message = conversation.messages.find((entry) => entry.id === messageId);
     if (!message) {throw new NotFoundException(`Message not found: ${messageId}`);}
     if (message.role !== 'assistant') {throw new BadRequestException('Only assistant messages can be retried');}
@@ -26,7 +27,7 @@ export class ConversationMessageLifecycleService {
     const resolvedMessageId = readMessageId(message);
     const modelId = dto.model ?? readOptionalMessageField(message, 'model');
     const providerId = dto.provider ?? readOptionalMessageField(message, 'provider');
-    const resetMessage = this.runtimeHostConversationMessageService.writeMessage(conversationId, resolvedMessageId, {
+    const resetMessage = this.conversationMessages.writeMessage(conversationId, resolvedMessageId, {
       content: '',
       error: null,
       model: modelId,
@@ -50,7 +51,7 @@ export class ConversationMessageLifecycleService {
   }
 
   async startMessageGeneration(conversationId: string, dto: SendMessagePayload, userId?: string) {
-    const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
+    const conversation = this.conversationStore.requireConversation(conversationId, userId);
     if (conversation.messages.some(isActiveResponseMessage)) {
       throw new BadRequestException('当前仍有回复在生成中，请先停止或等待完成');
     }
@@ -66,14 +67,14 @@ export class ConversationMessageLifecycleService {
     });
     const commandDisplayOnly = received.action !== 'continue'
       && isDisplayOnlyCommandMessage(received.content, received.parts);
-    const userMessage = await this.runtimeHostConversationMessageService.createMessageWithHooks(conversationId, {
+    const userMessage = await this.conversationMessages.createMessageWithHooks(conversationId, {
       content: received.content,
       ...(commandDisplayOnly ? { metadata: createDisplayMessageMetadata('command') } : {}),
       parts: received.parts,
       role: commandDisplayOnly ? 'display' : 'user',
       status: 'completed',
-    }, conversation.userId, this.runtimeHostPluginDispatchService);
-    const assistantMessage = this.runtimeHostConversationMessageService.createMessage(conversationId, {
+    }, conversation.userId, this.pluginDispatch);
+    const assistantMessage = this.conversationMessages.createMessage(conversationId, {
       content: '',
       model: received.modelId,
       ...(commandDisplayOnly ? { metadata: createDisplayMessageMetadata('result') } : {}),
@@ -112,13 +113,13 @@ export class ConversationMessageLifecycleService {
   }
 
   async stopMessageGeneration(conversationId: string, messageId: string, userId?: string) {
-    const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
+    const conversation = this.conversationStore.requireConversation(conversationId, userId);
     const message = conversation.messages.find((entry) => entry.id === messageId);
     if (!message) {throw new NotFoundException(`Message not found: ${messageId}`);}
     if (!isStoppableResponseMessage(message)) {throw new BadRequestException('Only assistant or display result messages can be stopped');}
 
     const stopped = await this.conversationTaskService.stopTask(messageId);
-    if (!stopped && isActiveResponseMessage(message)) {this.runtimeHostConversationMessageService.writeMessage(conversationId, messageId, { status: 'stopped' });}
+    if (!stopped && isActiveResponseMessage(message)) {this.conversationMessages.writeMessage(conversationId, messageId, { status: 'stopped' });}
     return { message: 'Generation stopped' };
   }
 
@@ -183,11 +184,52 @@ export class ConversationMessageLifecycleService {
       onComplete: async (result) => this.conversationMessagePlanningService.finalizeTaskResult(result, responseSource, shortCircuitParts),
       resolveErrorMessage: () => customErrorMessage,
       onSent: async (result) => {
-        const conversation = this.runtimeHostConversationRecordService.requireConversation(result.conversationId);
-        await this.conversationMessagePlanningService.broadcastAfterSend({ activePersonaId: conversation.activePersonaId, conversationId: result.conversationId, userId: conversation.userId }, result, responseSource);
+        const conversation = this.conversationStore.requireConversation(result.conversationId);
+        const afterSend = await this.conversationMessagePlanningService.broadcastAfterSend({ activePersonaId: conversation.activePersonaId, conversationId: result.conversationId, userId: conversation.userId }, result, responseSource);
+        if (afterSend.continuation) {
+          this.startAutoCompactionContinuationTask({
+            activePersonaId: conversation.activePersonaId,
+            conversationId: result.conversationId,
+            continuation: afterSend.continuation,
+            modelId: result.modelId,
+            providerId: result.providerId,
+            userId: conversation.userId,
+          });
+        }
       },
       providerId: input.providerId,
     });
+  }
+
+  private startAutoCompactionContinuationTask(input: { activePersonaId?: string; continuation: AfterResponseCompactionContinuation; conversationId: string; modelId: string; providerId: string; userId?: string }): void {
+    const userMessage = this.conversationMessages.createMessage(input.conversationId, {
+      content: input.continuation.content,
+      metadata: input.continuation.metadata,
+      parts: input.continuation.parts,
+      provider: input.providerId,
+      model: input.modelId,
+      role: 'user',
+      status: 'completed',
+    });
+    const assistantMessage = this.conversationMessages.createMessage(input.conversationId, {
+      content: '',
+      model: input.modelId,
+      parts: [],
+      provider: input.providerId,
+      role: 'assistant',
+      status: 'pending',
+    });
+
+    this.startConversationTask({
+      activePersonaId: input.activePersonaId,
+      conversationId: input.conversationId,
+      messageId: readMessageId(assistantMessage),
+      modelId: input.modelId,
+      providerId: input.providerId,
+      userId: input.userId,
+    });
+
+    void userMessage;
   }
 }
 

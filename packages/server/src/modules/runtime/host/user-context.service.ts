@@ -21,7 +21,7 @@ interface RuntimeMemoryRecord {
   userId: string;
 }
 
-interface RuntimeHostMemoryStoreFile {
+interface HostMemoryStoreFile {
   memories?: RuntimeMemoryRecord[];
   memorySequence?: number;
 }
@@ -33,7 +33,7 @@ export class UserContextService {
   private memorySequence: number;
 
   constructor() {
-    this.storagePath = resolveRuntimeHostMemoryStoragePath();
+    this.storagePath = resolveMemoryStoragePath();
     const loaded = this.loadMemories();
     this.memories = loaded.memories;
     this.memorySequence = loaded.memorySequence;
@@ -101,7 +101,7 @@ export class UserContextService {
       if (!fs.existsSync(this.storagePath)) {
         return { memories: [], memorySequence: 0 };
       }
-      const parsed = JSON.parse(fs.readFileSync(this.storagePath, 'utf-8')) as RuntimeHostMemoryStoreFile;
+      const parsed = JSON.parse(fs.readFileSync(this.storagePath, 'utf-8')) as HostMemoryStoreFile;
       return {
         memories: Array.isArray(parsed.memories) ? parsed.memories.filter(isRuntimeMemoryRecord) : [],
         memorySequence: typeof parsed.memorySequence === 'number' ? parsed.memorySequence : 0,
@@ -123,7 +123,7 @@ export class UserContextService {
   }
 }
 
-function resolveRuntimeHostMemoryStoragePath(): string | null {
+function resolveMemoryStoragePath(): string | null {
   if (process.env.GARLIC_CLAW_MEMORIES_PATH) {
     return path.resolve(process.env.GARLIC_CLAW_MEMORIES_PATH);
   }

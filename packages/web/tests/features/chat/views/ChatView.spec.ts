@@ -22,13 +22,14 @@ const contextWindowPreviewState = vi.hoisted(() => ({
         enabled: boolean
         estimatedTokens: number
         excludedMessageIds: string[]
-        contextLength: number
-        frontendMessageWindowSize: number
-        includedMessageIds: string[]
-        keepRecentMessages: number
-        slidingWindowUsagePercent: number
-        strategy: 'sliding'
-      }
+      contextLength: number
+      frontendMessageWindowSize: number
+      includedMessageIds: string[]
+      keepRecentMessages: number
+      slidingWindowUsagePercent: number
+      source: 'estimated' | 'provider'
+      strategy: 'sliding'
+    }
     | null,
 }))
 
@@ -242,6 +243,7 @@ describe('ChatView', () => {
       includedMessageIds: [],
       keepRecentMessages: 6,
       slidingWindowUsagePercent: 50,
+      source: 'provider',
       strategy: 'sliding',
     }
     const wrapper = mount(ChatView, {
@@ -262,6 +264,37 @@ describe('ChatView', () => {
     expect(wrapper.find('.toolbar-context-usage').text()).toContain('40%')
     expect(wrapper.find('.toolbar-context-usage').text()).toContain('4000 / 10000')
     expect(wrapper.find('.toolbar-context-progress-fill').attributes('style')).toContain('width: 40%')
+  })
+
+  it('prefixes estimated context token previews with an asterisk', async () => {
+    contextWindowPreviewState.value = {
+      contextLength: 10000,
+      enabled: true,
+      estimatedTokens: 144,
+      excludedMessageIds: [],
+      frontendMessageWindowSize: 200,
+      includedMessageIds: [],
+      keepRecentMessages: 0,
+      slidingWindowUsagePercent: 50,
+      source: 'estimated',
+      strategy: 'sliding',
+    }
+    const wrapper = mount(ChatView, {
+      global: {
+        stubs: {
+          ChatMessageList: { template: '<div class="chat-message-list" />' },
+          ChatComposer: { template: '<div class="chat-composer" />' },
+          ModelQuickInput: { template: '<div class="model-quick-input" />' },
+          RouterLink: {
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.toolbar-context-usage').text()).toContain('*144 / 10000')
   })
 
   it('passes pending runtime permission requests into the approval panel', async () => {

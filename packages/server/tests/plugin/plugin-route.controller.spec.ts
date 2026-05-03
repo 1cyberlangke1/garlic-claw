@@ -10,14 +10,14 @@ describe('PluginController route forwarding', () => {
     getPluginOrThrow: jest.fn(),
     upsertPlugin: jest.fn(),
   };
-  const runtimeHostConversationRecordService = {
+  const conversationStore = {
     listPluginConversationSessions: jest.fn(),
   };
-  const runtimeHostPluginDispatchService = {
+  const pluginDispatch = {
     invokeRoute: jest.fn(),
     listPlugins: jest.fn(),
   };
-  const runtimeHostPluginRuntimeService = {
+  const pluginRuntime = {
     deleteCronJob: jest.fn(),
     listCronJobs: jest.fn(),
     deletePluginStorage: jest.fn(),
@@ -42,16 +42,16 @@ describe('PluginController route forwarding', () => {
     controller = new PluginController(
       pluginRemoteBootstrapService as never,
       pluginPersistenceService as never,
-      runtimeHostConversationRecordService as never,
-      runtimeHostPluginDispatchService as never,
-      runtimeHostPluginRuntimeService as never,
+      conversationStore as never,
+      pluginDispatch as never,
+      pluginRuntime as never,
       runtimePluginGovernanceService as never,
       toolManagementSettingsService as never,
     );
   });
 
   it('forwards authenticated HTTP requests into the unified plugin route runtime', async () => {
-    runtimeHostPluginDispatchService.invokeRoute.mockResolvedValue({
+    pluginDispatch.invokeRoute.mockResolvedValue({
       status: 200,
       headers: {
         'x-plugin-route': 'ok',
@@ -92,7 +92,7 @@ describe('PluginController route forwarding', () => {
       ok: true,
     });
 
-    expect(runtimeHostPluginDispatchService.invokeRoute).toHaveBeenCalledWith({
+    expect(pluginDispatch.invokeRoute).toHaveBeenCalledWith({
       pluginId: 'builtin.route-inspector',
       request: {
         path: 'inspect/context',
@@ -117,7 +117,7 @@ describe('PluginController route forwarding', () => {
   });
 
   it('supports named wildcard params produced by the route converter', async () => {
-    runtimeHostPluginDispatchService.invokeRoute.mockResolvedValue({
+    pluginDispatch.invokeRoute.mockResolvedValue({
       status: 200,
       headers: {},
       body: {
@@ -149,7 +149,7 @@ describe('PluginController route forwarding', () => {
       ok: true,
     });
 
-    expect(runtimeHostPluginDispatchService.invokeRoute).toHaveBeenCalledWith({
+    expect(pluginDispatch.invokeRoute).toHaveBeenCalledWith({
       pluginId: 'builtin.route-inspector',
       request: expect.objectContaining({
         path: 'inspect/context',
@@ -185,7 +185,7 @@ describe('PluginController route forwarding', () => {
       ),
     ).rejects.toThrow('插件 Route 暂不支持 HTTP 方法 HEAD');
 
-    expect(runtimeHostPluginDispatchService.invokeRoute).not.toHaveBeenCalled();
+    expect(pluginDispatch.invokeRoute).not.toHaveBeenCalled();
   });
 });
 

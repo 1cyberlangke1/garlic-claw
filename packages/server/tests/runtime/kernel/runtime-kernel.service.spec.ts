@@ -26,7 +26,7 @@ import { RuntimePluginGovernanceService } from '../../../src/runtime/kernel/runt
 describe('RuntimePluginGovernanceService', () => {
   it('registers remote plugins and routes host/tool/hook/route calls', async () => {
     const fixture = createService();
-    const { runtimeGatewayConnectionLifecycleService, runtimeHostPluginDispatchService, service } = fixture;
+    const { runtimeGatewayConnectionLifecycleService, pluginDispatch, service } = fixture;
 
     seedRemotePlugin(fixture);
 
@@ -62,7 +62,7 @@ describe('RuntimePluginGovernanceService', () => {
       remoteEnvironment: 'api',
     });
 
-    const toolPromise = runtimeHostPluginDispatchService.executeTool({
+    const toolPromise = pluginDispatch.executeTool({
       context: {
         conversationId: 'conversation-1',
         source: 'chat-tool',
@@ -74,7 +74,7 @@ describe('RuntimePluginGovernanceService', () => {
       pluginId: 'remote.echo',
       toolName: 'memory.search',
     });
-    const hookPromise = runtimeHostPluginDispatchService.invokeHook({
+    const hookPromise = pluginDispatch.invokeHook({
       context: {
         conversationId: 'conversation-1',
         source: 'chat-hook',
@@ -86,7 +86,7 @@ describe('RuntimePluginGovernanceService', () => {
       },
       pluginId: 'remote.echo',
     });
-    const routePromise = runtimeHostPluginDispatchService.invokeRoute({
+    const routePromise = pluginDispatch.invokeRoute({
       context: {
         conversationId: 'conversation-1',
         source: 'http-route',
@@ -138,7 +138,7 @@ describe('RuntimePluginGovernanceService', () => {
       },
       status: 200,
     });
-    expect(runtimeHostPluginDispatchService.listPlugins()).toEqual([
+    expect(pluginDispatch.listPlugins()).toEqual([
       expect.objectContaining({
         pluginId: 'remote.echo',
       }),
@@ -198,7 +198,7 @@ describe('RuntimePluginGovernanceService', () => {
   });
 
   it('invokes builtin hooks through builtin plugin definitions', async () => {
-    const { builtinPluginRegistryService, runtimeHostPluginDispatchService } = createService();
+    const { builtinPluginRegistryService, pluginBootstrapService, pluginDispatch } = createService();
     const beforeRunHook = jest.fn().mockResolvedValue({
       action: 'mutate',
       messages: [
@@ -227,10 +227,10 @@ describe('RuntimePluginGovernanceService', () => {
         },
       },
     ];
-    runtimeHostPluginDispatchService['pluginBootstrapService'].bootstrapBuiltins();
+    pluginBootstrapService.bootstrapBuiltins();
 
     await expect(
-      runtimeHostPluginDispatchService.invokeHook({
+      pluginDispatch.invokeHook({
         context: {
           conversationId: 'conversation-1',
           source: 'plugin',
@@ -476,9 +476,9 @@ function createService(options?: { projectPluginRegistryService?: unknown }) {
   runtimeGatewayConnectionLifecycleService.openConnection({
     connectionId: 'conn-1',
   });
-  const runtimeHostConversationRecordService = new ConversationStoreService();
-  const runtimeHostConversationMessageService = new ConversationMessageService(
-    runtimeHostConversationRecordService,
+  const conversationStore = new ConversationStoreService();
+  const conversationMessages = new ConversationMessageService(
+    conversationStore,
   );
   const aiManagementService = new AiManagementService(new AiProviderSettingsService());
   aiManagementService.upsertProvider('openai', {
@@ -489,9 +489,9 @@ function createService(options?: { projectPluginRegistryService?: unknown }) {
     name: 'OpenAI',
   });
   const aiModelExecutionService = new AiModelExecutionService();
-  const runtimeHostSubagentRunnerService = new SubagentRunnerService(
+  const subagentRunner = new SubagentRunnerService(
     aiModelExecutionService,
-    runtimeHostConversationMessageService,
+    conversationMessages,
     {
       buildToolSet: jest.fn().mockResolvedValue(undefined),
     } as never,
@@ -499,9 +499,12 @@ function createService(options?: { projectPluginRegistryService?: unknown }) {
       invokeHook: jest.fn(),
     } as never,
     new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
-    runtimeHostConversationRecordService,
+    {
+      get: jest.fn().mockReturnValue(undefined),
+    } as never,
+    conversationStore,
   );
-  const runtimeHostAutomationService = new AutomationService(
+  const automationService = new AutomationService(
     new AutomationExecutionService(
       {
         executeTool: jest.fn(),
@@ -518,36 +521,38 @@ function createService(options?: { projectPluginRegistryService?: unknown }) {
       } as never,
     ),
   );
-  const runtimeHostPluginDispatchService = new PluginDispatchService(
+  const pluginDispatch = new PluginDispatchService(
     builtinPluginRegistryService,
     pluginBootstrapService,
     runtimeGatewayRemoteTransportService,
   );
-  const runtimeHostPluginRuntimeService = new PluginRuntimeService();
-  const runtimeHostService = new PluginHostService(
+  const pluginRuntime = new PluginRuntimeService();
+  const pluginHost = new PluginHostService(
     pluginBootstrapService,
-    runtimeHostAutomationService,
-    runtimeHostConversationMessageService,
-    runtimeHostConversationRecordService,
+    automationService,
+    conversationMessages,
+    conversationStore,
     aiModelExecutionService as never,
     aiManagementService,
     new KnowledgeReaderService(),
-    runtimeHostPluginDispatchService,
-    runtimeHostPluginRuntimeService,
+    pluginDispatch,
+    pluginRuntime,
     {} as never,
-    runtimeHostSubagentRunnerService,
+    subagentRunner,
     new UserContextService(),
-    new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
+    new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), conversationStore),
   );
-  runtimeHostService.onModuleInit();
+  pluginHost.onModuleInit();
   return {
     builtinPluginRegistryService,
     pluginBootstrapService,
     runtimeGatewayConnectionLifecycleService,
     runtimeGatewayRemoteTransportService,
-    runtimeHostConversationRecordService,
-    runtimeHostPluginDispatchService,
-    runtimeHostPluginRuntimeService,
+    conversationStore,
+    pluginDispatch,
+    pluginRuntime,
     service: runtimePluginGovernanceService,
   };
 }
+
+

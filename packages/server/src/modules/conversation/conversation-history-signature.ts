@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { ChatMessagePart, PluginConversationHistoryMessage } from '@garlic-claw/shared';
+import { buildConversationVisibleModelMessages } from './conversation-model-visible-history';
 
 type SignatureModelMessage = {
   content: string | ChatMessagePart[];
@@ -13,13 +14,11 @@ type NormalizedPart =
 export function createConversationHistorySignatureFromHistoryMessages(
   messages: PluginConversationHistoryMessage[],
 ): string {
-  return createConversationHistorySignature(messages.map((message) => ({
+  return createConversationHistorySignature(buildConversationVisibleModelMessages(messages).map((message) => ({
     content: normalizeMessageContent(
-      Array.isArray(message.parts) && message.parts.length > 0
-        ? message.parts
-        : message.content ?? '',
+      message.content,
     ),
-    role: normalizeRole(message.role),
+    role: message.role,
   })));
 }
 
@@ -60,16 +59,4 @@ function normalizeMessageContent(
     }
   }
   return normalized;
-}
-
-function normalizeRole(
-  role: PluginConversationHistoryMessage['role'],
-): SignatureModelMessage['role'] {
-  if (role === 'system') {
-    return 'system';
-  }
-  if (role === 'assistant' || role === 'display') {
-    return 'assistant';
-  }
-  return 'user';
 }

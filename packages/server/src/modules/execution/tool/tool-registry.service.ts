@@ -28,6 +28,7 @@ import { TodoToolService } from '../todo/todo-tool.service';
 import { ToolManagementSettingsService } from './tool-management-settings.service';
 import { WebFetchToolService } from '../webfetch/webfetch-tool.service';
 import { WriteToolService } from '../write/write-tool.service';
+import { ToolOutputCaptureService, renderToolOutputCaptureText } from './tool-output-capture.service';
 
 interface ExecutableToolDefinition {
   availableTool: PluginAvailableToolSummary;
@@ -36,6 +37,7 @@ interface ExecutableToolDefinition {
   execute: (args: Record<string, unknown>) => Promise<unknown>;
   internal?: boolean;
   parameters: Record<string, PluginParamSchema>;
+  sessionId?: string;
   sourceId?: string;
   sourceKind?: ToolSourceKind;
   toModelOutput?: NonNullable<Tool['toModelOutput']>;
@@ -57,14 +59,15 @@ export class ToolRegistryService {
     private readonly runtimeToolsSettingsService: RuntimeToolsSettingsService,
     private readonly toolManagementSettingsService: ToolManagementSettingsService,
     private readonly pluginBootstrapService: PluginBootstrapService,
-    private readonly runtimeHostConversationRecordService: ConversationStoreService,
-    private readonly runtimeHostPluginRuntimeService: PluginRuntimeService,
+    private readonly conversationStore: ConversationStoreService,
+    private readonly pluginRuntime: PluginRuntimeService,
     @Inject(forwardRef(() => SubagentToolService)) private readonly subagentToolService: SubagentToolService,
     private readonly todoToolService: TodoToolService,
     private readonly webFetchToolService: WebFetchToolService,
     private readonly writeToolService: WriteToolService,
     private readonly skillToolService: SkillToolService,
-    @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService,
+    private readonly toolOutputCaptureService: ToolOutputCaptureService,
+    @Inject(PluginDispatchService) private readonly pluginDispatch: PluginDispatchService,
     @Inject(RuntimePluginGovernanceService) private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService,
   ) {}
 
@@ -96,8 +99,8 @@ export class ToolRegistryService {
     if (action === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadLocal(sourceId)) {
       const reloaded = this.pluginBootstrapService.reloadLocal(sourceId);
       if (reloaded.removed) {
-        this.runtimeHostPluginRuntimeService.deletePluginRuntimeState(sourceId);
-        this.runtimeHostConversationRecordService.deletePluginConversationSessions(sourceId);
+        this.pluginRuntime.deletePluginRuntimeState(sourceId);
+        this.conversationStore.deletePluginConversationSessions(sourceId);
         this.runtimePluginGovernanceService.deletePluginRuntimeState(sourceId);
         this.toolManagementSettingsService.deleteSourceOverrides(`plugin:${sourceId}`);
         return { accepted: true, action, sourceKind: source.kind, sourceId, message: '本地插件目录已删除，已清理旧记录' };
@@ -164,7 +167,7 @@ export class ToolRegistryService {
     const toolDefinition: Tool = { description: entry.description, execute: async (args: Record<string, unknown>) => {
       try {
         const output = await entry.execute(args);
-        return entry.wrapExecutionOutput ? normalizeToolExecutionOutput(output, entry.toModelOutput) : output;
+        return entry.wrapExecutionOutput ? await normalizeToolExecutionOutput(output, entry.callName, entry.toModelOutput, this.toolOutputCaptureService, entry.sessionId) : output;
       } catch (error) {
         if (entry.callName === this.invalidToolService.getToolName()) {throw error;}
         return createInvalidToolResult({ error: readToolExecutionErrorMessage(error), inputText: stringifyInvalidToolInput(args), phase: 'execute', tool: entry.callName });
@@ -173,7 +176,9 @@ export class ToolRegistryService {
     toolDefinition.toModelOutput = async (event) => isInvalidToolResult(event.output)
       ? this.invalidToolService.toModelOutput({ ...event, output: event.output })
       : isPluginToolOutput(event.output)
-        ? event.output.kind === 'tool:text' ? { type: 'text', value: event.output.value } : { type: 'json', value: event.output.value }
+        ? event.output.kind === 'tool:text'
+          ? { type: 'text', value: compactToolTextValue(event.output.value) }
+          : { type: 'json', value: compactToolModelJsonValue(event.output.value) }
         : entry.toModelOutput
           ? entry.toModelOutput(event)
           : typeof event.output === 'string'
@@ -186,7 +191,7 @@ export class ToolRegistryService {
     return (await this.listOverview()).tools
       .filter((entry) => entry.sourceKind !== 'internal')
       .filter((entry) => (!input.excludedPluginId || entry.pluginId !== input.excludedPluginId) && this.isToolEnabledForContext(entry, input.context) && (!input.allowedToolNames || input.allowedToolNames.includes(entry.callName)))
-      .map((entry) => toExecutableToolDefinition(entry, input.context, input.assistantMessageId, this.mcpService, this.runtimeHostPluginDispatchService));
+      .map((entry) => toExecutableToolDefinition(entry, input.context, input.assistantMessageId, this.mcpService, this.pluginDispatch));
   }
 
   private async resolveRegisteredToolExecution(input: {
@@ -212,7 +217,7 @@ export class ToolRegistryService {
     if (!this.isToolEnabledForContext(tool, input.context)) {
       throw new ForbiddenException(`Tool disabled for current context: ${input.sourceKind}:${input.sourceId}:${input.toolName}`);
     }
-    return toExecutableToolDefinition(tool, input.context, undefined, this.mcpService, this.runtimeHostPluginDispatchService);
+    return toExecutableToolDefinition(tool, input.context, undefined, this.mcpService, this.pluginDispatch);
   }
 
   private async resolveInternalRegisteredToolExecution(input: {
@@ -236,9 +241,9 @@ export class ToolRegistryService {
   private async readNativeTools(input: { allowedToolNames?: string[]; assistantMessageId?: string; context: PluginCallContext }): Promise<ExecutableToolDefinition[]> {
     const skills = await this.skillToolService.listAvailableSkills();
     const tools = [
-      readNativeToolDefinition(input.allowedToolNames, this.todoToolService.getToolName(), this.todoToolService.buildToolDescription(), this.todoToolService.getToolParameters(), async (args) => this.todoToolService.updateSessionTodo({ sessionId: input.context.conversationId, todos: Array.isArray(args.todos) ? args.todos as never : [], userId: input.context.userId }), this.todoToolService.toModelOutput),
-      readNativeToolDefinition(input.allowedToolNames, this.webFetchToolService.getToolName(), this.webFetchToolService.buildToolDescription(), this.webFetchToolService.getToolParameters(), async (args) => this.webFetchToolService.fetch({ url: String(args.url ?? ''), ...(typeof args.format === 'string' ? { format: args.format as 'text' | 'markdown' | 'html' } : {}), ...(typeof args.timeout === 'number' ? { timeout: args.timeout } : {}) }), this.webFetchToolService.toModelOutput),
-      skills.length === 0 ? undefined : readNativeToolDefinition(input.allowedToolNames, 'skill', this.skillToolService.buildToolDescription(skills), this.skillToolService.getToolParameters(), async (args) => this.skillToolService.loadSkill(String(args.name ?? '')), ({ output }) => this.skillToolService.toModelOutput(output as SkillLoadResult), { sourceId: 'skill-catalog', sourceKind: 'skill' }),
+      readNativeToolDefinition(input.allowedToolNames, this.todoToolService.getToolName(), this.todoToolService.buildToolDescription(), this.todoToolService.getToolParameters(), async (args) => this.todoToolService.updateSessionTodo({ sessionId: input.context.conversationId, todos: Array.isArray(args.todos) ? args.todos as never : [], userId: input.context.userId }), this.todoToolService.toModelOutput, { sessionId: input.context.conversationId, wrapExecutionOutput: true }),
+      readNativeToolDefinition(input.allowedToolNames, this.webFetchToolService.getToolName(), this.webFetchToolService.buildToolDescription(), this.webFetchToolService.getToolParameters(), async (args) => this.webFetchToolService.fetch({ url: String(args.url ?? ''), ...(typeof args.format === 'string' ? { format: args.format as 'text' | 'markdown' | 'html' } : {}), ...(typeof args.timeout === 'number' ? { timeout: args.timeout } : {}) }), this.webFetchToolService.toModelOutput, { sessionId: input.context.conversationId, wrapExecutionOutput: true }),
+      skills.length === 0 ? undefined : readNativeToolDefinition(input.allowedToolNames, 'skill', this.skillToolService.buildToolDescription(skills), this.skillToolService.getToolParameters(), async (args) => this.skillToolService.loadSkill(String(args.name ?? '')), ({ output }) => this.skillToolService.toModelOutput(output as SkillLoadResult), { sessionId: input.context.conversationId, sourceId: 'skill-catalog', sourceKind: 'skill', wrapExecutionOutput: true }),
     ];
     return tools.filter((entry): entry is ExecutableToolDefinition => Boolean(entry));
   }
@@ -389,6 +394,7 @@ export class ToolRegistryService {
         return this.editToolService.execute(runtimeInput);
       },
       parameters: entry.parameters,
+      sessionId: input.context.conversationId,
       sourceId,
       sourceKind: 'internal',
       wrapExecutionOutput: true,
@@ -434,8 +440,10 @@ export class ToolRegistryService {
         description: entry.description,
         execute: async (args) => this.subagentToolService.executeTool(entry.callName, args, input.context),
         parameters: entry.parameters,
+        sessionId: input.context.conversationId,
         sourceId,
         sourceKind: 'internal',
+        wrapExecutionOutput: true,
       }));
   }
 
@@ -465,10 +473,22 @@ function readNativeToolDefinition(
   parameters: Record<string, PluginParamSchema>,
   execute: (args: Record<string, unknown>) => Promise<unknown>,
   toModelOutput?: NonNullable<Tool['toModelOutput']>,
-  source?: Pick<PluginAvailableToolSummary, 'sourceId' | 'sourceKind'>,
+  options?: Pick<PluginAvailableToolSummary, 'sourceId' | 'sourceKind'> & {
+    sessionId?: string;
+    wrapExecutionOutput?: boolean;
+  },
 ): ExecutableToolDefinition | undefined {
   if (allowedToolNames && !allowedToolNames.includes(toolName)) {return undefined;}
-  return { availableTool: { callName: toolName, description, name: toolName, parameters, ...(source ?? {}) }, callName: toolName, description, execute, parameters, ...(toModelOutput ? { toModelOutput } : {}) };
+  return {
+    availableTool: { callName: toolName, description, name: toolName, parameters, ...(options?.sourceId || options?.sourceKind ? { sourceId: options.sourceId, sourceKind: options.sourceKind } : {}) },
+    callName: toolName,
+    description,
+    execute,
+    parameters,
+    ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
+    wrapExecutionOutput: options?.wrapExecutionOutput ?? false,
+    ...(toModelOutput ? { toModelOutput } : {}),
+  };
 }
 
 function createInternalToolInfo(
@@ -492,25 +512,39 @@ function createInternalToolInfo(
 
 async function normalizeToolExecutionOutput(
   output: unknown,
+  toolName: string,
   toModelOutput?: NonNullable<Tool['toModelOutput']>,
+  toolOutputCaptureService?: ToolOutputCaptureService,
+  sessionId?: string,
 ): Promise<unknown> {
-  if (isPluginToolOutput(output) || isInvalidToolResult(output)) {
+  if (isInvalidToolResult(output)) {
     return output;
+  }
+  if (isPluginToolOutput(output)) {
+    return compactPluginToolOutput(output, await readToolOutputCaptureResult(toolOutputCaptureService, sessionId, toolName, readToolOutputCaptureSource(output)));
   }
   if (typeof output === 'string') {
-    return { kind: 'tool:text', value: output } satisfies PluginToolOutput;
+    const capture = await readToolOutputCaptureResult(toolOutputCaptureService, sessionId, toolName, output);
+    return { kind: 'tool:text', value: compactToolTextValue(output, capture?.outputPath) } satisfies PluginToolOutput;
   }
-  if (!toModelOutput) {
-    return output;
-  }
-  const modelOutput = await toModelOutput({ input: {}, output, toolCallId: '' });
+  const modelOutput = toModelOutput
+    ? await toModelOutput({ input: {}, output, toolCallId: '' })
+    : readDefaultToolModelOutput(output, toolName);
+  const capture = await readToolOutputCaptureResult(toolOutputCaptureService, sessionId, toolName, output);
   if (modelOutput.type !== 'json' && modelOutput.type !== 'text') {
     return output;
   }
   if (modelOutput.type === 'json') {
-    return createWrappedToolOutput('tool:json', modelOutput.value as JsonValue, output);
+    return createWrappedToolOutput('tool:json', compactToolModelJsonValue(modelOutput.value as JsonValue, 0, capture?.outputPath), output);
   }
-  return createWrappedToolOutput('tool:text', modelOutput.value, output);
+  return createWrappedToolOutput('tool:text', compactToolTextValue(modelOutput.value, capture?.outputPath), output);
+}
+
+function compactPluginToolOutput(output: PluginToolOutput, capture?: { outputPath: string } | null): PluginToolOutput {
+  const rawData = isRecord(output) && 'data' in output ? (output as { data?: JsonValue }).data : undefined;
+  return output.kind === 'tool:text'
+    ? createWrappedToolOutput('tool:text', compactToolTextValue(output.value, capture?.outputPath), rawData)
+    : createWrappedToolOutput('tool:json', compactToolModelJsonValue(output.value, 0, capture?.outputPath), rawData);
 }
 
 function createWrappedToolOutput(
@@ -518,11 +552,7 @@ function createWrappedToolOutput(
   value: JsonValue | string,
   output: unknown,
 ): PluginToolOutput {
-  const record = typeof output === 'object' && output !== null && !Array.isArray(output)
-    ? output as Record<string, JsonValue>
-    : null;
   return {
-    ...(record ?? {}),
     ...(output !== null && output !== undefined ? { data: output as JsonValue } : {}),
     kind,
     value,
@@ -560,9 +590,19 @@ function createPluginToolInfo(plugin: RegisteredPluginRecord, source: ToolSource
   return { toolId: `plugin:${plugin.pluginId}:${tool.name}`, name: tool.name, callName: tool.name, description: tool.description, parameters: tool.parameters, enabled, sourceKind: 'plugin' as const, sourceId: plugin.pluginId, sourceLabel: plugin.manifest.name, health: source.health, lastError: source.lastError, lastCheckedAt: source.lastCheckedAt, pluginId: plugin.pluginId, runtimeKind: plugin.manifest.runtime } satisfies ToolInfo;
 }
 
-function toExecutableToolDefinition(entry: ToolInfo, context: PluginCallContext, assistantMessageId: string | undefined, mcpService: McpService, runtimeHostPluginDispatchService: PluginDispatchService): ExecutableToolDefinition {
+function toExecutableToolDefinition(entry: ToolInfo, context: PluginCallContext, assistantMessageId: string | undefined, mcpService: McpService, pluginDispatch: PluginDispatchService): ExecutableToolDefinition {
   const toolContext = assistantMessageId ? { ...context, metadata: { ...(context.metadata ?? {}), assistantMessageId } } : context;
-  return { availableTool: { callName: entry.callName, description: entry.description, name: entry.name, parameters: entry.parameters, pluginId: entry.pluginId, runtimeKind: entry.runtimeKind, sourceId: entry.sourceId, sourceKind: entry.sourceKind }, callName: entry.callName, description: entry.description, execute: async (args) => entry.sourceKind === 'mcp' ? mcpService.callTool({ arguments: args, serverName: entry.sourceId, toolName: entry.name }) : runtimeHostPluginDispatchService.executeTool({ context: toolContext, params: args as never, pluginId: entry.pluginId ?? entry.sourceId, toolName: entry.name }), parameters: entry.parameters };
+  return {
+    availableTool: { callName: entry.callName, description: entry.description, name: entry.name, parameters: entry.parameters, pluginId: entry.pluginId, runtimeKind: entry.runtimeKind, sourceId: entry.sourceId, sourceKind: entry.sourceKind },
+    callName: entry.callName,
+    description: entry.description,
+    execute: async (args) => entry.sourceKind === 'mcp'
+      ? mcpService.callTool({ arguments: args, serverName: entry.sourceId, toolName: entry.name })
+      : pluginDispatch.executeTool({ context: toolContext, params: args as never, pluginId: entry.pluginId ?? entry.sourceId, toolName: entry.name }),
+    parameters: entry.parameters,
+    sessionId: context.conversationId,
+    wrapExecutionOutput: true,
+  };
 }
 
 function readToolSource(overview: ToolOverview, kind: ToolSourceKind, sourceId: string): ToolSourceInfo {
@@ -601,4 +641,160 @@ function readToolHealthStatus(status: 'degraded' | 'error' | 'healthy' | 'offlin
     return 'error';
   }
   return 'unknown';
+}
+
+function readDefaultToolModelOutput(output: unknown, toolName: string): { type: 'json'; value: JsonValue } | { type: 'text'; value: string } {
+  const subagentResult = readCompactSubagentToolValue(output, toolName);
+  if (subagentResult) {
+    return { type: 'json', value: subagentResult };
+  }
+  const mcpText = readMcpToolTextValue(output);
+  if (mcpText !== null) {
+    return { type: 'text', value: mcpText };
+  }
+  const genericText = readGenericToolTextValue(output);
+  if (genericText !== null) {
+    return { type: 'text', value: genericText };
+  }
+  return { type: 'json', value: compactToolModelJsonValue(output) };
+}
+
+function readCompactSubagentToolValue(output: unknown, toolName: string): JsonValue | null {
+  if (!isRecord(output)) {
+    return null;
+  }
+  const isSubagentControlTool = toolName === 'spawn_subagent'
+    || toolName === 'send_input_subagent'
+    || toolName === 'interrupt_subagent'
+    || toolName === 'close_subagent'
+    || toolName === 'wait_subagent';
+  if (!isSubagentControlTool || typeof output.conversationId !== 'string' || typeof output.status !== 'string' || typeof output.title !== 'string') {
+    return null;
+  }
+  return {
+    conversationId: output.conversationId,
+    ...(typeof output.error === 'string' ? { error: output.error } : {}),
+    ...(typeof output.name === 'string' ? { name: output.name } : {}),
+    ...(typeof output.result === 'string' ? { result: output.result } : {}),
+    status: output.status,
+    title: output.title,
+  };
+}
+
+function readMcpToolTextValue(output: unknown): string | null {
+  const content = Array.isArray(output)
+    ? output
+    : isRecord(output) && Array.isArray(output.content)
+      ? output.content
+      : null;
+  if (!content) {
+    return null;
+  }
+  const lines = content.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.type !== 'string') {
+      return [];
+    }
+    if (entry.type === 'text' && typeof entry.text === 'string') {
+      return [entry.text];
+    }
+    if (entry.type === 'image') {
+      return ['[image omitted]'];
+    }
+    if (entry.type === 'resource' && typeof entry.uri === 'string') {
+      return [`[resource] ${entry.uri}`];
+    }
+    return [];
+  }).filter((entry) => entry.trim().length > 0);
+  return lines.length > 0 ? lines.join('\n\n') : null;
+}
+
+function readGenericToolTextValue(output: unknown): string | null {
+  if (!isRecord(output)) {
+    return null;
+  }
+  if (typeof output.text === 'string') {
+    return output.text;
+  }
+  if (typeof output.output === 'string') {
+    return output.output;
+  }
+  if (typeof output.message === 'string') {
+    return output.message;
+  }
+  return null;
+}
+
+function compactToolModelJsonValue(value: unknown, depth = 0, outputPath?: string): JsonValue {
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') {
+    return outputPath ? { _fullOutputPath: outputPath, value } : value;
+  }
+  if (typeof value === 'string') {
+    const nextValue = value.length <= 2_000 ? value : `${value.slice(0, 2_000)}... [truncated ${value.length - 2_000} chars]`;
+    return outputPath ? { _fullOutputPath: outputPath, value: nextValue } : nextValue;
+  }
+  if (Array.isArray(value)) {
+    const next = value.slice(0, 20).map((entry) => compactToolModelJsonValue(entry, depth + 1));
+    if (value.length > 20) {
+      next.push(`... ${value.length - 20} more item(s)`);
+    }
+    return outputPath ? { _fullOutputPath: outputPath, value: next } : next;
+  }
+  if (!isRecord(value)) {
+    return outputPath ? { _fullOutputPath: outputPath, value: String(value) } : String(value);
+  }
+  if (depth >= 4) {
+    return outputPath ? { _fullOutputPath: outputPath, value: '[max depth reached]' } : '[max depth reached]';
+  }
+  const entries = Object.entries(value).filter(([, entryValue]) => entryValue !== undefined);
+  const result: Record<string, JsonValue> = {};
+  for (const [key, entryValue] of entries.slice(0, 20)) {
+    result[key] = compactToolModelJsonValue(entryValue, depth + 1);
+  }
+  if (entries.length > 20) {
+    result.__truncatedKeys = `... ${entries.length - 20} more key(s)`;
+  }
+  if (outputPath) {
+    result._fullOutputPath = outputPath;
+  }
+  return result;
+}
+
+function compactToolTextValue(value: string, outputPath?: string): string {
+  const embeddedOutputPathMatch = value.match(/\n\n\[full output saved to: ([^\]]+)\]$/);
+  const embeddedOutputPath = embeddedOutputPathMatch?.[1];
+  const body = embeddedOutputPathMatch
+    ? value.slice(0, embeddedOutputPathMatch.index)
+    : value;
+  const nextOutputPath = outputPath ?? embeddedOutputPath;
+  const compactedBody = body.length <= 2_000 ? body : `${body.slice(0, 2_000)}... [truncated ${body.length - 2_000} chars]`;
+  return nextOutputPath
+    ? `${compactedBody}\n\n[full output saved to: ${nextOutputPath}]`
+    : compactedBody;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readToolOutputCaptureSource(output: PluginToolOutput): unknown {
+  return isRecord(output) && 'data' in output && output.data !== undefined ? output.data : output.value;
+}
+
+async function readToolOutputCaptureResult(
+  toolOutputCaptureService: ToolOutputCaptureService | undefined,
+  sessionId: string | undefined,
+  toolName: string,
+  output: unknown,
+): Promise<{ outputPath: string } | null> {
+  if (!toolOutputCaptureService || !sessionId || (isRecord(output) && typeof output.outputPath === 'string')) {
+    return null;
+  }
+  const outputText = renderToolOutputCaptureText(output);
+  const capture = await toolOutputCaptureService.captureIfNeeded({
+    output,
+    outputText,
+    sessionId,
+    toolName,
+  });
+  return capture ? { outputPath: capture.outputPath } : null;
 }

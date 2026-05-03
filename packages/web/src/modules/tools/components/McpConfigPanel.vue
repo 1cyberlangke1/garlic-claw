@@ -73,7 +73,7 @@
           </div>
         </header>
 
-        <form v-if="view === 'manage'" class="mcp-editor" @submit.prevent="submitForm">
+        <div v-if="view === 'manage'" class="mcp-editor">
           <label class="mcp-field">
             <span>名称</span>
             <ElInput
@@ -147,15 +147,9 @@
           </section>
 
           <div class="mcp-editor-actions">
-            <ElButton
-              type="primary"
-              class="hero-action"
-              data-test="mcp-save-button"
-              :title="saving ? '保存中...' : isCreating ? '创建 Server' : '保存修改'"
-              :disabled="saving"
-            >
-              <Icon :icon="disketteBold" class="action-icon" aria-hidden="true" />
-            </ElButton>
+            <p class="sidebar-inline-hint" :data-test="saving ? 'mcp-autosave-saving' : 'mcp-autosave-idle'">
+              {{ saving ? '正在自动保存...' : panelError ? panelError : '修改会自动保存。' }}
+            </p>
             <ElButton
               v-if="!isCreating && selectedServer"
               type="danger"
@@ -166,9 +160,9 @@
               @click="removeSelectedServer"
             >
               <Icon :icon="trashBinMinimalisticBold" class="action-icon" aria-hidden="true" />
-            </ElButton>
+              </ElButton>
           </div>
-        </form>
+        </div>
 
         <div v-else-if="selectedServer" class="mcp-log-panel">
           <EventLogSettingsPanel
@@ -201,10 +195,9 @@
 
 <script setup lang="ts">
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
-import disketteBold from '@iconify-icons/solar/diskette-bold'
 import trashBinMinimalisticBold from '@iconify-icons/solar/trash-bin-minimalistic-bold'
 import { Icon } from '@iconify/vue'
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElButton, ElInput } from 'element-plus'
 import type { McpServerConfig } from '@garlic-claw/shared'
 import EventLogPanel from '@/modules/tools/components/EventLogPanel.vue'
@@ -258,7 +251,14 @@ const panelError = ref<string | null>(null)
 const isCreating = ref(false)
 const showLogSettings = ref(false)
 const searchKeyword = ref('')
+const committedDraftSignature = ref<string | null>(null)
+const pendingDraftSignature = ref<string | null>(null)
+const failedDraftSignature = ref<string | null>(null)
+const autoSaveTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const hydratedServerName = ref<string | null>(null)
 let envRowId = 0
+const MCP_AUTO_SAVE_DEBOUNCE_MS = 500
+const MCP_AUTO_SAVE_RETRY_MS = 1500
 
 const normalizedKeyword = computed(() =>
   searchKeyword.value.trim().toLocaleLowerCase(),
@@ -298,24 +298,83 @@ watch(
     }
 
     if (!server) {
+      hydratedServerName.value = null
+      committedDraftSignature.value = null
+      pendingDraftSignature.value = null
+      failedDraftSignature.value = null
       resetDraft()
       return
     }
 
-    applyServerToDraft(server)
+    const nextSignature = serializeServerDraft(server)
+    const selectionChanged = hydratedServerName.value !== server.name
+    if (selectionChanged) {
+      applyCommittedServer(server)
+      return
+    }
+    if (
+      pendingDraftSignature.value
+      && pendingDraftSignature.value !== nextSignature
+    ) {
+      return
+    }
+    if (
+      !pendingDraftSignature.value
+      && readDraftSignature() !== committedDraftSignature.value
+    ) {
+      return
+    }
+    applyCommittedServer(server)
   },
   { immediate: true },
 )
 
+watch(
+  [draftName, draftCommand, draftArgsText, envRows],
+  () => {
+    panelError.value = null
+    if (
+      failedDraftSignature.value
+      && failedDraftSignature.value !== readDraftSignature()
+    ) {
+      failedDraftSignature.value = null
+    }
+    scheduleAutoSave()
+  },
+  { deep: true },
+)
+
+watch(
+  saving,
+  (isSaving) => {
+    if (isSaving) {
+      return
+    }
+    if (hasPendingDraftToPersist()) {
+      scheduleAutoSave(0)
+    }
+  },
+)
+
+onBeforeUnmount(() => {
+  clearAutoSaveTimer()
+})
+
 function startCreate() {
+  clearAutoSaveTimer()
   isCreating.value = true
   panelError.value = null
   showLogSettings.value = false
+  hydratedServerName.value = null
+  committedDraftSignature.value = null
+  pendingDraftSignature.value = null
+  failedDraftSignature.value = null
   resetDraft()
   selectServer(null)
 }
 
 function selectExisting(name: string) {
+  clearAutoSaveTimer()
   isCreating.value = false
   panelError.value = null
   showLogSettings.value = false
@@ -333,26 +392,6 @@ function removeEnvRow(index: number) {
   }
 
   envRows.value.splice(index, 1)
-}
-
-async function submitForm() {
-  panelError.value = null
-  try {
-    const payload = buildPayload()
-    if (isCreating.value || !selectedServer.value) {
-      await createServer(payload)
-      isCreating.value = false
-      emit('changed')
-      return
-    }
-
-    await updateServer(selectedServer.value.name, payload)
-    emit('changed')
-  } catch (caughtError) {
-    panelError.value = caughtError instanceof Error
-      ? caughtError.message
-      : '保存 MCP server 失败'
-  }
 }
 
 async function removeSelectedServer() {
@@ -402,6 +441,14 @@ function buildPayload(): McpServerConfig {
   }
 }
 
+function tryBuildPayload() {
+  try {
+    return buildPayload()
+  } catch {
+    return null
+  }
+}
+
 function matchesServer(server: McpServerConfig, keyword: string): boolean {
   if (!keyword) {
     return true
@@ -448,6 +495,138 @@ function createEnvRow(key = '', value = ''): EnvRow {
     id: envRowId,
     key,
     value,
+  }
+}
+
+function scheduleAutoSave(delayMs = MCP_AUTO_SAVE_DEBOUNCE_MS) {
+  scheduleDraftPersist(delayMs, false)
+}
+
+function scheduleFailedDraftRetry(delayMs = MCP_AUTO_SAVE_RETRY_MS) {
+  scheduleDraftPersist(delayMs, true)
+}
+
+function scheduleDraftPersist(
+  delayMs: number,
+  allowFailedRetry: boolean,
+) {
+  if (props.view !== 'manage') {
+    return
+  }
+  clearAutoSaveTimer()
+  autoSaveTimer.value = setTimeout(() => {
+    autoSaveTimer.value = null
+    if (saving.value || deleting.value) {
+      return
+    }
+    if (!hasPendingDraftToPersist(allowFailedRetry)) {
+      return
+    }
+    void persistDraft(allowFailedRetry)
+  }, delayMs)
+}
+
+function clearAutoSaveTimer() {
+  if (!autoSaveTimer.value) {
+    return
+  }
+  clearTimeout(autoSaveTimer.value)
+  autoSaveTimer.value = null
+}
+
+function hasPendingDraftToPersist(allowFailedRetry = false) {
+  const signature = readDraftSignature()
+  if (!signature) {
+    return false
+  }
+  if (signature === committedDraftSignature.value) {
+    return false
+  }
+  if (signature === pendingDraftSignature.value) {
+    return false
+  }
+  if (!allowFailedRetry && signature === failedDraftSignature.value) {
+    return false
+  }
+  return true
+}
+
+function readDraftSignature() {
+  const payload = tryBuildPayload()
+  return payload ? serializeServerDraft(payload) : null
+}
+
+function serializeServerDraft(server: McpServerConfig) {
+  return JSON.stringify({
+    args: [...server.args],
+    command: server.command,
+    env: Object.fromEntries(
+      Object.entries(server.env)
+        .sort(([left], [right]) => left.localeCompare(right)),
+    ),
+    eventLog: server.eventLog,
+    name: server.name,
+  })
+}
+
+function applyCommittedServer(server: McpServerConfig) {
+  applyServerToDraft(server)
+  hydratedServerName.value = server.name
+  committedDraftSignature.value = serializeServerDraft(server)
+  pendingDraftSignature.value = null
+  failedDraftSignature.value = null
+}
+
+function applyPersistedServer(server: McpServerConfig) {
+  applyServerToDraft(server)
+  hydratedServerName.value = server.name
+  committedDraftSignature.value = serializeServerDraft(server)
+  pendingDraftSignature.value = committedDraftSignature.value
+  failedDraftSignature.value = null
+}
+
+async function persistDraft(allowFailedRetry = false) {
+  const payload = tryBuildPayload()
+  if (!payload) {
+    return
+  }
+
+  const draftSignature = serializeServerDraft(payload)
+  let shouldKeepPendingSignature = false
+  if (
+    !allowFailedRetry
+    && draftSignature === failedDraftSignature.value
+  ) {
+    return
+  }
+  pendingDraftSignature.value = draftSignature
+  panelError.value = null
+  try {
+    if (isCreating.value || !selectedServer.value) {
+      const created = await createServer(payload) ?? payload
+      isCreating.value = false
+      applyPersistedServer(created)
+      shouldKeepPendingSignature = true
+      await refresh(created.name).catch(() => undefined)
+      emit('changed')
+      return
+    }
+
+    const saved = await updateServer(selectedServer.value.name, payload) ?? payload
+    applyPersistedServer(saved)
+    shouldKeepPendingSignature = true
+    await refresh(saved.name).catch(() => undefined)
+    emit('changed')
+  } catch (caughtError) {
+    failedDraftSignature.value = draftSignature
+    panelError.value = caughtError instanceof Error
+      ? caughtError.message
+      : '保存 MCP server 失败'
+    scheduleFailedDraftRetry()
+  } finally {
+    if (!shouldKeepPendingSignature) {
+      pendingDraftSignature.value = null
+    }
   }
 }
 
@@ -703,6 +882,8 @@ defineExpose({
 .mcp-field-span {
   display: grid;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
 }
 
 .mcp-field-span {
@@ -712,6 +893,21 @@ defineExpose({
 .mcp-field :deep(.el-input__wrapper),
 .mcp-env-inputs :deep(.el-input__wrapper) {
   min-height: 44px;
+}
+
+.mcp-field :deep(.el-input),
+.mcp-field :deep(.el-textarea),
+.mcp-field :deep(.el-select) {
+  width: 100%;
+  min-width: 0;
+}
+
+.mcp-field :deep(.el-select__wrapper),
+.mcp-field :deep(.el-input__wrapper),
+.mcp-field :deep(.el-textarea__inner) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .mcp-field :deep(.el-textarea__inner) {

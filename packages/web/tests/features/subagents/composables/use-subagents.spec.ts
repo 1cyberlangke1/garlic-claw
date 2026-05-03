@@ -6,7 +6,6 @@ import * as subagentData from '@/modules/subagents/composables/subagents.data'
 
 vi.mock('@/modules/subagents/composables/subagents.data', () => ({
   closePluginSubagentConversation: vi.fn(),
-  loadPluginSubagentDetail: vi.fn(),
   loadPluginSubagentOverview: vi.fn(),
 }))
 
@@ -60,45 +59,6 @@ describe('useSubagents', () => {
     vi.useFakeTimers()
     vi.clearAllMocks()
     vi.mocked(subagentData.loadPluginSubagentOverview).mockResolvedValue(createOverview())
-    vi.mocked(subagentData.loadPluginSubagentDetail).mockResolvedValue({
-      conversationId: 'subagent-conversation-1',
-      parentConversationId: 'conversation-1',
-      title: 'agent1',
-      messageCount: 3,
-      updatedAt: '2026-03-30T12:00:05.000Z',
-      pluginId: 'internal.subagent',
-      pluginDisplayName: '后台子代理',
-      runtimeKind: 'local',
-      status: 'running',
-      requestPreview: '请帮我总结当前对话',
-      requestedAt: '2026-03-30T12:00:00.000Z',
-      startedAt: '2026-03-30T12:00:01.000Z',
-      finishedAt: null,
-      closedAt: null,
-      request: {
-        messages: [
-          {
-            content: '请帮我总结当前对话',
-            role: 'user',
-          },
-        ],
-      },
-      context: {
-        conversationId: 'conversation-1',
-        source: 'plugin',
-      },
-      result: {
-        message: {
-          content: '这是后台子代理总结',
-          role: 'assistant',
-        },
-        modelId: 'gpt-5.2',
-        providerId: 'openai',
-        text: '这是后台子代理总结',
-        toolCalls: [],
-        toolResults: [],
-      },
-    } as never)
     vi.mocked(subagentData.closePluginSubagentConversation).mockResolvedValue({} as never)
   })
 
@@ -106,7 +66,7 @@ describe('useSubagents', () => {
     vi.useRealTimers()
   })
 
-  it('loads overview, groups workspaces and refreshes detail by conversation id', async () => {
+  it('loads overview, groups workspaces and keeps subagent index state only', async () => {
     let state!: ReturnType<typeof useSubagents>
     const Harness = defineComponent({
       setup() {
@@ -122,17 +82,13 @@ describe('useSubagents', () => {
     expect(state.runningSubagentCount.value).toBe(1)
     expect(state.conversationWorkspaces.value).toHaveLength(2)
     expect(state.activeConversationId.value).toBe('conversation-1')
-    expect(state.activeWorkspaceWindows.value.map((window) => window.label)).toEqual(['main', 'agent1'])
+    expect(state.conversationWorkspaces.value[0]?.subagents.map((subagent) => subagent.conversationId)).toEqual([
+      'subagent-conversation-1',
+    ])
     expect(state.pagedSubagents.value.map((subagent) => subagent.conversationId)).toEqual([
       'subagent-conversation-1',
       'subagent-conversation-2',
     ])
-
-    state.selectWindow('subagent-conversation-1')
-    await flushPromises()
-
-    expect(subagentData.loadPluginSubagentDetail).toHaveBeenCalledWith('subagent-conversation-1')
-    expect(state.activeSubagentDetail.value?.conversationId).toBe('subagent-conversation-1')
 
     state.filter.value = 'running'
     await flushPromises()

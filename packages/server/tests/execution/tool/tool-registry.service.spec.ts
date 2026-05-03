@@ -9,7 +9,7 @@ import { AutomationExecutionService } from '../../../src/execution/automation/au
 import { AutomationService } from '../../../src/execution/automation/automation.service';
 import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
 import { EditToolService } from '../../../src/execution/edit/edit-tool.service';
-import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
+import { HostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
 import { GlobToolService } from '../../../src/execution/glob/glob-tool.service';
 import { GrepToolService } from '../../../src/execution/grep/grep-tool.service';
 import { InvalidToolService } from '../../../src/execution/invalid/invalid-tool.service';
@@ -36,6 +36,7 @@ import { SkillRegistryService } from '../../../src/execution/skill/skill-registr
 import { SkillToolService } from '../../../src/execution/skill/skill-tool.service';
 import { SubagentSettingsService } from '../../../src/execution/subagent/subagent-settings.service';
 import { ToolManagementSettingsService } from '../../../src/execution/tool/tool-management-settings.service';
+import { ToolOutputCaptureService } from '../../../src/execution/tool/tool-output-capture.service';
 import { SubagentToolService } from '../../../src/execution/subagent/subagent-tool.service';
 import { TodoToolService } from '../../../src/execution/todo/todo-tool.service';
 import { WebFetchToolService } from '../../../src/execution/webfetch/webfetch-tool.service';
@@ -275,8 +276,8 @@ describe('ToolRegistryService', () => {
   it('cleans current plugin source state when local reload finds that the directory was removed', async () => {
     const {
       pluginBootstrapService,
-      runtimeHostConversationRecordService,
-      runtimeHostPluginRuntimeService,
+      conversationStore,
+      pluginRuntime,
       runtimePluginGovernanceService,
       service,
       toolManagementSettingsService,
@@ -308,8 +309,8 @@ describe('ToolRegistryService', () => {
       pluginId: 'builtin.memory',
       removed: true,
     });
-    const deletePluginRuntimeStateSpy = jest.spyOn(runtimeHostPluginRuntimeService, 'deletePluginRuntimeState');
-    const deletePluginConversationSessionsSpy = jest.spyOn(runtimeHostConversationRecordService, 'deletePluginConversationSessions');
+    const deletePluginRuntimeStateSpy = jest.spyOn(pluginRuntime, 'deletePluginRuntimeState');
+    const deletePluginConversationSessionsSpy = jest.spyOn(conversationStore, 'deletePluginConversationSessions');
     const deleteGovernanceRuntimeStateSpy = jest.spyOn(runtimePluginGovernanceService, 'deletePluginRuntimeState');
     toolManagementSettingsService.writeSourceEnabledOverride('plugin:builtin.memory', false);
     toolManagementSettingsService.writeToolEnabledOverride('plugin:builtin.memory:save_memory', false);
@@ -744,8 +745,8 @@ describe('ToolRegistryService', () => {
   });
 
   it('blocks direct plugin execution when the plugin is disabled for the current conversation scope', async () => {
-    const { pluginBootstrapService, runtimeHostPluginDispatchService, service } = createFixture();
-    const executeToolSpy = jest.spyOn(runtimeHostPluginDispatchService, 'executeTool');
+    const { pluginBootstrapService, pluginDispatch, service } = createFixture();
+    const executeToolSpy = jest.spyOn(pluginDispatch, 'executeTool');
     const persisted = (pluginBootstrapService as unknown as {
       pluginPersistenceService: PluginPersistenceService;
     }).pluginPersistenceService;
@@ -774,8 +775,8 @@ describe('ToolRegistryService', () => {
   });
 
   it('blocks direct plugin execution when the source is disabled', async () => {
-    const { runtimeHostPluginDispatchService, service } = createFixture();
-    const executeToolSpy = jest.spyOn(runtimeHostPluginDispatchService, 'executeTool');
+    const { pluginDispatch, service } = createFixture();
+    const executeToolSpy = jest.spyOn(pluginDispatch, 'executeTool');
 
     await service.setSourceEnabled('plugin', 'builtin.memory', false);
 
@@ -916,9 +917,13 @@ describe('ToolRegistryService', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({
-      format: 'markdown',
-      title: 'Smoke Example',
-      url: 'https://example.com/smoke',
+      kind: 'tool:text',
+      value: expect.stringContaining('<webfetch_result>'),
+      data: expect.objectContaining({
+        format: 'markdown',
+        title: 'Smoke Example',
+        url: 'https://example.com/smoke',
+      }),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
@@ -986,11 +991,18 @@ describe('ToolRegistryService', () => {
         kind: 'tool:text',
         value: expect.stringContaining('persisted'),
       }));
+      expect(readResult).not.toHaveProperty('cwd');
+      expect(readResult).not.toHaveProperty('stdout');
+      expect(readResult).not.toHaveProperty('stderr');
+      expect(readWrappedToolData(readResult)).toEqual(expect.objectContaining({
+        cwd: '/',
+        stdout: expect.stringContaining('persisted'),
+      }));
       expect(modelOutput).toEqual(expect.objectContaining({
         type: 'text',
         value: expect.stringContaining(`<${shellToolName}_result>`),
       }));
-      expect((modelOutput as { value: string }).value).toContain('cwd: /');
+      expect((modelOutput as { value: string }).value).not.toContain('cwd: /');
       expect((modelOutput as { value: string }).value).not.toContain('backend:');
       expect(
         fs.readFileSync(path.join(runtimeWorkspaceRoot, conversationId, 'logs', 'run.txt'), 'utf8').replace(/\r\n/g, '\n'),
@@ -1046,10 +1058,10 @@ describe('ToolRegistryService', () => {
         toolCallId: 'call-bash-config-1',
       });
 
-      expect(result).toEqual(expect.objectContaining({
+      expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
         backendKind: 'native-shell',
+        stdout: expect.stringContaining('line-4'),
       }));
-      expect((result as { stdout: string }).stdout).toContain('line-4');
       expect(modelOutput).toEqual(expect.objectContaining({
         type: 'text',
         value: expect.stringContaining(`<${shellToolName}_result>`),
@@ -1098,7 +1110,7 @@ describe('ToolRegistryService', () => {
     runtimeToolPermissionService.reply(conversationId, request.id, 'once');
     const result = await execution;
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       backendKind: 'native-shell',
       stdout: expect.stringContaining('configured-backend'),
     }));
@@ -1132,7 +1144,7 @@ describe('ToolRegistryService', () => {
     runtimeToolPermissionService.reply(conversationId, request.id, 'once');
     const result = await execution;
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       backendKind: 'just-bash',
       stdout: expect.stringContaining('default-platform-backend'),
     }));
@@ -1182,7 +1194,7 @@ describe('ToolRegistryService', () => {
     runtimeToolPermissionService.reply(conversationId, request.id, 'once');
     const result = await execution;
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       backendKind: secondaryShellBackendKind,
       stdout: expect.stringContaining('configured-secondary-backend'),
     }));
@@ -1205,20 +1217,32 @@ describe('ToolRegistryService', () => {
         sourceKind: 'internal',
         sourceId: 'subagent',
         callName: 'spawn_subagent',
+        description: expect.stringContaining('wait_subagent'),
         toolId: 'internal:subagent:spawn_subagent',
       }),
       expect.objectContaining({
         sourceKind: 'internal',
         sourceId: 'subagent',
         callName: 'wait_subagent',
+        description: expect.stringContaining('result'),
         toolId: 'internal:subagent:wait_subagent',
+      }),
+      expect.objectContaining({
+        sourceKind: 'internal',
+        sourceId: 'subagent',
+        callName: 'spawn_subagent',
+        parameters: expect.objectContaining({
+          subagentType: expect.objectContaining({
+            description: expect.stringContaining('general'),
+          }),
+        }),
       }),
     ]));
   });
 
   it('routes internal subagent tools through the internal subagent owner', async () => {
-    const { runtimeHostSubagentRunnerService, service } = createFixture();
-    jest.spyOn(runtimeHostSubagentRunnerService, 'spawnSubagent').mockResolvedValue({
+    const { subagentRunner, service } = createFixture();
+    jest.spyOn(subagentRunner, 'spawnSubagent').mockResolvedValue({
       pluginId: 'subagent',
       pluginDisplayName: 'Subagent',
       requestPreview: '继续处理当前仓库',
@@ -1234,14 +1258,14 @@ describe('ToolRegistryService', () => {
       finishedAt: null,
       closedAt: null,
     } as never);
-    jest.spyOn(runtimeHostSubagentRunnerService, 'waitSubagent').mockResolvedValue({
+    jest.spyOn(subagentRunner, 'waitSubagent').mockResolvedValue({
       conversationId: 'subagent-conversation-2',
       result: '已完成',
       title: '浏览器烟测分身',
       name: '浏览器烟测分身',
       status: 'completed',
     } as never);
-    jest.spyOn(runtimeHostSubagentRunnerService, 'getSubagent').mockReturnValue({
+    jest.spyOn(subagentRunner, 'getSubagent').mockReturnValue({
       pluginId: 'subagent',
       pluginDisplayName: 'Subagent',
       requestPreview: '继续处理当前仓库',
@@ -1290,15 +1314,33 @@ describe('ToolRegistryService', () => {
     });
 
     expect(backgroundResult).toEqual(expect.objectContaining({
-      conversationId: 'subagent-conversation-2',
-      status: 'queued',
-      title: '浏览器烟测分身',
+      kind: 'tool:json',
+      value: {
+        conversationId: 'subagent-conversation-2',
+        status: 'queued',
+        title: '浏览器烟测分身',
+      },
+      data: expect.objectContaining({
+        conversationId: 'subagent-conversation-2',
+        status: 'queued',
+        title: '浏览器烟测分身',
+      }),
     }));
     expect(waitedResult).toEqual(expect.objectContaining({
-      conversationId: 'subagent-conversation-2',
-      status: 'completed',
+      kind: 'tool:json',
+      value: {
+        conversationId: 'subagent-conversation-2',
+        name: '浏览器烟测分身',
+        result: '已完成',
+        status: 'completed',
+        title: '浏览器烟测分身',
+      },
+      data: expect.objectContaining({
+        conversationId: 'subagent-conversation-2',
+        status: 'completed',
+      }),
     }));
-    expect(runtimeHostSubagentRunnerService.spawnSubagent).toHaveBeenCalledWith(
+    expect(subagentRunner.spawnSubagent).toHaveBeenCalledWith(
       'subagent',
       'Subagent',
       expect.objectContaining({ conversationId: 'conversation-1' }),
@@ -1313,15 +1355,15 @@ describe('ToolRegistryService', () => {
         ],
       }),
     );
-    expect(runtimeHostSubagentRunnerService.waitSubagent).toHaveBeenCalledWith('subagent', {
+    expect(subagentRunner.waitSubagent).toHaveBeenCalledWith('subagent', {
       conversationId: 'subagent-conversation-2',
       timeoutMs: 1000,
     });
   });
 
   it('passes name through send_input_subagent to the subagent owner', async () => {
-    const { runtimeHostSubagentRunnerService, service } = createFixture();
-    jest.spyOn(runtimeHostSubagentRunnerService, 'sendInputSubagent').mockResolvedValue({
+    const { subagentRunner, service } = createFixture();
+    jest.spyOn(subagentRunner, 'sendInputSubagent').mockResolvedValue({
       pluginId: 'subagent',
       pluginDisplayName: 'Subagent',
       requestPreview: '补一条新的输入',
@@ -1355,10 +1397,18 @@ describe('ToolRegistryService', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({
-      conversationId: 'subagent-conversation-2',
-      title: '跟进分身',
+      kind: 'tool:json',
+      value: {
+        conversationId: 'subagent-conversation-2',
+        status: 'queued',
+        title: '跟进分身',
+      },
+      data: expect.objectContaining({
+        conversationId: 'subagent-conversation-2',
+        title: '跟进分身',
+      }),
     }));
-    expect(runtimeHostSubagentRunnerService.sendInputSubagent).toHaveBeenCalledWith(
+    expect(subagentRunner.sendInputSubagent).toHaveBeenCalledWith(
       'subagent',
       expect.objectContaining({ conversationId: 'conversation-1' }),
       expect.objectContaining({
@@ -6142,7 +6192,10 @@ describe('ToolRegistryService', () => {
 
       expect(workdirResult).toEqual(expect.objectContaining({
         kind: 'tool:text',
-        value: expect.stringContaining('cwd: /nested'),
+      }));
+      expect(readWrappedToolData(workdirResult)).toEqual(expect.objectContaining({
+        cwd: '/nested',
+        stdout: expect.stringContaining('from-workdir'),
       }));
       expect((workdirResult as { value: string }).value).toContain('from-workdir');
 
@@ -6756,11 +6809,11 @@ describe('ToolRegistryService', () => {
         filePath: 'ignored.txt',
       });
 
-      expect(result).toEqual(expect.objectContaining({
+      expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
         output: expect.stringContaining('/mock-filesystem.txt'),
       }));
-      expect((result as { output: string }).output).toContain('1: mock-filesystem line');
-      expect((result as { output: string }).output).toContain('(end of file, total lines: 2, total bytes:');
+      expect(readWrappedToolOutput(result)).toContain('1: mock-filesystem line');
+      expect(readWrappedToolOutput(result)).toContain('(end of file, total lines: 2, total bytes:');
     } finally {
       if (originalFilesystemBackend === undefined) {
         delete process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND;
@@ -6805,13 +6858,13 @@ describe('ToolRegistryService', () => {
         oldString: 'created',
       });
 
-      expect((globResult as { output: string }).output).toContain('/mock-filesystem.txt');
-      expect((grepResult as { output: string }).output).toContain('/mock-filesystem.txt:');
-      expect((grepResult as { output: string }).output).toContain('1: mock-filesystem line');
-      expect(writeResult).toEqual(expect.objectContaining({
+      expect(readWrappedToolOutput(globResult)).toContain('/mock-filesystem.txt');
+      expect(readWrappedToolOutput(grepResult)).toContain('/mock-filesystem.txt:');
+      expect(readWrappedToolOutput(grepResult)).toContain('1: mock-filesystem line');
+      expect(readWrappedToolData(writeResult)).toEqual(expect.objectContaining({
         output: expect.stringContaining('/mock-filesystem/notes/output.txt'),
       }));
-      expect(editResult).toEqual(expect.objectContaining({
+      expect(readWrappedToolData(editResult)).toEqual(expect.objectContaining({
         output: expect.stringContaining('/mock-filesystem/notes/output.txt'),
       }));
     } finally {
@@ -6863,14 +6916,14 @@ describe('ToolRegistryService', () => {
         pattern: 'updated by aliased backend',
       });
 
-      expect((readResult as { output: string }).output).toContain('/notes/routed.txt');
-      expect((globResult as { output: string }).output).toContain('/notes/output.txt');
-      expect((globResult as { output: string }).output).toContain('/notes/routed.txt');
-      expect((grepResult as { output: string }).output).toContain('/notes/output.txt:');
-      expect(writeResult).toEqual(expect.objectContaining({
+      expect(readWrappedToolOutput(readResult)).toContain('/notes/routed.txt');
+      expect(readWrappedToolOutput(globResult)).toContain('/notes/output.txt');
+      expect(readWrappedToolOutput(globResult)).toContain('/notes/routed.txt');
+      expect(readWrappedToolOutput(grepResult)).toContain('/notes/output.txt:');
+      expect(readWrappedToolData(writeResult)).toEqual(expect.objectContaining({
         output: expect.stringContaining('/notes/output.txt'),
       }));
-      expect(editResult).toEqual(expect.objectContaining({
+      expect(readWrappedToolData(editResult)).toEqual(expect.objectContaining({
         output: expect.stringContaining('/notes/output.txt'),
       }));
     } finally {
@@ -6911,6 +6964,10 @@ describe('ToolRegistryService', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({
+      kind: 'tool:text',
+      value: expect.stringContaining('/notes/runtime.txt'),
+    }));
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       loaded: [],
       output: expect.stringContaining('/notes/runtime.txt'),
     }));
@@ -6945,7 +7002,7 @@ describe('ToolRegistryService', () => {
       offset: 1,
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       loaded: ['/notes/AGENTS.md'],
       output: expect.stringContaining('该路径命中以下 AGENTS.md 指令'),
     }));
@@ -6981,11 +7038,11 @@ describe('ToolRegistryService', () => {
       offset: 1,
     });
 
-    expect(firstResult).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(firstResult)).toEqual(expect.objectContaining({
       loaded: ['/notes/AGENTS.md'],
       output: expect.stringContaining('该路径命中以下 AGENTS.md 指令'),
     }));
-    expect(secondResult).toMatchObject({
+    expect(readWrappedToolData(secondResult)).toMatchObject({
       loaded: [],
       output: [
         '<read_result>',
@@ -7071,7 +7128,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-glob-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('/packages/server/src/runtime.ts'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7113,7 +7170,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-glob-empty-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('(total matches: 0. Refine path or pattern and retry.)'),
     }));
     expect((modelOutput as { value: string }).value).toContain(
@@ -7238,7 +7295,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-grep-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('/packages/server/src/runtime.ts:'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7285,7 +7342,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-grep-empty-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('(total matches: 0. Refine path, include or pattern and retry.)'),
     }));
     expect((modelOutput as { value: string }).value).toContain(
@@ -7318,7 +7375,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-write-1',
     });
 
-    expect(wrappedResult).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(wrappedResult)).toEqual(expect.objectContaining({
       created: true,
       lineCount: 1,
       output: expect.stringContaining('/generated/output.txt'),
@@ -7362,7 +7419,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       occurrences: 1,
       output: expect.stringContaining('/generated/output.txt'),
       path: '/generated/output.txt',
@@ -7409,7 +7466,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-empty-old-string-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('Strategy: empty-old-string'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7451,7 +7508,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-escape-normalized-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('Strategy: escape-normalized'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7520,7 +7577,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-line-trimmed-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('Strategy: line-trimmed'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7576,7 +7633,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-trailing-whitespace-trimmed-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('Strategy: trailing-whitespace-trimmed'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7624,7 +7681,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-indentation-flexible-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('Strategy: indentation-flexible'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7672,7 +7729,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-line-ending-normalized-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('Strategy: line-ending-normalized'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7745,10 +7802,10 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-write-diagnostics-1',
     });
 
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain(
       'Diagnostics: 2 issue(s). Current file: 1 Related files: 1 across 1 file(s)',
     );
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain(
       'Next: read /mock-filesystem/generated/output.ts and fix error diagnostics before continuing edits or writes.',
     );
     expect((modelOutput as { value: string }).value).toContain(
@@ -7806,9 +7863,9 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-write-formatting-hint-1',
     });
 
-    expect((result as { output: string }).output).toContain('Formatting: json-pretty');
-    expect((result as { output: string }).output).toContain('Diagnostics: none');
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain('Formatting: json-pretty');
+    expect(readWrappedToolOutput(result)).toContain('Diagnostics: none');
+    expect(readWrappedToolOutput(result)).toContain(
       'Next: read /mock-filesystem/generated/output.json to confirm the formatted output before continuing edits or writes.',
     );
     expect((modelOutput as { value: string }).value).toContain(
@@ -7878,10 +7935,10 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-diagnostics-1',
     });
 
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain(
       'Diagnostics: 2 issue(s). Current file: 1 Related files: 1 across 1 file(s)',
     );
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain(
       'Next: read /mock-filesystem/generated/output.ts and fix error diagnostics before continuing edits or writes.',
     );
     expect((modelOutput as { value: string }).value).toContain(
@@ -7942,10 +7999,10 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-related-error-hint-1',
     });
 
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain(
       'Diagnostics: 1 issue(s) in related file',
     );
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain(
       'Next: read related files first: /mock-filesystem/generated/related.ts. Fix error diagnostics before continuing edits or writes.',
     );
     expect((modelOutput as { value: string }).value).toContain(
@@ -8043,7 +8100,11 @@ describe('ToolRegistryService', () => {
     const result = await (mcpTool as any).execute({ city: 'Shanghai' });
 
     expect(Object.keys(toolSet ?? {})).toContain('weather__get_forecast');
-    expect(result).toEqual({ forecast: 'sunny' });
+    expect(result).toEqual({
+      data: { forecast: 'sunny' },
+      kind: 'tool:json',
+      value: { forecast: 'sunny' },
+    });
     expect(mcpService.callTool).toHaveBeenCalledWith({
       arguments: { city: 'Shanghai' },
       serverName: 'weather',
@@ -8084,9 +8145,13 @@ describe('ToolRegistryService', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({
-      name: 'weather-query',
-      entryPath: 'weather-query/SKILL.md',
-      modelOutput: expect.stringContaining('<skill_content name="weather-query">'),
+      kind: 'tool:text',
+      value: expect.stringContaining('<skill_content name="weather-query">'),
+      data: expect.objectContaining({
+        name: 'weather-query',
+        entryPath: 'weather-query/SKILL.md',
+        modelOutput: expect.stringContaining('<skill_content name="weather-query">'),
+      }),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
@@ -8096,7 +8161,7 @@ describe('ToolRegistryService', () => {
   });
 
   it('dispatches native todowrite tool execution through the session todo owner', async () => {
-    const { conversationId, runtimeHostConversationTodoService, service } = createFixture();
+    const { conversationId, conversationTodoService, service } = createFixture();
 
     const toolSet = await service.buildToolSet({
       context: {
@@ -8120,15 +8185,214 @@ describe('ToolRegistryService', () => {
     });
 
     expect(result).toEqual({
-      sessionId: conversationId,
-      pendingCount: 1,
-      todos,
+      data: {
+        pendingCount: 1,
+        sessionId: conversationId,
+        todos,
+      },
+      kind: 'tool:text',
+      value: expect.stringContaining('<todo_result>'),
     });
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
       value: expect.stringContaining('<todo_result>'),
     }));
-    expect(runtimeHostConversationTodoService.readSessionTodo(conversationId)).toEqual(todos);
+    expect(conversationTodoService.readSessionTodo(conversationId)).toEqual(todos);
+  });
+
+  it('wraps plugin tool execution results before they enter the model context', async () => {
+    const { pluginDispatch, service } = createFixture();
+    jest.spyOn(pluginDispatch, 'executeTool').mockResolvedValue({
+      saved: true,
+      summary: '已保存 2 条记忆',
+      vectors: Array.from({ length: 30 }, (_, index) => index),
+    } as never);
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['save_memory'],
+    });
+    const pluginTool = toolSet?.save_memory;
+    expect(pluginTool).toBeDefined();
+
+    const result = await (pluginTool as any).execute({ content: 'memory payload' });
+
+    expect(result).toEqual({
+      data: {
+        saved: true,
+        summary: '已保存 2 条记忆',
+        vectors: Array.from({ length: 30 }, (_, index) => index),
+      },
+      kind: 'tool:json',
+      value: {
+        saved: true,
+        summary: '已保存 2 条记忆',
+        vectors: expect.arrayContaining([
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+          10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+        ]),
+      },
+    });
+    expect((result as { value: { vectors: unknown[] } }).value.vectors.at(-1)).toEqual(expect.stringMatching(/more item\(s\)$/));
+    expect(pluginDispatch.executeTool).toHaveBeenCalledWith({
+      context: expect.objectContaining({
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      }),
+      params: { content: 'memory payload' },
+      pluginId: 'builtin.memory',
+      toolName: 'save_memory',
+    });
+  });
+
+  it('re-compacts pre-wrapped plugin tool outputs before they enter the model context', async () => {
+    const { pluginDispatch, service } = createFixture();
+    const oversizedText = 'x'.repeat(2_400);
+    jest.spyOn(pluginDispatch, 'executeTool').mockResolvedValue({
+      data: {
+        raw: oversizedText,
+      },
+      kind: 'tool:text',
+      value: oversizedText,
+    } as never);
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['save_memory'],
+    });
+    const pluginTool = toolSet?.save_memory;
+    expect(pluginTool).toBeDefined();
+
+    const result = await (pluginTool as any).execute({ content: 'memory payload' });
+    const modelOutput = await (pluginTool as any).toModelOutput({
+      input: { content: 'memory payload' },
+      output: result,
+      toolCallId: 'call-plugin-wrapped-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      data: {
+        raw: oversizedText,
+      },
+      kind: 'tool:text',
+      value: expect.stringContaining('[truncated 400 chars]'),
+    }));
+    expect((result as { value: string }).value.length).toBeLessThan(2_100);
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('[truncated'),
+    }));
+  });
+
+  it('captures oversized plugin text output to a session file while only returning compact text to the model', async () => {
+    const { pluginDispatch, runtimeToolsSettingsService, runtimeWorkspaceRoot, service } = createFixture();
+    runtimeToolsSettingsService.updateConfig({
+      toolOutputCapture: {
+        enabled: true,
+        maxBytes: 128,
+        maxFilesPerSession: 5,
+      },
+    });
+    const oversizedText = 'tool-output-'.repeat(900);
+    jest.spyOn(pluginDispatch, 'executeTool').mockResolvedValue({
+      message: oversizedText,
+      summary: '已保存大文本输出',
+    } as never);
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['save_memory'],
+    });
+    const pluginTool = toolSet?.save_memory;
+    expect(pluginTool).toBeDefined();
+
+    const result = await (pluginTool as any).execute({ content: 'memory payload' });
+    const modelOutput = await (pluginTool as any).toModelOutput({
+      input: { content: 'memory payload' },
+      output: result,
+      toolCallId: 'call-plugin-capture-text-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      kind: 'tool:text',
+      value: expect.stringContaining('[full output saved to: /.garlic-claw/tool-output/'),
+    }));
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('[full output saved to: /.garlic-claw/tool-output/'),
+    }));
+    const outputPathMatch = String((result as { value: string }).value).match(/\[full output saved to: ([^\]]+)\]/);
+    expect(outputPathMatch?.[1]).toBeTruthy();
+    const hostPath = path.join(
+      runtimeWorkspaceRoot,
+      'conversation-1',
+      ...String(outputPathMatch?.[1] ?? '').replace(/^\/+/, '').split('/'),
+    );
+    expect(fs.existsSync(hostPath)).toBe(true);
+    expect(fs.readFileSync(hostPath, 'utf8')).toContain(oversizedText.slice(0, 400));
+  });
+
+  it('captures oversized plugin json output to a session file while keeping model json compact', async () => {
+    const { pluginDispatch, runtimeToolsSettingsService, runtimeWorkspaceRoot, service } = createFixture();
+    runtimeToolsSettingsService.updateConfig({
+      toolOutputCapture: {
+        enabled: true,
+        maxBytes: 128,
+        maxFilesPerSession: 5,
+      },
+    });
+    jest.spyOn(pluginDispatch, 'executeTool').mockResolvedValue({
+      items: Array.from({ length: 40 }, (_, index) => index),
+      nested: {
+        text: 'json-output-'.repeat(600),
+      },
+      saved: true,
+    } as never);
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['save_memory'],
+    });
+    const pluginTool = toolSet?.save_memory;
+    expect(pluginTool).toBeDefined();
+
+    const result = await (pluginTool as any).execute({ content: 'memory payload' });
+
+    expect(result).toEqual(expect.objectContaining({
+      kind: 'tool:json',
+      value: expect.objectContaining({
+        _fullOutputPath: expect.stringMatching(/^\/\.garlic-claw\/tool-output\//),
+        items: expect.any(Array),
+        nested: expect.any(Object),
+        saved: true,
+      }),
+    }));
+    const compactValue = (result as { value: Record<string, unknown> }).value;
+    const hostPath = path.join(
+      runtimeWorkspaceRoot,
+      'conversation-1',
+      ...String(compactValue._fullOutputPath ?? '').replace(/^\/+/, '').split('/'),
+    );
+    expect(fs.existsSync(hostPath)).toBe(true);
+    expect(fs.readFileSync(hostPath, 'utf8')).toContain('"saved": true');
+    expect(fs.readFileSync(hostPath, 'utf8')).toContain('json-output-json-output');
   });
 
   it('excludes disconnected remote plugins from the executable tool set', async () => {
@@ -8212,20 +8476,20 @@ function createFixture(options: {
   const runtimeGatewayRemoteTransportService = new RuntimeGatewayRemoteTransportService(
     runtimeGatewayConnectionLifecycleService,
   );
-  const runtimeHostConversationRecordService = new ConversationStoreService();
-  const runtimeHostConversationTodoService = new ConversationTodoService(runtimeHostConversationRecordService);
-  const conversationId = (runtimeHostConversationRecordService.createConversation({
+  const conversationStore = new ConversationStoreService();
+  const conversationTodoService = new ConversationTodoService(conversationStore);
+  const conversationId = (conversationStore.createConversation({
     title: 'Tool Registry Todo',
     userId: 'user-1',
   }) as { id: string }).id;
-  const runtimeHostConversationMessageService = new ConversationMessageService(
-    runtimeHostConversationRecordService,
+  const conversationMessages = new ConversationMessageService(
+    conversationStore,
   );
   const aiModelExecutionService = new AiModelExecutionService();
   const projectWorktreeRootService = new ProjectWorktreeRootService();
-  const runtimeHostSubagentRunnerService = new SubagentRunnerService(
+  const subagentRunner = new SubagentRunnerService(
     aiModelExecutionService,
-    runtimeHostConversationMessageService,
+    conversationMessages,
     {
       buildToolSet: jest.fn().mockResolvedValue(undefined),
     } as never,
@@ -8234,9 +8498,12 @@ function createFixture(options: {
       listPlugins: jest.fn().mockReturnValue([]),
     } as never,
     new ProjectSubagentTypeRegistryService(projectWorktreeRootService),
-    runtimeHostConversationRecordService,
+    {
+      get: jest.fn().mockReturnValue(undefined),
+    } as never,
+    conversationStore,
   );
-  const runtimeHostAutomationService = new AutomationService(
+  const automationService = new AutomationService(
     new AutomationExecutionService(
       {
         executeTool: jest.fn(),
@@ -8296,7 +8563,8 @@ function createFixture(options: {
   const runtimeOneShotShellService = new RuntimeOneShotShellService();
   runtimeOneShotShellServices.push(runtimeOneShotShellService);
   const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-  const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
+  const runtimeToolsSettingsService = new RuntimeToolsSettingsService();
+  const hostFilesystemBackend = new HostFilesystemBackendService(
     runtimeSessionEnvironmentService,
   );
   const projectWorktreeSearchOverlayService = new ProjectWorktreeSearchOverlayService(
@@ -8317,12 +8585,12 @@ function createFixture(options: {
     : baseRuntimeBackends;
   const runtimeCommandService = new RuntimeCommandService(
     resolvedRuntimeBackends,
-    new RuntimeCommandCaptureService(runtimeSessionEnvironmentService),
+    new RuntimeCommandCaptureService(runtimeSessionEnvironmentService, runtimeToolsSettingsService),
   );
   const resolvedFilesystemBackends = options.runtimeFilesystemBackends ?? [
-    runtimeHostFilesystemBackendService,
+    hostFilesystemBackend,
     ...(options.aliasHostFilesystemKinds ?? []).map((kind) => (
-      createKindAliasedFilesystemBackend(kind, runtimeHostFilesystemBackendService)
+      createKindAliasedFilesystemBackend(kind, hostFilesystemBackend)
     )),
   ];
   const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService(
@@ -8364,7 +8632,7 @@ function createFixture(options: {
     withFileLock: jest.fn().mockImplementation(async (_sessionId, _filePath, run) => run()),
     withWriteFreshnessGuard: jest.fn().mockImplementation(async (_sessionId, _filePath, run) => run()),
   } as never;
-  const runtimeToolPermissionService = new RuntimeToolPermissionService(runtimeHostConversationRecordService);
+  const runtimeToolPermissionService = new RuntimeToolPermissionService(conversationStore);
   const bashToolService = new BashToolService(
     runtimeCommandService,
     runtimeSessionEnvironmentService,
@@ -8395,19 +8663,22 @@ function createFixture(options: {
     runtimeFilesystemBackendService,
     runtimeFileFreshnessService,
   );
-  const runtimeToolsSettingsService = new RuntimeToolsSettingsService();
   const toolManagementSettingsService = new ToolManagementSettingsService();
+  const toolOutputCaptureService = new ToolOutputCaptureService(
+    runtimeSessionEnvironmentService,
+    runtimeToolsSettingsService,
+  );
   const subagentSettingsService = new SubagentSettingsService();
   const subagentToolService = new SubagentToolService(
-    runtimeHostSubagentRunnerService,
+    subagentRunner,
     subagentSettingsService,
   );
-  const runtimeHostPluginDispatchService = new PluginDispatchService(
+  const pluginDispatch = new PluginDispatchService(
     builtinPluginRegistryService,
     pluginBootstrapService,
     runtimeGatewayRemoteTransportService,
   );
-  const runtimeHostRuntimeToolService = new ToolGatewayService(
+  const toolGateway = new ToolGatewayService(
     bashToolService,
     editToolService,
     globToolService,
@@ -8422,29 +8693,29 @@ function createFixture(options: {
     writeToolService,
     projectWorktreeSearchOverlayService,
   );
-  const runtimeHostPluginRuntimeService = new PluginRuntimeService();
+  const pluginRuntime = new PluginRuntimeService();
   const runtimePluginGovernanceService = new RuntimePluginGovernanceService(
     pluginBootstrapService,
     runtimeGatewayConnectionLifecycleService,
   );
-  const runtimeHostService = new PluginHostService(
+  const pluginHost = new PluginHostService(
     pluginBootstrapService,
-    runtimeHostAutomationService,
-    runtimeHostConversationMessageService,
-    runtimeHostConversationRecordService,
+    automationService,
+    conversationMessages,
+    conversationStore,
     aiModelExecutionService as never,
     aiManagementService,
     new KnowledgeReaderService(),
-    runtimeHostPluginDispatchService,
-    runtimeHostPluginRuntimeService,
-    runtimeHostRuntimeToolService,
-    runtimeHostSubagentRunnerService,
+    pluginDispatch,
+    pluginRuntime,
+    toolGateway,
+    subagentRunner,
     new UserContextService(),
-    new PersonaService(new PersonaStoreService(projectWorktreeRootService), runtimeHostConversationRecordService),
+    new PersonaService(new PersonaStoreService(projectWorktreeRootService), conversationStore),
   );
-  runtimeHostService.onModuleInit();
+  pluginHost.onModuleInit();
   const invalidToolService = new InvalidToolService();
-  const todoToolService = new TodoToolService(runtimeHostConversationTodoService);
+  const todoToolService = new TodoToolService(conversationTodoService);
   const webFetchService = {
     fetch: jest.fn().mockResolvedValue({
       contentType: 'text/html',
@@ -8460,12 +8731,12 @@ function createFixture(options: {
     conversationId,
     mcpService,
     pluginBootstrapService,
-    runtimeHostConversationRecordService,
-    runtimeHostPluginRuntimeService,
-    runtimeHostConversationTodoService,
-    runtimeHostPluginDispatchService,
+    conversationStore,
+    pluginRuntime,
+    conversationTodoService,
+    pluginDispatch,
     runtimePluginGovernanceService,
-    runtimeHostSubagentRunnerService,
+    subagentRunner,
     skillRegistryService,
     runtimeToolPermissionService,
     runtimeToolsSettingsService,
@@ -8485,14 +8756,15 @@ function createFixture(options: {
       runtimeToolsSettingsService,
       toolManagementSettingsService,
       pluginBootstrapService,
-      runtimeHostConversationRecordService,
-      runtimeHostPluginRuntimeService,
+      conversationStore,
+      pluginRuntime,
       subagentToolService,
       todoToolService,
       webFetchToolService,
       writeToolService,
       skillToolService,
-      runtimeHostPluginDispatchService as never,
+      toolOutputCaptureService,
+      pluginDispatch as never,
       runtimePluginGovernanceService as never,
     ),
   };
@@ -8510,6 +8782,15 @@ async function waitForPendingRuntimeRequest(
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   throw new Error(`Timed out waiting for runtime permission request: ${conversationId}`);
+}
+
+function readWrappedToolData<T extends object = Record<string, unknown>>(value: unknown): T {
+  return ((value as { data?: T } | null)?.data ?? {}) as T;
+}
+
+function readWrappedToolOutput(value: unknown): string {
+  const data = readWrappedToolData<{ output?: unknown }>(value);
+  return typeof data.output === 'string' ? data.output : '';
 }
 
 function createMockRuntimeBackend(kind: string): RuntimeBackend {
@@ -8967,3 +9248,5 @@ function buildMcpToolSources(snapshot: {
     };
   });
 }
+
+

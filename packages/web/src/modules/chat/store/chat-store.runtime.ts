@@ -6,6 +6,7 @@ import type {
 } from '@garlic-claw/shared'
 import {
   dbMessageToChat,
+  isTemporaryChatMessageId,
   stringifyPayload,
 } from './chat-store.helpers'
 import type { ChatMessage } from './chat-store.types'
@@ -153,11 +154,22 @@ export function applySseEvent(
         ...message,
         status: event.status,
         error: event.error ?? (event.status === 'error' ? message.error ?? '请求失败' : null),
+        retryState: undefined,
+      }))
+    case 'retry':
+      return updateMessageState(messages, event.messageId, (message) => ({
+        ...message,
+        retryState: {
+          attempt: event.attempt,
+          message: event.message,
+          next: event.next,
+        },
       }))
     case 'text-delta':
       return updateMessageState(messages, event.messageId, (message) => ({
         ...message,
         content: `${message.content}${event.text}`,
+        retryState: undefined,
         status: 'streaming',
       }))
     case 'tool-call':
@@ -172,6 +184,7 @@ export function applySseEvent(
             inputPreview: stringifyPayload(event.input),
           },
         ],
+        retryState: undefined,
         status: 'streaming',
       }))
     case 'tool-result':
@@ -186,6 +199,7 @@ export function applySseEvent(
             outputPreview: stringifyPayload(event.output),
           },
         ],
+        retryState: undefined,
         status: 'streaming',
       }))
     case 'message-patch':
@@ -193,6 +207,7 @@ export function applySseEvent(
         ...message,
         content: event.content,
         ...(event.parts ? { parts: event.parts } : {}),
+        retryState: undefined,
       }))
     case 'message-metadata':
       return updateMessageState(messages, event.messageId, (message) => ({
@@ -207,6 +222,7 @@ export function applySseEvent(
     case 'finish':
       return updateMessageState(messages, event.messageId, (message) => ({
         ...message,
+        retryState: undefined,
         status: event.status,
       }))
     case 'error':
@@ -241,6 +257,7 @@ export function applyRequestError(
     ...message,
     status: 'error',
     error: errorMessage,
+    retryState: undefined,
     ...(message.metadata?.visionFallback?.state === 'transcribing'
       ? { metadata: undefined }
       : {}),
@@ -258,6 +275,7 @@ export function getRetryableMessageId(messages: ChatMessage[]): string | null {
     if (
       message?.role === 'assistant' &&
       message.id &&
+      !isTemporaryChatMessageId(message.id) &&
       ['completed', 'stopped', 'error'].includes(message.status)
     ) {
       return message.id
@@ -287,7 +305,9 @@ function applyMessageStart(
     dbMessageToChat(event.assistantMessage),
     context.requestKind === 'send'
       ? context.optimisticAssistantId
-      : context.targetMessageId,
+      : event.assistantMessage.id === context.targetMessageId
+        ? context.targetMessageId
+        : undefined,
   )
 }
 

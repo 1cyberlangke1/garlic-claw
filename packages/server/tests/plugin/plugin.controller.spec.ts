@@ -23,15 +23,15 @@ describe('PluginController', () => {
     updatePluginScope: jest.fn(),
     upsertPlugin: jest.fn(),
   };
-  const runtimeHostConversationRecordService = {
+  const conversationStore = {
     deletePluginConversationSessions: jest.fn(),
     listPluginConversationSessions: jest.fn(),
   };
-  const runtimeHostPluginDispatchService = {
+  const pluginDispatch = {
     invokeRoute: jest.fn(),
     listPlugins: jest.fn(),
   };
-  const runtimeHostPluginRuntimeService = {
+  const pluginRuntime = {
     deleteCronJob: jest.fn(),
     deletePluginRuntimeState: jest.fn(),
     listCronJobs: jest.fn(),
@@ -59,9 +59,9 @@ describe('PluginController', () => {
     controller = new PluginController(
       pluginBootstrapService as never,
       pluginPersistenceService as never,
-      runtimeHostConversationRecordService as never,
-      runtimeHostPluginDispatchService as never,
-      runtimeHostPluginRuntimeService as never,
+      conversationStore as never,
+      pluginDispatch as never,
+      pluginRuntime as never,
       runtimePluginGovernanceService as never,
       toolManagementSettingsService as never,
     );
@@ -442,8 +442,8 @@ describe('PluginController', () => {
       message: '本地插件目录已删除，已清理旧记录',
     });
 
-    expect(runtimeHostPluginRuntimeService.deletePluginRuntimeState).toHaveBeenCalledWith('local.echo');
-    expect(runtimeHostConversationRecordService.deletePluginConversationSessions).toHaveBeenCalledWith('local.echo');
+    expect(pluginRuntime.deletePluginRuntimeState).toHaveBeenCalledWith('local.echo');
+    expect(conversationStore.deletePluginConversationSessions).toHaveBeenCalledWith('local.echo');
     expect(runtimePluginGovernanceService.deletePluginRuntimeState).toHaveBeenCalledWith('local.echo');
     expect(toolManagementSettingsService.deleteSourceOverrides).toHaveBeenCalledWith('plugin:local.echo');
     expect(runtimePluginGovernanceService.runPluginAction).not.toHaveBeenCalled();
@@ -533,13 +533,13 @@ describe('PluginController', () => {
     });
     expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('builtin.memory', {
       level: 'info',
-      message: 'Updated plugin config for builtin.memory',
+      message: '插件 builtin.memory 的配置已更新',
       metadata: { keys: ['limit'] },
       type: 'plugin:config.updated',
     });
     expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('builtin.memory', {
       level: 'info',
-      message: 'Updated plugin llm preference for builtin.memory',
+      message: '插件 builtin.memory 的 LLM 偏好设置已更新',
       metadata: {
         mode: 'override',
         modelId: 'deepseek-reasoner',
@@ -549,7 +549,7 @@ describe('PluginController', () => {
     });
     expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('builtin.memory', {
       level: 'info',
-      message: 'Updated plugin scope for builtin.memory',
+      message: '插件 builtin.memory 的作用域已更新',
       metadata: { conversationCount: 1 },
       type: 'plugin:scope.updated',
     });
@@ -596,8 +596,8 @@ describe('PluginController', () => {
       pluginId: 'remote.echo',
     });
     expect(pluginPersistenceService.deletePlugin).toHaveBeenCalledWith('remote.echo');
-    expect(runtimeHostPluginRuntimeService.deletePluginRuntimeState).toHaveBeenCalledWith('remote.echo');
-    expect(runtimeHostConversationRecordService.deletePluginConversationSessions).toHaveBeenCalledWith('remote.echo');
+    expect(pluginRuntime.deletePluginRuntimeState).toHaveBeenCalledWith('remote.echo');
+    expect(conversationStore.deletePluginConversationSessions).toHaveBeenCalledWith('remote.echo');
     expect(runtimePluginGovernanceService.deletePluginRuntimeState).toHaveBeenCalledWith('remote.echo');
     expect(toolManagementSettingsService.deleteSourceOverrides).toHaveBeenCalledWith('plugin:remote.echo');
     expect(pluginPersistenceService.recordDetachedPluginEvent).not.toHaveBeenCalled();
@@ -609,10 +609,11 @@ describe('PluginController', () => {
     });
 
     expect(() => controller.deletePlugin('remote.echo')).toThrow('Plugin remote.echo is still connected');
-    expect(runtimeHostPluginRuntimeService.deletePluginRuntimeState).not.toHaveBeenCalled();
-    expect(runtimeHostConversationRecordService.deletePluginConversationSessions).not.toHaveBeenCalled();
+    expect(pluginRuntime.deletePluginRuntimeState).not.toHaveBeenCalled();
+    expect(conversationStore.deletePluginConversationSessions).not.toHaveBeenCalled();
     expect(runtimePluginGovernanceService.deletePluginRuntimeState).not.toHaveBeenCalled();
     expect(toolManagementSettingsService.deleteSourceOverrides).not.toHaveBeenCalled();
     expect(pluginPersistenceService.recordPluginEvent).not.toHaveBeenCalled();
   });
 });
+

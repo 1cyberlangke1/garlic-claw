@@ -24,7 +24,7 @@ type PersonaSource = 'context' | 'conversation' | 'default'
 export class PersonaService {
   constructor(
     private readonly personaStoreService: PersonaStoreService,
-    private readonly runtimeHostConversationRecordService: ConversationStoreService,
+    private readonly conversationStore: ConversationStoreService,
   ) {}
 
   listPersonas(): PluginPersonaSummary[] { return this.listStoredPersonas().map(toPersonaSummary) }
@@ -39,7 +39,7 @@ export class PersonaService {
 
   activatePersona(input: { conversationId: string; personaId: string; userId?: string }): PluginPersonaCurrentInfo {
     const persona = this.requirePersona(input.personaId)
-    this.runtimeHostConversationRecordService.rememberConversationActivePersona(input.conversationId, persona.id, input.userId)
+    this.conversationStore.rememberConversationActivePersona(input.conversationId, persona.id, input.userId)
     return toCurrentPersona({ persona, source: 'conversation' })
   }
 
@@ -64,9 +64,9 @@ export class PersonaService {
     this.persistPersonas(this.listStoredPersonas().filter((persona) => persona.id !== personaId))
     const fallbackPersonaId = this.requireDefaultPersona(this.listStoredPersonas()).id
     let reassignedConversationCount = 0
-    for (const conversation of this.runtimeHostConversationRecordService.listConversations() as Array<{ id: string }>) {
-      if (this.runtimeHostConversationRecordService.requireConversation(conversation.id).activePersonaId !== personaId) {continue}
-      this.runtimeHostConversationRecordService.rememberConversationActivePersona(conversation.id, fallbackPersonaId)
+    for (const conversation of this.conversationStore.listConversations() as Array<{ id: string }>) {
+      if (this.conversationStore.requireConversation(conversation.id).activePersonaId !== personaId) {continue}
+      this.conversationStore.rememberConversationActivePersona(conversation.id, fallbackPersonaId)
       reassignedConversationCount += 1
     }
     return { deletedPersonaId: personaId, fallbackPersonaId, reassignedConversationCount }
@@ -114,7 +114,7 @@ export class PersonaService {
   private readConversationActivePersonaId(conversationId?: string): string | undefined {
     if (!conversationId) {return undefined}
     try {
-      return this.runtimeHostConversationRecordService.requireConversation(conversationId).activePersonaId
+      return this.conversationStore.requireConversation(conversationId).activePersonaId
     } catch {
       return undefined
     }

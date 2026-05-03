@@ -56,19 +56,19 @@ export class ToolGatewayService {
   ) {}
 
   async executeCommand(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeCommandResult> {
-    const assistantMessageId = readRuntimeHostAssistantMessageId(context);
-    const backendKind = readRuntimeHostBackendKind(params.backendKind) ?? this.runtimeToolsSettingsService.readConfiguredShellBackend();
+    const assistantMessageId = readHostAssistantMessageId(context);
+    const backendKind = readHostBackendKind(params.backendKind) ?? this.runtimeToolsSettingsService.readConfiguredShellBackend();
     const toolName = readRuntimeShellToolName(backendKind);
-    const runtimeInput = this.bashToolService.readInput(params, readRuntimeHostSessionId(context, toolName), backendKind);
+    const runtimeInput = this.bashToolService.readInput(params, readHostSessionId(context, toolName), backendKind);
     await this.reviewRuntimeToolAccess(context, assistantMessageId, toolName, await this.bashToolService.readRuntimeAccess(runtimeInput));
     return this.bashToolService.execute(runtimeInput);
   }
 
   async readPath(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeReadResult> {
-    const assistantMessageId = readRuntimeHostAssistantMessageId(context);
+    const assistantMessageId = readHostAssistantMessageId(context);
     const runtimeInput = this.readToolService.readInput(
       params,
-      readRuntimeHostSessionId(context, 'read'),
+      readHostSessionId(context, 'read'),
       undefined,
       assistantMessageId,
     );
@@ -123,8 +123,8 @@ export class ToolGatewayService {
   }
 
   async globPaths(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeGlobResult> {
-    const assistantMessageId = readRuntimeHostAssistantMessageId(context);
-    const runtimeInput = this.globToolService.readInput(params, readRuntimeHostSessionId(context, 'glob'));
+    const assistantMessageId = readHostAssistantMessageId(context);
+    const runtimeInput = this.globToolService.readInput(params, readHostSessionId(context, 'glob'));
     await this.reviewRuntimeToolAccess(context, assistantMessageId, 'glob', this.globToolService.readRuntimeAccess(runtimeInput));
     try {
       const globResult = await this.runtimeFilesystemBackendService.globPaths(
@@ -150,8 +150,8 @@ export class ToolGatewayService {
   }
 
   async grepContent(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeGrepResult> {
-    const assistantMessageId = readRuntimeHostAssistantMessageId(context);
-    const runtimeInput = this.grepToolService.readInput(params, readRuntimeHostSessionId(context, 'grep'));
+    const assistantMessageId = readHostAssistantMessageId(context);
+    const runtimeInput = this.grepToolService.readInput(params, readHostSessionId(context, 'grep'));
     await this.reviewRuntimeToolAccess(context, assistantMessageId, 'grep', this.grepToolService.readRuntimeAccess(runtimeInput));
     try {
       const grepResult = await this.runtimeFilesystemBackendService.grepText(
@@ -179,8 +179,8 @@ export class ToolGatewayService {
   }
 
   async writeFile(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeWriteResult> {
-    const assistantMessageId = readRuntimeHostAssistantMessageId(context);
-    const runtimeInput = this.writeToolService.readInput(params, readRuntimeHostSessionId(context, 'write'));
+    const assistantMessageId = readHostAssistantMessageId(context);
+    const runtimeInput = this.writeToolService.readInput(params, readHostSessionId(context, 'write'));
     await this.reviewRuntimeToolAccess(context, assistantMessageId, 'write', this.writeToolService.readRuntimeAccess(runtimeInput));
     const result = await this.writeToolService.execute(runtimeInput);
     return {
@@ -194,8 +194,8 @@ export class ToolGatewayService {
   }
 
   async editFile(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeEditResult> {
-    const assistantMessageId = readRuntimeHostAssistantMessageId(context);
-    const runtimeInput = this.editToolService.readInput(params, readRuntimeHostSessionId(context, 'edit'));
+    const assistantMessageId = readHostAssistantMessageId(context);
+    const runtimeInput = this.editToolService.readInput(params, readHostSessionId(context, 'edit'));
     await this.reviewRuntimeToolAccess(context, assistantMessageId, 'edit', this.editToolService.readRuntimeAccess(runtimeInput));
     const result = await this.editToolService.execute(runtimeInput);
     return {
@@ -225,7 +225,7 @@ export class ToolGatewayService {
   }
 }
 
-function readRuntimeHostSessionId(
+function readHostSessionId(
   context: PluginCallContext,
   toolName: 'bash' | 'powershell' | 'edit' | 'glob' | 'grep' | 'read' | 'write',
 ): string {
@@ -235,7 +235,7 @@ function readRuntimeHostSessionId(
   throw new BadRequestException(`${toolName} 工具只能在 session 上下文中使用`);
 }
 
-function readRuntimeHostAssistantMessageId(context: PluginCallContext): string | undefined {
+function readHostAssistantMessageId(context: PluginCallContext): string | undefined {
   const metadata = context.metadata;
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
     return undefined;
@@ -244,6 +244,6 @@ function readRuntimeHostAssistantMessageId(context: PluginCallContext): string |
   return typeof messageId === 'string' && messageId.trim() ? messageId.trim() : undefined;
 }
 
-function readRuntimeHostBackendKind(value: unknown): RuntimeBackendKind | undefined {
+function readHostBackendKind(value: unknown): RuntimeBackendKind | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }

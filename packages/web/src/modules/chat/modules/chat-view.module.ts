@@ -12,6 +12,7 @@ import {
 import { subscribeInternalConfigChanged } from '@/modules/ai-settings/internal-config-change'
 
 import type { useChatStore } from '@/modules/chat/store/chat'
+import { isAutoCompactionContinueMessage } from '@/modules/chat/store/chat-store.helpers'
 import {
   formatBytes,
   MAX_CHAT_IMAGE_DATA_URL_BYTES,
@@ -125,7 +126,9 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     ...imageFallbackNotice.value,
     ...uploadProcessingNotices.value,
   ])
-  const displayedMessages = computed(() => chat.messages)
+  const displayedMessages = computed(() =>
+    chat.messages.filter((message) => !isAutoCompactionContinueMessage(message)),
+  )
   const contextWindowPreview = computed(() => chat.contextWindowPreview)
   const pendingRuntimePermissions = computed(() => chat.pendingRuntimePermissions)
   const queuedSendCount = computed(() => chat.queuedSendCount)
@@ -418,7 +421,10 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     content?: string
     parts?: ChatMessagePart[]
   }) {
-    await chat.updateMessage(payload.messageId, payload)
+    await chat.updateMessage(payload.messageId, {
+      ...(payload.content !== undefined ? { content: payload.content } : {}),
+      ...(payload.parts !== undefined ? { parts: payload.parts } : {}),
+    })
   }
 
   /**

@@ -2,6 +2,7 @@ import type {
   ChatMessageMetadata,
   ChatMessagePart,
   ChatMessageRole,
+  ChatRetryState,
   ChatMessageStatus,
   ConversationTodoItem,
   JsonValue,
@@ -37,6 +38,7 @@ export interface ChatMessage {
   model?: string | null
   status: ChatMessageStatus
   error?: string | null
+  retryState?: ChatRetryState
   createdAt?: string
   updatedAt?: string
 }

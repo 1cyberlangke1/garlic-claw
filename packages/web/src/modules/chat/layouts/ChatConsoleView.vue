@@ -53,8 +53,20 @@ const visibleConversations = computed(() =>
 )
 
 onMounted(() => {
-  void chat.loadConversations()
+  void initializeConversationRail()
 })
+
+async function initializeConversationRail() {
+  await chat.loadConversations()
+  if (chat.currentConversationId) {
+    return
+  }
+  const firstConversation = visibleConversations.value[0]
+  if (!firstConversation) {
+    return
+  }
+  await chat.selectConversation(firstConversation.id)
+}
 
 async function newChat() {
   const conversation = await chat.createConversation()

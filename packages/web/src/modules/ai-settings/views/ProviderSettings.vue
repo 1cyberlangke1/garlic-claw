@@ -112,9 +112,9 @@
             <p v-if="connectionResult" class="msg-status" :class="connectionResult.kind">{{ connectionResult.text }}</p>
 
             <div class="add-model-row">
-              <ElInput v-model="newModelId" class="field-input" placeholder="模型 ID" />
-              <ElInput v-model="newModelName" class="field-input" placeholder="名称（可选）" />
-              <ElButton type="primary" :disabled="!newModelId.trim()" @click="handleAddModel">添加</ElButton>
+              <ElInput v-model="newModelId" class="field-input add-model-input add-model-input-id" placeholder="模型 ID" />
+              <ElInput v-model="newModelName" class="field-input add-model-input add-model-input-name" placeholder="名称（可选）" />
+              <ElButton class="add-model-button" type="primary" :disabled="!newModelId.trim()" @click="handleAddModel">添加</ElButton>
             </div>
 
             <p class="msg-muted capability-note">
@@ -168,10 +168,10 @@
                       <ElInput
                         :data-test="`context-length-input-${m.id}`"
                         class="field-input field-input-sm"
-                        :value="ctxDrafts[m.id] ?? m.contextLength"
+                        :model-value="ctxDrafts[m.id] ?? String(m.contextLength)"
                         min="1"
                         type="number"
-                        @input="handleCtxInput(m.id, String($event))"
+                        @input="handleCtxInput(m.id, $event)"
                         @blur="flushCtxSave(m)"
                       />
                     </span>
@@ -211,6 +211,14 @@
           :saving="savingRuntimeToolsConfig"
           @save="saveRuntimeToolsConfig"
         />
+
+        <article class="tool-management-hint">
+          <div>
+            <h3>工具启用状态</h3>
+            <p>执行工具的启用/禁用已统一移到工具管理页，这里只保留运行参数配置。</p>
+          </div>
+          <a class="btn-ghost tool-management-link" href="/tools?kind=internal&source=runtime-tools">打开工具管理</a>
+        </article>
       </section>
 
       <section v-if="activeSection === 'subagent'" class="settings-stack">
@@ -219,6 +227,14 @@
           :saving="savingSubagentConfig"
           @save="saveSubagentConfig"
         />
+
+        <article class="tool-management-hint">
+          <div>
+            <h3>子代理工具状态</h3>
+            <p>子代理工具的启用/禁用已统一移到工具管理页，这里只保留运行参数配置。</p>
+          </div>
+          <a class="btn-ghost tool-management-link" href="/tools?kind=internal&source=subagent">打开工具管理</a>
+        </article>
       </section>
 
       <ContextGovernanceSettingsPanel
@@ -251,7 +267,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElButton, ElCheckbox, ElInput } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import type { IconifyIcon } from '@iconify/types'
@@ -405,18 +421,9 @@ function emitCapImageToggle(model: AiModelConfig, checked: string | number | boo
 /* ── 上下文长度 ── */
 const ctxDrafts = ref<Record<string, string>>({})
 const ctxBases = ref<Record<string, string>>({})
-const ctxSaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
-const CONTEXT_LENGTH_SAVE_DEBOUNCE_MS = 500
 watch(() => selectedModels.value, (models) => {
   const nextDrafts: Record<string, string> = {}
   const nextBases: Record<string, string> = {}
-  const nextModelIds = new Set(models.map((model) => model.id))
-  for (const [modelId, timer] of ctxSaveTimers.entries()) {
-    if (!nextModelIds.has(modelId)) {
-      clearTimeout(timer)
-      ctxSaveTimers.delete(modelId)
-    }
-  }
   for (const m of models) {
     const base = String(m.contextLength)
     const prevBase = ctxBases.value[m.id]
@@ -429,54 +436,25 @@ watch(() => selectedModels.value, (models) => {
 }, { immediate: true })
 function handleCtxInput(modelId: string, value: string) {
   ctxDrafts.value = { ...ctxDrafts.value, [modelId]: value }
-  scheduleCtxSave(modelId)
 }
 function canSaveCtx(model: AiModelConfig) {
   const draft = Number(ctxDrafts.value[model.id] ?? model.contextLength)
   return Number.isInteger(draft) && draft > 0 && draft !== model.contextLength
 }
 function flushCtxSave(model: AiModelConfig) {
-  scheduleCtxSave(model.id, true)
+  if (!canSaveCtx(model)) {
+    ctxDrafts.value = {
+      ...ctxDrafts.value,
+      [model.id]: String(model.contextLength),
+    }
+    return
+  }
+  saveCtx(model)
 }
 function saveCtx(model: AiModelConfig) {
   const val = Number(ctxDrafts.value[model.id] ?? model.contextLength)
   if (Number.isInteger(val) && val > 0) updateContextLength({ modelId: model.id, contextLength: val })
 }
-function scheduleCtxSave(modelId: string, immediate = false) {
-  const model = selectedModels.value.find((entry) => entry.id === modelId)
-  if (!model || !canSaveCtx(model)) {
-    clearCtxSaveTimer(modelId)
-    return
-  }
-  clearCtxSaveTimer(modelId)
-  const submit = () => {
-    ctxSaveTimers.delete(modelId)
-    const latestModel = selectedModels.value.find((entry) => entry.id === modelId)
-    if (!latestModel || !canSaveCtx(latestModel)) {
-      return
-    }
-    saveCtx(latestModel)
-  }
-  if (immediate) {
-    submit()
-    return
-  }
-  ctxSaveTimers.set(modelId, setTimeout(submit, CONTEXT_LENGTH_SAVE_DEBOUNCE_MS))
-}
-function clearCtxSaveTimer(modelId: string) {
-  const timer = ctxSaveTimers.get(modelId)
-  if (!timer) {
-    return
-  }
-  clearTimeout(timer)
-  ctxSaveTimers.delete(modelId)
-}
-onBeforeUnmount(() => {
-  for (const timer of ctxSaveTimers.values()) {
-    clearTimeout(timer)
-  }
-  ctxSaveTimers.clear()
-})
 </script>
 
 <style scoped>
@@ -573,6 +551,34 @@ onBeforeUnmount(() => {
   gap: 16px;
 }
 
+.tool-management-hint {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 18px;
+  border: 1px solid var(--shell-border, #334155);
+  border-radius: 12px;
+  background: var(--shell-bg-elevated, #1e293b);
+}
+
+.tool-management-hint h3,
+.tool-management-hint p {
+  margin: 0;
+}
+
+.tool-management-hint p {
+  color: var(--shell-text-tertiary, #94a3b8);
+  font-size: 13px;
+}
+
+.tool-management-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    服务商 & 模型 双栏
    ═══════════════════════════════════════════════════════════════════════ */
@@ -606,6 +612,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+.column-toolbar > .field-input {
+  flex: 1 1 280px;
 }
 .toolbar-left {
   display: flex;
@@ -692,6 +701,7 @@ onBeforeUnmount(() => {
 /* ── 通用字段输入 ── */
 .field-input {
   min-width: 0;
+  width: 100%;
 }
 
 .field-input :deep(.el-input__wrapper) {
@@ -893,8 +903,21 @@ onBeforeUnmount(() => {
 .add-model-row {
   display: flex;
   gap: 8px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
+  margin: 10px 0 16px;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+.add-model-input {
+  flex: 1 1 0;
+}
+.add-model-input-id {
+  min-width: 220px;
+}
+.add-model-input-name {
+  min-width: 180px;
+}
+.add-model-button {
+  flex: 0 0 auto;
 }
 .model-list {
   display: grid;
@@ -965,6 +988,8 @@ onBeforeUnmount(() => {
   .provider-column { border-right: none; border-bottom: 1px solid var(--shell-border, #334155); padding: 0 0 12px; }
   .model-column { padding: 12px 0 0; }
   .ai-settings-content { padding: 16px; }
+  .tool-management-hint { grid-template-columns: 1fr; }
+  .add-model-row { flex-wrap: wrap; }
 }
 @media (max-width: 720px) {
   .ai-settings-page { padding: 1rem; }

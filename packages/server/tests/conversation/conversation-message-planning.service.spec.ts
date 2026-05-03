@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createConversationHistorySignatureFromHistoryMessages } from '../../src/conversation/conversation-history-signature';
+import { ConversationAfterResponseCompactionService } from '../../src/conversation/conversation-after-response-compaction.service';
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
@@ -20,14 +21,16 @@ describe('ConversationMessagePlanningService', () => {
   };
   const aiVisionService = { resolveMessageParts: jest.fn() };
   const personaService = { readCurrentPersona: jest.fn() };
-  const runtimeHostPluginDispatchService = { invokeHook: jest.fn(), listPlugins: jest.fn().mockReturnValue([]) };
+  const pluginDispatch = { invokeHook: jest.fn(), listPlugins: jest.fn().mockReturnValue([]) };
   const toolRegistryService = { buildToolSet: jest.fn(), listAvailableTools: jest.fn() };
 
   let settingsConfigPath: string;
   let conversationsPath: string;
   let conversationId: string;
+  let conversationAfterResponseCompactionService: ConversationAfterResponseCompactionService;
+  let contextGovernanceService: ContextGovernanceService;
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
-  let runtimeHostConversationRecordService: ConversationStoreService;
+  let conversationStore: ConversationStoreService;
   let service: ConversationMessagePlanningService;
 
   beforeEach(() => {
@@ -63,22 +66,28 @@ describe('ConversationMessagePlanningService', () => {
       providerId: 'openai',
       text: '压缩后的历史摘要',
     });
-    runtimeHostConversationRecordService = new ConversationStoreService();
+    conversationStore = new ConversationStoreService();
     contextGovernanceSettingsService = new ContextGovernanceSettingsService();
-    conversationId = (runtimeHostConversationRecordService.createConversation({ title: '窗口预览', userId: 'user-1' }) as { id: string }).id;
+    contextGovernanceService = new ContextGovernanceService(
+      aiManagementService as never,
+      aiModelExecutionService as never,
+      contextGovernanceSettingsService,
+      conversationStore,
+    );
+    conversationAfterResponseCompactionService = new ConversationAfterResponseCompactionService(
+      contextGovernanceService,
+      conversationStore,
+    );
+    conversationId = (conversationStore.createConversation({ title: '窗口预览', userId: 'user-1' }) as { id: string }).id;
     service = new ConversationMessagePlanningService(
       aiModelExecutionService as never,
       aiVisionService as never,
-      new ContextGovernanceService(
-        aiManagementService as never,
-        aiModelExecutionService as never,
-        contextGovernanceSettingsService,
-        runtimeHostConversationRecordService,
-      ),
-      runtimeHostConversationRecordService,
+      conversationAfterResponseCompactionService,
+      contextGovernanceService,
+      conversationStore,
       personaService as never,
       toolRegistryService as never,
-      runtimeHostPluginDispatchService as never,
+      pluginDispatch as never,
     );
   });
 
@@ -96,7 +105,7 @@ describe('ConversationMessagePlanningService', () => {
     }
   });
 
-  it('returns a sliding context window preview and trims oldest history messages', async () => {
+  it('returns a sliding context window preview using the full configured context length budget', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
         keepRecentMessages: 1,
@@ -105,7 +114,7 @@ describe('ConversationMessagePlanningService', () => {
         strategy: 'sliding',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', 'a'.repeat(220)),
       createMessage('history-2', 'assistant', 'b'.repeat(220)),
       createMessage('history-3', 'user', 'c'.repeat(220)),
@@ -114,12 +123,45 @@ describe('ConversationMessagePlanningService', () => {
     await expect(service.getContextWindowPreview({ conversationId, modelId: 'gpt-5.4', providerId: 'openai', userId: 'user-1' })).resolves.toEqual(expect.objectContaining({
       contextLength: 512,
       enabled: true,
-      excludedMessageIds: ['history-1'],
+      excludedMessageIds: [],
       frontendMessageWindowSize: 200,
-      includedMessageIds: ['history-2', 'history-3'],
+      includedMessageIds: ['history-1', 'history-2', 'history-3'],
       keepRecentMessages: 1,
       slidingWindowUsagePercent: 50,
+      source: 'estimated',
       strategy: 'sliding',
+    }));
+  });
+
+  it('routes /compact through the unified compaction owner instead of ContextGovernanceService command handling', async () => {
+    const compactionOwnerSpy = jest.spyOn(conversationAfterResponseCompactionService, 'applyMessageReceived');
+
+    const result = await service.applyMessageReceived({
+      content: '/compact',
+      conversationId,
+      modelId: 'gpt-5.4',
+      parts: [{ text: '/compact', type: 'text' }],
+      providerId: 'openai',
+      userId: 'user-1',
+    });
+
+    expect(compactionOwnerSpy).toHaveBeenCalledWith({
+      content: '/compact',
+      conversationId,
+      modelId: 'gpt-5.4',
+      parts: [{ text: '/compact', type: 'text' }],
+      providerId: 'openai',
+      userId: 'user-1',
+    });
+    expect(result).toEqual(expect.objectContaining({
+      action: 'deferred-short-circuit',
+      content: '/compact',
+      deferred: expect.objectContaining({
+        commandId: 'internal.context-governance:/compact:command',
+        execute: expect.any(Function),
+      }),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
     }));
   });
 
@@ -130,7 +172,7 @@ describe('ConversationMessagePlanningService', () => {
         strategy: 'summary',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条历史消息', {
         annotations: [{
           data: {
@@ -162,8 +204,8 @@ describe('ConversationMessagePlanningService', () => {
       createMessage('summary-1', 'display', '压缩后的历史摘要', {
         annotations: [{
           data: {
-            afterPreview: { estimatedTokens: 16, messageCount: 2, textBytes: 64 },
-            beforePreview: { estimatedTokens: 32, messageCount: 3, textBytes: 128 },
+            afterPreview: { estimatedTokens: 16, messageCount: 2, source: 'estimated', textBytes: 64 },
+            beforePreview: { estimatedTokens: 32, messageCount: 3, source: 'estimated', textBytes: 128 },
             compactionId: 'compaction-1',
             coveredCount: 2,
             createdAt: '2026-04-25T00:00:00.000Z',
@@ -199,7 +241,7 @@ describe('ConversationMessagePlanningService', () => {
         strategy: 'sliding',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条消息'),
       createMessage('summary-1', 'display', '摘要展示壳'),
       createMessage('history-2', 'assistant', '第二条消息'),
@@ -212,14 +254,15 @@ describe('ConversationMessagePlanningService', () => {
       excludedMessageIds: [],
       frontendMessageWindowSize: 200,
       includedMessageIds: ['history-1', 'history-2'],
-      keepRecentMessages: 6,
+      keepRecentMessages: 0,
+      source: 'estimated',
       slidingWindowUsagePercent: 50,
       strategy: 'sliding',
     }));
   });
 
   it('sanitizes preview messages before estimating tokens', async () => {
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       {
         content: '第一条消息',
         createdAt: '2026-04-25T00:00:00.000Z',
@@ -267,7 +310,7 @@ describe('ConversationMessagePlanningService', () => {
         updatedAt: '2026-04-25T00:00:00.000Z',
       },
     ]);
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条消息'),
       createMessage('history-2', 'assistant', '第二条消息', {
         annotations: [{
@@ -295,10 +338,11 @@ describe('ConversationMessagePlanningService', () => {
     })).resolves.toEqual(expect.objectContaining({
       estimatedTokens: 100,
       includedMessageIds: ['history-1', 'history-2'],
+      source: 'provider',
     }));
   });
 
-  it('falls back to current history estimation when provider usage belongs to an old history snapshot', async () => {
+  it('falls back to the last matching provider usage when provider usage belongs to an old history snapshot', async () => {
     const staleSignature = createConversationHistorySignatureFromHistoryMessages([
       {
         content: '旧消息',
@@ -310,7 +354,7 @@ describe('ConversationMessagePlanningService', () => {
         updatedAt: '2026-04-24T00:00:00.000Z',
       },
     ]);
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '现在的第一条消息'),
       createMessage('history-2', 'assistant', '现在的第二条消息', {
         annotations: [{
@@ -330,20 +374,20 @@ describe('ConversationMessagePlanningService', () => {
       }),
     ]);
 
-    const expectedTextBytes = Buffer.byteLength('user\n现在的第一条消息\nassistant\n现在的第二条消息', 'utf8');
     await expect(service.getContextWindowPreview({
       conversationId,
       modelId: 'gpt-5.4',
       providerId: 'openai',
       userId: 'user-1',
     })).resolves.toEqual(expect.objectContaining({
-      estimatedTokens: Math.ceil(expectedTextBytes / 4),
+      estimatedTokens: 100,
       includedMessageIds: ['history-1', 'history-2'],
+      source: 'provider',
     }));
   });
 
   it('keeps the model message chain unchanged when session todo changes', async () => {
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'assistant', '先前回复'),
       createMessage('history-2', 'user', '当前问题'),
     ]);
@@ -381,10 +425,144 @@ describe('ConversationMessagePlanningService', () => {
     }));
   });
 
+  it('includes compact tool and subagent facts in the next model request history', async () => {
+    conversationStore.replaceMessages(conversationId, [
+      createMessage('history-1', 'user', '请先创建子代理，再总结执行结果。'),
+      {
+        content: '子代理已经完成。',
+        createdAt: '2026-05-02T12:00:00.000Z',
+        id: 'history-2',
+        parts: [{ text: '子代理已经完成。', type: 'text' as const }],
+        role: 'assistant',
+        status: 'completed',
+        toolCalls: [
+          {
+            input: {
+              description: '探索 smoke 流程',
+              prompt: '请总结 smoke-http-flow 的用途',
+              subagentType: 'general',
+            },
+            toolCallId: 'call-subagent-1',
+            toolName: 'spawn_subagent',
+          },
+          {
+            input: {
+              conversationId: '019ddd0a-1234-7890-abcd-ef1234567890',
+            },
+            toolCallId: 'call-subagent-2',
+            toolName: 'wait_subagent',
+          },
+        ],
+        toolResults: [
+          {
+            output: {
+              conversationId: '019ddd0a-1234-7890-abcd-ef1234567890',
+              status: 'queued',
+              title: 'Smoke Agent',
+            },
+            toolCallId: 'call-subagent-1',
+            toolName: 'spawn_subagent',
+          },
+          {
+            output: {
+              conversationId: '019ddd0a-1234-7890-abcd-ef1234567890',
+              result: 'Smoke HTTP Flow 用于后端烟测。',
+              status: 'completed',
+              title: 'Smoke Agent',
+            },
+            toolCallId: 'call-subagent-2',
+            toolName: 'wait_subagent',
+          },
+        ],
+        updatedAt: '2026-05-02T12:00:00.000Z',
+      },
+    ]);
+    personaService.readCurrentPersona.mockReturnValue({
+      beginDialogs: [],
+      customErrorMessage: null,
+      personaId: 'builtin.default-assistant',
+      prompt: '你是测试助手',
+      toolNames: null,
+    });
+    toolRegistryService.buildToolSet.mockResolvedValue(undefined);
+    aiModelExecutionService.streamText.mockReturnValue({
+      finishReason: undefined,
+      fullStream: (async function* () { yield { text: 'ok', type: 'text-delta' as const }; })(),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      usage: undefined,
+    });
+
+    await service.createStreamPlan({
+      abortSignal: new AbortController().signal,
+      conversationId,
+      messageId: 'assistant-pending',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    });
+
+    expect(aiModelExecutionService.streamText).toHaveBeenCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          content: expect.stringContaining('spawn_subagent'),
+          role: 'assistant',
+        }),
+        expect.objectContaining({
+          content: expect.stringContaining('Smoke HTTP Flow 用于后端烟测。'),
+          role: 'assistant',
+        }),
+      ]),
+    }));
+  });
+
+  it('passes provider usage through the stream plan so completed replies can write model usage annotations', async () => {
+    personaService.readCurrentPersona.mockReturnValue({
+      beginDialogs: [],
+      customErrorMessage: null,
+      personaId: 'builtin.default-assistant',
+      prompt: '你是测试助手',
+      toolNames: null,
+    });
+    toolRegistryService.buildToolSet.mockResolvedValue(undefined);
+    aiModelExecutionService.streamText.mockReturnValue({
+      finishReason: Promise.resolve('stop'),
+      fullStream: (async function* () {
+        yield { text: 'ok', type: 'text-delta' as const };
+      })(),
+      modelId: 'deepseek-v4-flash',
+      providerId: 'ds2api',
+      usage: Promise.resolve({
+        cachedInputTokens: 0,
+        inputTokens: 273,
+        outputTokens: 291,
+        source: 'provider',
+        totalTokens: 564,
+      }),
+    });
+
+    const plan = await service.createStreamPlan({
+      abortSignal: new AbortController().signal,
+      conversationId,
+      messageId: 'assistant-pending',
+      modelId: 'deepseek-v4-flash',
+      providerId: 'ds2api',
+      userId: 'user-1',
+    });
+
+    await expect(plan.stream.usage).resolves.toEqual({
+      cachedInputTokens: 0,
+      inputTokens: 273,
+      outputTokens: 291,
+      source: 'provider',
+      totalTokens: 564,
+    });
+  });
+
   it('compacts history immediately after a completed model reply is sent', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
-        compressionThreshold: 90,
+        compressionThreshold: 30,
         enabled: true,
         keepRecentMessages: 1,
         reservedTokens: 1,
@@ -392,21 +570,25 @@ describe('ConversationMessagePlanningService', () => {
         summaryPrompt: '请整理下面的对话摘要',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
-      createMessage('history-1', 'user', '第一条较长的历史消息，用于触发回复后压缩检查。'.repeat(10)),
-      createMessage('history-2', 'assistant', '第二条较长的历史回复，用于确保压缩候选存在。'.repeat(10)),
-      createMessage('history-3', 'user', '第三条消息，表示本轮提问。'.repeat(10)),
-      createMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10)),
+    conversationStore.replaceMessages(conversationId, [
+      createMessage('history-1', 'user', '第一条较长的历史消息，用于触发回复后压缩检查。'.repeat(4)),
+      createMessage('history-2', 'assistant', '第二条较长的历史回复，用于确保压缩候选存在。'.repeat(4)),
+      createMessage('history-3', 'user', '第三条消息，表示本轮提问。'.repeat(4)),
+      createMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(4)),
     ]);
 
-    await service.broadcastAfterSend(
+    const afterSend = await service.broadcastAfterSend(
       { conversationId, userId: 'user-1' },
       {
         assistantMessageId: 'assistant-final',
-        content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10),
+        content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(4),
+        continuationState: {
+          hasAssistantTextOutput: true,
+          hasToolActivity: false,
+        },
         conversationId,
         modelId: 'gpt-5.4',
-        parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10), type: 'text' }],
+        parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(4), type: 'text' }],
         providerId: 'openai',
         toolCalls: [],
         toolResults: [],
@@ -414,7 +596,23 @@ describe('ConversationMessagePlanningService', () => {
       'model',
     );
 
-    const history = runtimeHostConversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+    expect(afterSend).toEqual({
+      compactionTriggered: true,
+      continuation: {
+        content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+        metadata: expect.objectContaining({
+          annotations: expect.arrayContaining([
+            expect.objectContaining({
+              owner: 'conversation.context-governance',
+              type: 'context-compaction',
+            }),
+          ]),
+        }),
+        parts: [{ text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.', type: 'text' }],
+      },
+    });
+
+    const history = conversationStore.readConversationHistory(conversationId, 'user-1') as {
       messages: Array<{ content?: string; metadata?: { annotations?: Array<{ data?: Record<string, unknown>; owner?: string; type?: string }> }; role: string }>;
     };
     const summaryMessage = history.messages.find((message) => message.content === '压缩后的历史摘要');
@@ -425,7 +623,126 @@ describe('ConversationMessagePlanningService', () => {
       && annotation.data?.role === 'summary')).toBe(true);
   });
 
-  it('keeps the completed reply successful when post-response compaction fails and stops the next reply', async () => {
+  it('prunes old tool outputs after a completed model reply is sent', async () => {
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 100,
+        enabled: false,
+        keepRecentMessages: 1,
+        reservedTokens: 1,
+        strategy: 'summary',
+      },
+    });
+    conversationStore.replaceMessages(conversationId, [
+      {
+        content: '先查一下更早的天气',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'history-0',
+        parts: [{ text: '先查一下更早的天气', type: 'text' as const }],
+        role: 'user',
+        status: 'completed',
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+      {
+        content: '',
+        createdAt: '2026-04-25T00:00:00.500Z',
+        id: 'assistant-0',
+        model: 'gpt-5.4',
+        parts: [],
+        provider: 'openai',
+        role: 'assistant',
+        status: 'completed',
+        toolCalls: [{ input: { city: 'Hangzhou' }, toolCallId: 'tool-call-0', toolName: 'weather.search' }],
+        toolResults: [{ output: { kind: 'tool:text', value: '天气详情'.repeat(30000) }, toolCallId: 'tool-call-0', toolName: 'weather.search' }],
+        updatedAt: '2026-04-25T00:00:00.500Z',
+      },
+      {
+        content: '先查一下天气',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'history-1',
+        parts: [{ text: '先查一下天气', type: 'text' as const }],
+        role: 'user',
+        status: 'completed',
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+      {
+        content: '',
+        createdAt: '2026-04-25T00:00:01.000Z',
+        id: 'assistant-1',
+        model: 'gpt-5.4',
+        parts: [],
+        provider: 'openai',
+        role: 'assistant',
+        status: 'completed',
+        toolCalls: [{ input: { city: 'Shanghai' }, toolCallId: 'tool-call-1', toolName: 'weather.search' }],
+        toolResults: [{ output: { kind: 'tool:text', value: '天气详情'.repeat(15000) }, toolCallId: 'tool-call-1', toolName: 'weather.search' }],
+        updatedAt: '2026-04-25T00:00:01.000Z',
+      },
+      {
+        content: '再查一下天气',
+        createdAt: '2026-04-25T00:00:01.500Z',
+        id: 'history-2',
+        parts: [{ text: '再查一下天气', type: 'text' as const }],
+        role: 'user',
+        status: 'completed',
+        updatedAt: '2026-04-25T00:00:01.500Z',
+      },
+      {
+        content: '',
+        createdAt: '2026-04-25T00:00:02.000Z',
+        id: 'assistant-2',
+        model: 'gpt-5.4',
+        parts: [],
+        provider: 'openai',
+        role: 'assistant',
+        status: 'completed',
+        toolCalls: [{ input: { city: 'Suzhou' }, toolCallId: 'tool-call-2', toolName: 'weather.search' }],
+        toolResults: [{ output: { kind: 'tool:text', value: '天气详情'.repeat(5000) }, toolCallId: 'tool-call-2', toolName: 'weather.search' }],
+        updatedAt: '2026-04-25T00:00:02.000Z',
+      },
+      createMessage('history-3', 'user', '继续下一步'),
+      createMessage('assistant-final', 'assistant', '当前轮已经完成'),
+    ]);
+
+    const afterSend = await service.broadcastAfterSend(
+      { conversationId, userId: 'user-1' },
+      {
+        assistantMessageId: 'assistant-final',
+        content: '当前轮已经完成',
+        continuationState: {
+          hasAssistantTextOutput: true,
+          hasToolActivity: false,
+        },
+        conversationId,
+        modelId: 'gpt-5.4',
+        parts: [{ text: '当前轮已经完成', type: 'text' }],
+        providerId: 'openai',
+        toolCalls: [],
+        toolResults: [],
+      },
+      'model',
+    );
+
+    expect(afterSend).toEqual({ compactionTriggered: false, continuation: null });
+
+    const history = conversationStore.requireConversation(conversationId, 'user-1').messages;
+    const prunedAssistant = history.find((message) => message.id === 'assistant-0');
+
+    expect(prunedAssistant).toMatchObject({
+      toolResults: [
+        {
+          output: {
+            kind: 'tool:text',
+            value: '[旧工具输出已从当前上下文裁剪]',
+          },
+          toolCallId: 'tool-call-0',
+          toolName: 'weather.search',
+        },
+      ],
+    });
+  });
+
+  it('keeps the completed reply successful and continues the next reply when post-response compaction fails', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
         compressionThreshold: 1,
@@ -436,7 +753,7 @@ describe('ConversationMessagePlanningService', () => {
         summaryPrompt: '请整理下面的对话摘要',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条较长的历史消息，用于触发回复后压缩检查。'.repeat(10)),
       createMessage('history-2', 'assistant', '第二条较长的历史回复，用于确保压缩候选存在。'.repeat(10)),
       createMessage('history-3', 'user', '第三条消息，表示本轮提问。'.repeat(10)),
@@ -449,6 +766,10 @@ describe('ConversationMessagePlanningService', () => {
       {
         assistantMessageId: 'assistant-final',
         content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10),
+        continuationState: {
+          hasAssistantTextOutput: true,
+          hasToolActivity: false,
+        },
         conversationId,
         modelId: 'gpt-5.4',
         parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10), type: 'text' }],
@@ -457,9 +778,9 @@ describe('ConversationMessagePlanningService', () => {
         toolResults: [],
       },
       'model',
-    )).resolves.toBeUndefined();
+    )).resolves.toEqual({ compactionTriggered: false, continuation: null });
 
-    const history = runtimeHostConversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+    const history = conversationStore.readConversationHistory(conversationId, 'user-1') as {
       messages: Array<{ content?: string }>;
     };
     expect(history.messages.find((message) => message.content === '压缩后的历史摘要')).toBeUndefined();
@@ -480,6 +801,70 @@ describe('ConversationMessagePlanningService', () => {
       usage: undefined,
     });
 
+    const planAfterFailedAutoCompaction = await service.createStreamPlan({
+      abortSignal: new AbortController().signal,
+      conversationId,
+      messageId: 'assistant-next',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    });
+
+    expect(planAfterFailedAutoCompaction.responseSource).toBe('model');
+    expect(planAfterFailedAutoCompaction.shortCircuitParts).toBeNull();
+    expect(aiModelExecutionService.streamText).toHaveBeenCalled();
+  });
+
+  it('stops the next reply with a clear overflow message when the first completed turn already exceeds context and cannot be compacted', async () => {
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 1,
+        enabled: true,
+        keepRecentMessages: 6,
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    conversationStore.replaceMessages(conversationId, [
+      createMessage('history-1', 'user', '请直接写一篇超长文章。'),
+      createMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300)),
+    ]);
+    personaService.readCurrentPersona.mockReturnValue({
+      beginDialogs: [],
+      customErrorMessage: null,
+      personaId: 'builtin.default-assistant',
+      prompt: '你是测试助手',
+      toolNames: null,
+    });
+    toolRegistryService.buildToolSet.mockResolvedValue(undefined);
+    aiModelExecutionService.streamText.mockReturnValue({
+      finishReason: undefined,
+      fullStream: (async function* () { yield { text: 'ok', type: 'text-delta' as const }; })(),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      usage: undefined,
+    });
+
+    await expect(service.broadcastAfterSend(
+      { conversationId, userId: 'user-1' },
+      {
+        assistantMessageId: 'assistant-final',
+        content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300),
+        continuationState: {
+          hasAssistantTextOutput: true,
+          hasToolActivity: false,
+        },
+        conversationId,
+        modelId: 'gpt-5.4',
+        parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300), type: 'text' }],
+        providerId: 'openai',
+        toolCalls: [],
+        toolResults: [],
+      },
+      'model',
+    )).resolves.toEqual({ compactionTriggered: false, continuation: null });
+
     await expect(service.createStreamPlan({
       abortSignal: new AbortController().signal,
       conversationId,
@@ -487,15 +872,11 @@ describe('ConversationMessagePlanningService', () => {
       modelId: 'gpt-5.4',
       providerId: 'openai',
       userId: 'user-1',
-    })).resolves.toEqual(expect.objectContaining({
-      responseSource: 'short-circuit',
-      shortCircuitParts: [{ text: expect.stringContaining('自动压缩失败'), type: 'text' }],
-    }));
-
+    })).rejects.toThrow('压缩后的上下文仍超过预算');
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
   });
 
-  it('stops the current reply when summary compaction fails before model execution', async () => {
+  it('continues the current reply when summary compaction fails before model execution', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
         compressionThreshold: 1,
@@ -506,7 +887,7 @@ describe('ConversationMessagePlanningService', () => {
         summaryPrompt: '请整理下面的对话摘要',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条较长的历史消息，用于触发送模前压缩。'.repeat(10)),
       createMessage('history-2', 'assistant', '第二条较长的历史回复，用于确保压缩候选存在。'.repeat(10)),
       createMessage('history-3', 'user', '第三条消息，表示最近一次用户提问。'.repeat(10)),
@@ -528,21 +909,20 @@ describe('ConversationMessagePlanningService', () => {
       usage: undefined,
     });
 
-    await expect(service.createStreamPlan({
+    const pendingPlanAfterFailedAutoCompaction = await service.createStreamPlan({
       abortSignal: new AbortController().signal,
       conversationId,
       messageId: 'assistant-pending',
       modelId: 'gpt-5.4',
       providerId: 'openai',
       userId: 'user-1',
-    })).resolves.toEqual(expect.objectContaining({
-      modelId: 'gpt-5.4',
-      providerId: 'openai',
-      responseSource: 'short-circuit',
-      shortCircuitParts: [{ text: expect.stringContaining('自动压缩失败'), type: 'text' }],
-    }));
+    });
 
-    expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
+    expect(pendingPlanAfterFailedAutoCompaction.modelId).toBe('gpt-5.4');
+    expect(pendingPlanAfterFailedAutoCompaction.providerId).toBe('openai');
+    expect(pendingPlanAfterFailedAutoCompaction.responseSource).toBe('model');
+    expect(pendingPlanAfterFailedAutoCompaction.shortCircuitParts).toBeNull();
+    expect(aiModelExecutionService.streamText).toHaveBeenCalled();
   });
 });
 

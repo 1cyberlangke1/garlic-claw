@@ -5,6 +5,7 @@ import {
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
 import type { RuntimeBackendKind } from '@garlic-claw/shared';
+import { listWindowsPowerShellCommandCandidates } from './runtime-powershell-variant';
 
 const ONE_SHOT_TIMEOUT_CODE = 'runtime-one-shot-shell-timeout';
 
@@ -123,7 +124,7 @@ function buildOneShotSpawnArgs(input: RuntimeOneShotShellInput): OneShotSpawnArg
   }
   if (usesOneShotPowerShell(input.backendKind)) {
     const encodedScript = buildOneShotPowerShellScript(input.command);
-    return ['powershell.exe', 'pwsh.exe', 'pwsh'].map((command) => ({
+    return listWindowsPowerShellCommandCandidates().map((command) => ({
       command,
       args: [
         '-NoLogo',

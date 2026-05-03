@@ -205,4 +205,42 @@ describe('useAutomations', () => {
       ],
     })
   })
+
+  it('disambiguates duplicated conversation titles in automation targets', async () => {
+    vi.mocked(automationData.loadAutomationConversations).mockResolvedValue([
+      {
+        ...createConversation(),
+        id: 'conversation-11111111',
+        title: '新的对话',
+      },
+      {
+        ...createConversation(),
+        id: 'conversation-22222222',
+        title: '新的对话',
+      },
+    ])
+    vi.mocked(automationData.loadAutomations).mockResolvedValue([
+      {
+        ...createAutomationInfo(),
+        actions: [
+          {
+            type: 'ai_message',
+            message: '咖啡已经煮好了',
+            target: {
+              type: 'conversation',
+              id: 'conversation-22222222',
+            },
+          },
+        ],
+      },
+    ])
+
+    const state = await mountAutomationsHarness()
+
+    expect(state.conversationOptions.value).toEqual([
+      { id: 'conversation-11111111', label: '新的对话 · 11111111' },
+      { id: 'conversation-22222222', label: '新的对话 · 22222222' },
+    ])
+    expect(state.describeAction(state.automations.value[0].actions[0]!)).toContain('新的对话 · 22222222')
+  })
 })

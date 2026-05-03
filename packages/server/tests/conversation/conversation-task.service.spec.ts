@@ -7,26 +7,27 @@ import {
 import { ConversationTodoService } from '../../src/runtime/host/conversation-todo.service';
 import { ConversationTaskService, type ConversationTaskEvent } from '../../src/conversation/conversation-task.service';
 import { RuntimeToolPermissionService } from '../../src/execution/runtime/runtime-tool-permission.service';
+import { APICallError } from '@ai-sdk/provider';
 
 describe('ConversationTaskService', () => {
   let conversationId: string;
-  let runtimeHostConversationRecordService: ConversationStoreService;
-  let runtimeHostConversationMessageService: ConversationMessageService;
-  let runtimeHostConversationTodoService: ConversationTodoService;
+  let conversationStore: ConversationStoreService;
+  let conversationMessages: ConversationMessageService;
+  let conversationTodos: ConversationTodoService;
   let runtimeToolPermissionService: RuntimeToolPermissionService;
   let service: ConversationTaskService;
 
   beforeEach(() => {
-    runtimeHostConversationRecordService = new ConversationStoreService();
-    runtimeHostConversationMessageService = new ConversationMessageService(runtimeHostConversationRecordService);
-    runtimeHostConversationTodoService = new ConversationTodoService(runtimeHostConversationRecordService);
+    conversationStore = new ConversationStoreService();
+    conversationMessages = new ConversationMessageService(conversationStore);
+    conversationTodos = new ConversationTodoService(conversationStore);
     runtimeToolPermissionService = new RuntimeToolPermissionService();
-    service = new ConversationTaskService(runtimeHostConversationMessageService, runtimeHostConversationRecordService, runtimeToolPermissionService, runtimeHostConversationTodoService);
-    conversationId = (runtimeHostConversationRecordService.createConversation({ title: 'Conversation conversation-1' }) as { id: string }).id;
+    service = new ConversationTaskService(conversationMessages, conversationStore, runtimeToolPermissionService, conversationTodos);
+    conversationId = (conversationStore.createConversation({ title: 'Conversation conversation-1' }) as { id: string }).id;
   });
 
   it('streams task events, persists completion patches, and stores tool activity on the assistant message', async () => {
-    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const assistantMessage = createAssistantMessage(conversationMessages, conversationStore);
     const events: ConversationTaskEvent[] = [];
     const onSent = jest.fn();
 
@@ -43,7 +44,7 @@ describe('ConversationTaskService', () => {
             yield rawCustomFieldChunk('reasoning_content', '上下文');
             yield delta('模型');
             yield toolCall();
-            yield toolResult();
+            yield wrappedToolResult();
           })(),
           usage: Promise.resolve({
             inputTokens: 21,
@@ -105,15 +106,58 @@ describe('ConversationTaskService', () => {
       },
       { messageId: String(assistantMessage.id), text: '模型', type: 'text-delta' },
       { input: { city: 'Shanghai' }, messageId: String(assistantMessage.id), toolCallId: 'tool-call-1', toolName: 'weather.search', type: 'tool-call' },
-      { messageId: String(assistantMessage.id), output: { temp: 20 }, toolCallId: 'tool-call-1', toolName: 'weather.search', type: 'tool-result' },
+      {
+        messageId: String(assistantMessage.id),
+        output: { kind: 'tool:json', value: { temp: 20 } },
+        toolCallId: 'tool-call-1',
+        toolName: 'weather.search',
+        type: 'tool-result',
+      },
       { content: '最终回复', messageId: String(assistantMessage.id), parts: [{ text: '最终回复', type: 'text' }], type: 'message-patch' },
+      {
+        messageId: String(assistantMessage.id),
+        metadata: {
+          annotations: [
+            {
+              data: {
+                inputTokens: 21,
+                modelId: 'gpt-5.4',
+                outputTokens: 9,
+                providerId: 'openai',
+                requestHistorySignature: 'history-signature-1',
+                responseHistorySignature: expect.any(String),
+                source: 'provider',
+                totalTokens: 30,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+          customBlocks: [
+            {
+              id: 'custom-field:reasoning_content',
+              kind: 'text',
+              source: {
+                key: 'reasoning_content',
+                origin: 'ai-sdk.raw',
+                providerId: 'openai',
+              },
+              state: 'done',
+              text: '先检查上下文',
+              title: 'Reasoning Content',
+            },
+          ],
+        },
+        type: 'message-metadata',
+      },
       { messageId: String(assistantMessage.id), status: 'completed', type: 'finish' },
     ]);
 
-    const conversation = runtimeHostConversationRecordService.requireConversation(conversationId);
+    const conversation = conversationStore.requireConversation(conversationId);
     const persistedMetadata = JSON.parse(String(conversation.messages[0].metadataJson));
     const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages(
-      (runtimeHostConversationRecordService.readConversationHistory(conversationId) as unknown as {
+      (conversationStore.readConversationHistory(conversationId) as unknown as {
         messages: Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0];
       }).messages,
     );
@@ -124,7 +168,7 @@ describe('ConversationTaskService', () => {
       role: 'assistant',
       status: 'completed',
       toolCalls: [toolCallRecord()],
-      toolResults: [toolResultRecord()],
+      toolResults: [compactToolResultRecord()],
     });
     expect(persistedMetadata).toEqual({
       annotations: [
@@ -163,13 +207,13 @@ describe('ConversationTaskService', () => {
       content: '最终回复',
       metadataJson: JSON.stringify(persistedMetadata),
       toolCalls: JSON.stringify([toolCallRecord()]),
-      toolResults: JSON.stringify([toolResultRecord()]),
+      toolResults: JSON.stringify([compactToolResultRecord()]),
     });
     expect(onSent).toHaveBeenCalledWith(expect.objectContaining({ content: '最终回复' }));
   });
 
   it('keeps the assistant message completed when onSent fails after the reply has finished', async () => {
-    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const assistantMessage = createAssistantMessage(conversationMessages, conversationStore);
     const events: ConversationTaskEvent[] = [];
 
     service.startTask({
@@ -194,7 +238,7 @@ describe('ConversationTaskService', () => {
 
     await service.waitForTask(String(assistantMessage.id));
 
-    expect(runtimeHostConversationRecordService.requireConversation(conversationId).messages[0]).toMatchObject({
+    expect(conversationStore.requireConversation(conversationId).messages[0]).toMatchObject({
       content: '回复已完成',
       error: null,
       role: 'assistant',
@@ -208,7 +252,7 @@ describe('ConversationTaskService', () => {
   });
 
   it('stops an active task and leaves the assistant message in stopped state', async () => {
-    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const assistantMessage = createAssistantMessage(conversationMessages, conversationStore);
     const events: ConversationTaskEvent[] = [];
 
     service.startTask({
@@ -232,7 +276,7 @@ describe('ConversationTaskService', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await service.stopTask(String(assistantMessage.id));
 
-    expect(runtimeHostConversationRecordService.requireConversation(conversationId).messages[0]).toMatchObject({
+    expect(conversationStore.requireConversation(conversationId).messages[0]).toMatchObject({
       content: '片段',
       role: 'assistant',
       status: 'stopped',
@@ -244,7 +288,7 @@ describe('ConversationTaskService', () => {
   });
 
   it('normalizes tool-error parts into persisted tool results', async () => {
-    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const assistantMessage = createAssistantMessage(conversationMessages, conversationStore);
 
     service.startTask({
       assistantMessageId: String(assistantMessage.id),
@@ -271,7 +315,7 @@ describe('ConversationTaskService', () => {
     });
     await service.waitForTask(String(assistantMessage.id));
 
-    expect(runtimeHostConversationRecordService.requireConversation(conversationId).messages[0]).toMatchObject({
+    expect(conversationStore.requireConversation(conversationId).messages[0]).toMatchObject({
       role: 'assistant',
       status: 'completed',
       toolResults: [
@@ -294,7 +338,7 @@ describe('ConversationTaskService', () => {
   });
 
   it('forwards runtime permission request and resolution events into the task stream', async () => {
-    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const assistantMessage = createAssistantMessage(conversationMessages, conversationStore);
     const events: ConversationTaskEvent[] = [];
 
     service.startTask({
@@ -376,7 +420,7 @@ describe('ConversationTaskService', () => {
   });
 
   it('forwards todo owner updates into the task stream without parsing tool text output', async () => {
-    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const assistantMessage = createAssistantMessage(conversationMessages, conversationStore);
     const events: ConversationTaskEvent[] = [];
 
     service.startTask({
@@ -387,7 +431,7 @@ describe('ConversationTaskService', () => {
         providerId: 'openai',
         stream: {
           fullStream: (async function* () {
-            runtimeHostConversationTodoService.replaceSessionTodo(conversationId, [
+            conversationTodos.replaceSessionTodo(conversationId, [
               { content: '同步 todo 面板', priority: 'high', status: 'in_progress' },
             ]);
             yield delta('todo 已更新');
@@ -413,7 +457,7 @@ describe('ConversationTaskService', () => {
   });
 
   it('keeps running and persists the assistant message after the listener unsubscribes', async () => {
-    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const assistantMessage = createAssistantMessage(conversationMessages, conversationStore);
     const continueStreamRef: { current: null | (() => void) } = { current: null };
 
     service.startTask({
@@ -444,7 +488,7 @@ describe('ConversationTaskService', () => {
     }
     await service.waitForTask(String(assistantMessage.id));
 
-    expect(runtimeHostConversationRecordService.requireConversation(conversationId).messages[0]).toMatchObject({
+    expect(conversationStore.requireConversation(conversationId).messages[0]).toMatchObject({
       content: '前端断开后继续完成',
       role: 'assistant',
       status: 'completed',
@@ -452,7 +496,7 @@ describe('ConversationTaskService', () => {
   });
 
   it('marks the assistant message as error when stream consumption fails and does not leak rejected stream promises', async () => {
-    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const assistantMessage = createAssistantMessage(conversationMessages, conversationStore);
     const unhandledErrors: unknown[] = [];
     const handleUnhandledRejection = (reason: unknown) => {
       unhandledErrors.push(reason);
@@ -485,7 +529,7 @@ describe('ConversationTaskService', () => {
       await service.waitForTask(String(assistantMessage.id));
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(runtimeHostConversationRecordService.requireConversation(conversationId).messages[0]).toMatchObject({
+      expect(conversationStore.requireConversation(conversationId).messages[0]).toMatchObject({
         content: '部分输出',
         error: 'invalid x-api-key',
         model: 'claude-3-5-sonnet-20241022',
@@ -498,13 +542,106 @@ describe('ConversationTaskService', () => {
       process.off('unhandledRejection', handleUnhandledRejection);
     }
   });
+
+  it('retries retryable stream failures and resets the assistant snapshot before the next attempt', async () => {
+    service = new ConversationTaskService(
+      conversationMessages,
+      conversationStore,
+      runtimeToolPermissionService,
+      conversationTodos,
+      {
+        getHostModelRoutingConfig: () => ({
+          chatAutoRetry: {
+            backoffFactor: 2,
+            enabled: true,
+            initialDelayMs: 0,
+            maxDelayMs: 0,
+            maxRetries: 1,
+          },
+          fallbackChatModels: [],
+          utilityModelRoles: {},
+        }),
+      } as never,
+    );
+    const assistantMessage = createAssistantMessage(conversationMessages, conversationStore);
+    const events: Array<ConversationTaskEvent | { [key: string]: unknown }> = [];
+    const overloaded = new APICallError({
+      message: 'Provider is overloaded',
+      requestBodyValues: {},
+      responseHeaders: {},
+      statusCode: 429,
+      url: 'https://example.com/v1/chat/completions',
+    });
+    const createStream = jest
+      .fn()
+      .mockResolvedValueOnce({
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        stream: {
+          fullStream: (async function* () {
+            yield delta('第一次');
+            throw overloaded;
+          })(),
+          usage: Promise.reject(overloaded).catch(() => undefined),
+        },
+      })
+      .mockResolvedValueOnce({
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        stream: {
+          fullStream: (async function* () {
+            yield delta('第二次成功');
+          })(),
+        },
+      });
+
+    service.startTask({
+      assistantMessageId: String(assistantMessage.id),
+      conversationId,
+      createStream,
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+    service.subscribe(String(assistantMessage.id), (event) => events.push(event));
+
+    await service.waitForTask(String(assistantMessage.id));
+
+    expect(createStream).toHaveBeenCalledTimes(2);
+    expect(events).toEqual(expect.arrayContaining([
+      { messageId: String(assistantMessage.id), status: 'streaming', type: 'status' },
+      expect.objectContaining({
+        assistantMessage: expect.objectContaining({
+          content: '',
+          error: null,
+          id: String(assistantMessage.id),
+          status: 'pending',
+        }),
+        type: 'message-start',
+      }),
+      expect.objectContaining({
+        attempt: 1,
+        message: 'Provider is overloaded',
+        messageId: String(assistantMessage.id),
+        next: expect.any(Number),
+        type: 'retry',
+      }),
+      { messageId: String(assistantMessage.id), status: 'completed', type: 'finish' },
+    ]));
+    expect(conversationStore.requireConversation(conversationId).messages[0]).toMatchObject({
+      content: '第二次成功',
+      error: null,
+      role: 'assistant',
+      status: 'completed',
+    });
+  });
 });
 
-function createAssistantMessage(runtimeHostConversationMessageService: ConversationMessageService) {
-  const conversationId = (((runtimeHostConversationMessageService as unknown as {
-    runtimeHostConversationRecordService: ConversationStoreService;
-  }).runtimeHostConversationRecordService.listConversations() as Array<{ id: string }>)[0]).id;
-  return runtimeHostConversationMessageService.createMessage(conversationId, {
+function createAssistantMessage(
+  conversationMessages: ConversationMessageService,
+  conversationStore: ConversationStoreService,
+) {
+  const conversationId = ((conversationStore.listConversations() as Array<{ id: string }>)[0]).id;
+  return conversationMessages.createMessage(conversationId, {
     content: '',
     model: 'gpt-5.4',
     parts: [],
@@ -542,13 +679,35 @@ function toolCallRecord() {
 }
 
 function toolResultRecord() {
-  return { output: { temp: 20 }, toolCallId: 'tool-call-1', toolName: 'weather.search' };
+  return {
+    output: {
+      data: {
+        backendKind: 'native-shell',
+        stdout: 'temp=20',
+      },
+      kind: 'tool:json',
+      value: { temp: 20 },
+    },
+    toolCallId: 'tool-call-1',
+    toolName: 'weather.search',
+  };
+}
+
+function compactToolResultRecord() {
+  return {
+    output: {
+      kind: 'tool:json',
+      value: { temp: 20 },
+    },
+    toolCallId: 'tool-call-1',
+    toolName: 'weather.search',
+  };
 }
 
 function toolCall() {
   return { ...toolCallRecord(), type: 'tool-call' as const };
 }
 
-function toolResult() {
+function wrappedToolResult() {
   return { ...toolResultRecord(), type: 'tool-result' as const };
 }

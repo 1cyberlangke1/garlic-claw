@@ -222,9 +222,10 @@ async function ensureDevServices() {
     isPortListening(23333),
   ]);
   const webIsGarlic = webReady ? await isGarlicWebApp(webOrigin) : false;
-  console.log(`[browser-smoke] service probe apiReady=${apiReady} webReady=${webReady} webIsGarlic=${webIsGarlic}`);
+  const apiAcceptsSmokeLogin = apiReady ? await canReuseBrowserSmokeBackend() : false;
+  console.log(`[browser-smoke] service probe apiReady=${apiReady} webReady=${webReady} webIsGarlic=${webIsGarlic} apiAcceptsSmokeLogin=${apiAcceptsSmokeLogin}`);
 
-  if (apiReady && webReady && webIsGarlic) {
+  if (apiReady && webReady && webIsGarlic && apiAcceptsSmokeLogin) {
     console.log('[browser-smoke] reuse existing backend and web dev services');
     return {
       mode: 'reuse',
@@ -232,7 +233,14 @@ async function ensureDevServices() {
     };
   }
 
+  if (apiReady && webReady && webIsGarlic && !apiAcceptsSmokeLogin) {
+    console.log('[browser-smoke] existing Garlic backend does not accept smoke login secret, restart managed dev services');
+  }
+
   if (webReady && !webIsGarlic) {
+    if (apiReady && !apiAcceptsSmokeLogin) {
+      throw new Error('浏览器 smoke 检测到现有后端端口被占用，但当前服务不接受 smoke 登录密钥，无法安全复用或隔离启动。');
+    }
     console.log('[browser-smoke] keep external web port, start isolated Garlic services');
     const started = [];
     if (!apiReady) {
@@ -646,7 +654,7 @@ async function verifyPersonasPage(page) {
   await expectText(page, '人设管理');
   await expectText(page, '可用人设');
   await page.getByRole('button', { name: '新建人设' }).click();
-  await page.locator('input[placeholder="persona.writer"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('input[placeholder*="persona.writer"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('input[placeholder="Writer"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('textarea[placeholder="输入人设的系统提示词。"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }
@@ -670,16 +678,8 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
   const remotePluginHandle = await createCachedRemotePluginFixture(accessToken, remotePluginScriptPath)
   await page.goto(`/plugins?plugin=${encodeURIComponent(REMOTE_PLUGIN_ID)}`, { waitUntil: 'load' });
   await expectText(page, '插件管理');
-  await expectText(page, '已接入插件');
-  let pluginItems = page.locator('.plugin-item');
-  if (await pluginItems.count() === 0) {
-    const toggle = page.locator('[data-test="plugin-sidebar-toggle-system"]');
-    if (await toggle.count() > 0) {
-      await toggle.click();
-      await page.waitForLoadState('load');
-      pluginItems = page.locator('.plugin-item');
-    }
-  }
+  await page.locator('[data-test="plugin-sidebar-search"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  const pluginItems = page.locator('.plugin-item');
   assert.ok(await pluginItems.count() > 0, '插件页未加载任何插件条目');
   await page.getByRole('button', { exact: true, name: '远程摘要' }).click();
   await page.locator('[data-test="plugin-remote-summary-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
@@ -768,11 +768,13 @@ async function runAutomationFlow(page, accessToken, conversationId) {
   const dialog = page.getByRole('dialog', { name: '新建自动化' });
   await dialog.waitFor({ state: 'visible' });
   await dialog.getByPlaceholder('例如：每5分钟检查系统信息').fill(AUTOMATION_NAME);
-  await selectElementPlusOption(page, dialog, 0, '手动触发');
-  await selectElementPlusOption(page, dialog, 1, '发送消息');
+  await selectElementPlusOptionByIndex(page, dialog, 0, 1);
+  await selectElementPlusOptionByIndex(page, dialog, 1, 1);
   await dialog.locator('textarea').fill(AUTOMATION_MESSAGE);
-  const conversationTitle = (await getConversationDetail(accessToken, conversationId)).title;
-  await selectElementPlusOption(page, dialog, 2, conversationTitle);
+  const conversations = await listConversations(accessToken);
+  const targetConversationIndex = conversations.findIndex((conversation) => conversation.id === conversationId);
+  assert.notEqual(targetConversationIndex, -1, '自动化 smoke 未找到目标会话');
+  await selectElementPlusOptionByIndex(page, dialog, 2, targetConversationIndex);
   await dialog.getByRole('button', { name: '创建' }).click();
   await expectText(page, AUTOMATION_NAME);
 
@@ -796,20 +798,34 @@ async function runAutomationFlow(page, accessToken, conversationId) {
   }, '等待自动化删除');
 }
 
-async function selectElementPlusOption(page, container, index, optionLabel) {
+async function selectElementPlusOptionByIndex(page, container, index, optionIndex) {
   const nativeSelect = container.locator('select').nth(index);
   if (await nativeSelect.count()) {
-    await nativeSelect.selectOption({ label: optionLabel }).catch(async () => {
-      await nativeSelect.selectOption(optionLabel);
-    });
+    await nativeSelect.selectOption({ index: optionIndex });
     return;
   }
 
   const select = container.locator('.el-select').nth(index);
   await select.click();
-  const option = page.locator('.el-select-dropdown__item').filter({ hasText: optionLabel }).last();
-  await option.waitFor({ state: 'visible', timeout: REQUEST_TIMEOUT_MS });
-  await option.click();
+  const optionCount = await page.evaluate(() => {
+    const visibleDropdowns = [...document.querySelectorAll('.el-select-dropdown')]
+      .filter((element) => getComputedStyle(element).display !== 'none');
+    const dropdown = visibleDropdowns.at(-1);
+    if (!dropdown) {
+      return 0;
+    }
+    return [...dropdown.querySelectorAll('.el-select-dropdown__item')]
+      .filter((element) => !element.classList.contains('is-disabled'))
+      .length;
+  });
+  assert.ok(
+    optionIndex >= 0 && optionIndex < optionCount,
+    `自动化 smoke 目标会话索引越界: index=${optionIndex}, optionCount=${optionCount}`,
+  );
+  for (let step = 0; step < optionIndex; step += 1) {
+    await page.keyboard.press('ArrowDown');
+  }
+  await page.keyboard.press('Enter');
 }
 
 function getProviderEditorDialog(page) {
@@ -1036,14 +1052,27 @@ async function listAutomations(accessToken) {
 }
 
 async function loginBrowserSmokeAdmin() {
+  const payload = await requestBrowserSmokeLoginPayload();
+  assert.equal(typeof payload?.accessToken, 'string', '浏览器 smoke 登录未返回 accessToken');
+  return payload.accessToken;
+}
+
+async function canReuseBrowserSmokeBackend() {
+  try {
+    const payload = await requestBrowserSmokeLoginPayload();
+    return typeof payload?.accessToken === 'string';
+  } catch {
+    return false;
+  }
+}
+
+async function requestBrowserSmokeLoginPayload() {
   const response = await fetchWithRetry(`${API_ORIGIN}/auth/login`, {
     body: JSON.stringify({ secret: LOGIN_SECRET }),
     headers: { 'content-type': 'application/json' },
     method: 'POST',
   });
-  const payload = await response.json();
-  assert.equal(typeof payload?.accessToken, 'string', '浏览器 smoke 登录未返回 accessToken');
-  return payload.accessToken;
+  return response.json();
 }
 
 async function requestJson(routePath, options = {}) {
