@@ -211,14 +211,6 @@
           :saving="savingRuntimeToolsConfig"
           @save="saveRuntimeToolsConfig"
         />
-
-        <article class="tool-management-hint">
-          <div>
-            <h3>工具启用状态</h3>
-            <p>执行工具的启用/禁用已统一移到工具管理页，这里只保留运行参数配置。</p>
-          </div>
-          <a class="btn-ghost tool-management-link" href="/tools?kind=internal&source=runtime-tools">打开工具管理</a>
-        </article>
       </section>
 
       <section v-if="activeSection === 'subagent'" class="settings-stack">
@@ -227,14 +219,6 @@
           :saving="savingSubagentConfig"
           @save="saveSubagentConfig"
         />
-
-        <article class="tool-management-hint">
-          <div>
-            <h3>子代理工具状态</h3>
-            <p>子代理工具的启用/禁用已统一移到工具管理页，这里只保留运行参数配置。</p>
-          </div>
-          <a class="btn-ghost tool-management-link" href="/tools?kind=internal&source=subagent">打开工具管理</a>
-        </article>
       </section>
 
       <ContextGovernanceSettingsPanel
@@ -551,34 +535,6 @@ function saveCtx(model: AiModelConfig) {
   gap: 16px;
 }
 
-.tool-management-hint {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  padding: 16px 18px;
-  border: 1px solid var(--shell-border, #334155);
-  border-radius: 12px;
-  background: var(--shell-bg-elevated, #1e293b);
-}
-
-.tool-management-hint h3,
-.tool-management-hint p {
-  margin: 0;
-}
-
-.tool-management-hint p {
-  color: var(--shell-text-tertiary, #94a3b8);
-  font-size: 13px;
-}
-
-.tool-management-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
    服务商 & 模型 双栏
    ═══════════════════════════════════════════════════════════════════════ */
@@ -666,37 +622,6 @@ function saveCtx(model: AiModelConfig) {
   color: var(--shell-active, #18a058);
   font-size: 12px;
 }
-
-/* ── 按钮 ── */
-.btn-primary, .btn-ghost, .btn-danger, .btn-sm {
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background-color 0.15s ease;
-}
-.btn-primary {
-  border: none;
-  background: var(--shell-active, #18a058);
-  color: #fff;
-}
-.btn-primary:hover { background: #16914d; }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-ghost {
-  border: 1px solid var(--shell-border, #334155);
-  background: transparent;
-  color: var(--shell-text-secondary, #cbd5e1);
-}
-.btn-ghost:hover { background: var(--shell-bg-hover, #334155); color: var(--shell-text, #f1f5f9); }
-.btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-danger {
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  background: transparent;
-  color: #ef4444;
-}
-.btn-danger:hover { background: rgba(239, 68, 68, 0.12); }
-.btn-sm { padding: 2px 8px; font-size: 12px; }
 
 /* ── 通用字段输入 ── */
 .field-input {
@@ -951,14 +876,6 @@ function saveCtx(model: AiModelConfig) {
   gap: 10px;
   flex-wrap: wrap;
 }
-.cap-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--shell-text-secondary, #cbd5e1);
-  cursor: pointer;
-}
 .cap-field {
   display: flex;
   align-items: center;
@@ -988,12 +905,10 @@ function saveCtx(model: AiModelConfig) {
   .provider-column { border-right: none; border-bottom: 1px solid var(--shell-border, #334155); padding: 0 0 12px; }
   .model-column { padding: 12px 0 0; }
   .ai-settings-content { padding: 16px; }
-  .tool-management-hint { grid-template-columns: 1fr; }
   .add-model-row { flex-wrap: wrap; }
 }
 @media (max-width: 720px) {
   .ai-settings-page { padding: 1rem; }
-  .ai-settings-shell { flex-direction: column; }
   .ai-settings-sidebar { width: 100%; max-height: 110px; flex-shrink: 0; border-right: none; border-bottom: 1px solid var(--shell-border, #334155); }
   .sider-menu { display: flex; gap: 4px; padding: 0 12px 8px; overflow-x: auto; overflow-y: hidden; }
   .menu-item { min-height: 40px; padding: 0 14px; white-space: nowrap; flex-shrink: 0; }
