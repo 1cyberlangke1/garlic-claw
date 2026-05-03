@@ -19,7 +19,9 @@ import {
   stopChatRecoveryPolling,
 } from "@/modules/chat/modules/chat-recovery.polling";
 import {
+  dbMessageToChat,
   findActiveAssistantMessageId,
+  isAutoCompactionContinueMessage,
   normalizeSendInput,
 } from "@/modules/chat/store/chat-store.helpers";
 import {
@@ -51,6 +53,7 @@ const DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE = 200;
 
 interface ConversationRefreshParams {
   loadConversationDetail?: ((conversationId: string) => Promise<void>) | undefined;
+  refreshConversationSnapshot?: (() => Promise<void>) | undefined;
   refreshConversationSummary?: (() => Promise<void>) | undefined;
   refreshConversationState?: ((input: {
     summaryRefreshed: boolean;
@@ -202,6 +205,16 @@ function applyTodoUpdatedEvent(
   state.todoItems.value = event.todos;
 }
 
+function isAutoCompactionContinuationStart(
+  event: SSEEvent,
+): event is Extract<SSEEvent, { type: "message-start" }> {
+  if (event.type !== "message-start" || !event.userMessage) {
+    return false;
+  }
+
+  return isAutoCompactionContinueMessage(dbMessageToChat(event.userMessage));
+}
+
 export function abortChatStream(state: ChatStreamState) {
   state.streamController.value?.abort();
   state.streamController.value = null;
@@ -332,6 +345,9 @@ export async function dispatchSendMessage(
         });
         if (event.type === "message-start") {
           syncMessageList(state, nextMessages);
+          if (isAutoCompactionContinuationStart(event)) {
+            void params?.refreshConversationSnapshot?.().catch(() => undefined);
+          }
           return;
         }
 
@@ -452,6 +468,9 @@ export async function dispatchRetryMessage(
         });
         if (event.type === "message-start") {
           syncMessageList(state, nextMessages);
+          if (isAutoCompactionContinuationStart(event)) {
+            void params?.refreshConversationSnapshot?.().catch(() => undefined);
+          }
           return;
         }
 

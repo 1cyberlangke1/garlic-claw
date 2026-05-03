@@ -306,6 +306,35 @@ describe('ChatMessageList', () => {
     expect(assistant.find('.message-error').exists()).toBe(false)
   })
 
+  it('does not render a retry button for temporary assistant placeholders', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'temp-assistant-1',
+            role: 'assistant',
+            content: '',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'error',
+            error: 'network down',
+          } as never,
+        ],
+      },
+    })
+
+    const assistant = wrapper.find('[data-message-id="temp-assistant-1"]')
+
+    expect(assistant.exists()).toBe(true)
+    expect(assistant.find('.retry-text').exists()).toBe(false)
+    expect(assistant.find('.delete-text').exists()).toBe(true)
+  })
+
   it('grays out messages excluded from the current LLM context window without deleting them', () => {
     const wrapper = mount(ChatMessageList, {
       props: {

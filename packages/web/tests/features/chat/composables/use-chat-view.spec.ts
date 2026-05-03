@@ -203,6 +203,66 @@ describe('useChatView', () => {
     )
   })
 
+  it('does not expose synthetic auto-compaction continue user messages in displayedMessages', async () => {
+    const chat = createChatStub({
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '第一条正常消息',
+          status: 'completed',
+          metadata: undefined,
+        },
+        {
+          id: 'user-continue-1',
+          role: 'user',
+          content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+          status: 'completed',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  role: 'continue',
+                  synthetic: true,
+                  trigger: 'after-response',
+                },
+                owner: 'conversation.context-governance',
+                type: 'context-compaction',
+                version: '1',
+              },
+            ],
+          },
+        },
+        {
+          id: 'assistant-2',
+          role: 'assistant',
+          content: '继续执行',
+          status: 'pending',
+          metadata: undefined,
+        },
+      ],
+    })
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    expect(state.displayedMessages.value).toEqual([
+      expect.objectContaining({
+        id: 'user-1',
+      }),
+      expect.objectContaining({
+        id: 'assistant-2',
+      }),
+    ])
+  })
+
   it('restores the draft when sending fails before the request is queued', async () => {
     const chat = createChatStub()
     vi.mocked(chat.sendMessage).mockRejectedValue(new Error('send failed'))

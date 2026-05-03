@@ -230,6 +230,88 @@ describe('createChatStoreModule', () => {
     ])
   })
 
+  it('refreshes the conversation snapshot immediately when auto-compaction continuation starts', async () => {
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      {
+        id: 'display-summary-1',
+        role: 'display',
+        content: '压缩摘要',
+        status: 'completed',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+      {
+        id: 'assistant-2',
+        role: 'assistant',
+        content: '',
+        status: 'pending',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: 'provider-stream',
+        model: 'model-stream',
+      },
+    ])
+    vi.mocked(chatConversationData.loadConversationContextWindowRecord).mockResolvedValue({
+      contextLength: 100000,
+      enabled: true,
+      estimatedTokens: 8200,
+      excludedMessageIds: [],
+      frontendMessageWindowSize: 200,
+      includedMessageIds: ['display-summary-1', 'assistant-2'],
+      keepRecentMessages: 0,
+      source: 'provider',
+      slidingWindowUsagePercent: 80,
+      strategy: 'summary',
+    })
+    vi.mocked(chatStreamModule.dispatchSendMessage).mockImplementation(
+      async (_state, _input, params) => {
+        await (params as {
+          refreshConversationSnapshot?: () => Promise<void>;
+        } | undefined)?.refreshConversationSnapshot?.()
+      },
+    )
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.selectedProvider.value = 'provider-stream'
+    store.selectedModel.value = 'model-stream'
+
+    await store.sendMessage({
+      content: '继续执行',
+    })
+
+    expect(chatConversationData.loadConversationContextWindowRecord).toHaveBeenCalledWith(
+      'conversation-1',
+      {
+        modelId: 'model-stream',
+        providerId: 'provider-stream',
+      },
+    )
+    expect(chatConversationData.loadConversationMessages).toHaveBeenCalledWith('conversation-1')
+    expect(store.contextWindowPreview.value).toEqual(
+      expect.objectContaining({
+        estimatedTokens: 8200,
+        strategy: 'summary',
+      }),
+    )
+    expect(store.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'display-summary-1',
+        role: 'display',
+      }),
+      expect.objectContaining({
+        id: 'assistant-2',
+        role: 'assistant',
+      }),
+    ])
+  })
+
   it('still sends messages when the context window preview request fails', async () => {
     vi.mocked(chatConversationData.loadConversationContextWindowRecord).mockRejectedValue(
       new Error('preview failed'),

@@ -638,6 +638,8 @@ export function createChatStoreModule() {
 
     await dispatchRetryMessage(streamState, messageId, {
       loadConversationDetail: loadConversationRecoverySnapshot,
+      refreshConversationSnapshot: () =>
+        loadConversationWindowSnapshot(conversationId),
       refreshConversationSummary: () =>
         refreshConversationSummary(conversationId),
       refreshConversationState: (input) =>
@@ -869,6 +871,8 @@ export function createChatStoreModule() {
         writeQueuedSendRequests(conversationId, nextQueuedRequests.slice(1));
         await dispatchSendMessage(streamState, nextRequest.input, {
           loadConversationDetail: loadConversationRecoverySnapshot,
+          refreshConversationSnapshot: () =>
+            loadConversationWindowSnapshot(nextRequest.conversationId),
           refreshConversationSummary: () =>
             refreshConversationSummary(nextRequest.conversationId),
           refreshConversationState: (input) =>

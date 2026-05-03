@@ -212,4 +212,104 @@ describe('getRetryableMessageId', () => {
 
     expect(getRetryableMessageId(messages)).toBe('assistant-1')
   })
+
+  it('does not expose a temporary assistant placeholder as a retry target', () => {
+    const messages: ChatMessage[] = [
+      {
+        id: 'temp-assistant-1',
+        role: 'assistant',
+        content: '',
+        status: 'error',
+        error: 'network down',
+      },
+    ]
+
+    expect(getRetryableMessageId(messages)).toBeNull()
+  })
+})
+
+describe('retry continuation message-start', () => {
+  it('appends the continuation assistant instead of replacing the first retried assistant', () => {
+    const messages: ChatMessage[] = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '第一段回复',
+        status: 'completed',
+        error: null,
+      },
+    ]
+
+    const continuationEvent = {
+      type: 'message-start',
+      userMessage: {
+        id: 'user-continue-1',
+        role: 'user',
+        content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+        partsJson: JSON.stringify([
+          {
+            type: 'text',
+            text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+          },
+        ]),
+        toolCalls: null,
+        toolResults: null,
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                role: 'continue',
+                synthetic: true,
+                trigger: 'after-response',
+              },
+              owner: 'conversation.context-governance',
+              type: 'context-compaction',
+              version: '1',
+            },
+          ],
+        }),
+        provider: null,
+        model: null,
+        status: 'completed',
+        error: null,
+        createdAt: '2026-05-03T14:00:00.000Z',
+        updatedAt: '2026-05-03T14:00:00.000Z',
+      },
+      assistantMessage: {
+        id: 'assistant-2',
+        role: 'assistant',
+        content: '',
+        partsJson: null,
+        toolCalls: null,
+        toolResults: null,
+        metadataJson: null,
+        provider: 'demo-provider',
+        model: 'demo-model',
+        status: 'pending',
+        error: null,
+        createdAt: '2026-05-03T14:00:01.000Z',
+        updatedAt: '2026-05-03T14:00:01.000Z',
+      },
+    } as unknown as SSEEvent
+
+    expect(
+      applySseEvent(messages, continuationEvent, {
+        requestKind: 'retry',
+        targetMessageId: 'assistant-1',
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        id: 'assistant-1',
+        content: '第一段回复',
+      }),
+      expect.objectContaining({
+        id: 'user-continue-1',
+        role: 'user',
+      }),
+      expect.objectContaining({
+        id: 'assistant-2',
+        role: 'assistant',
+      }),
+    ])
+  })
 })
