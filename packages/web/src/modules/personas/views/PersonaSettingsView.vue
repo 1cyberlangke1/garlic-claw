@@ -3,13 +3,16 @@ import ConsolePage from '@/shared/components/ConsolePage.vue'
 import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
 import listCheckBold from '@iconify-icons/solar/list-check-bold'
+import magicStick3Bold from '@iconify-icons/solar/magic-stick-3-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import trashBinTrashBold from '@iconify-icons/solar/trash-bin-trash-bold'
 import userIdBold from '@iconify-icons/solar/user-id-bold'
+import widgetBold from '@iconify-icons/solar/widget-5-bold'
 import type { IconifyIcon } from '@iconify/types'
 import { Icon } from '@iconify/vue'
 import { ElButton, ElInput, ElOption, ElSelect, ElSwitch } from 'element-plus'
 import { ref } from 'vue'
+import type { PersonaPresetDraftInput } from '../composables/use-persona-settings'
 import { usePersonaSettings } from '../composables/use-persona-settings'
 
 const {
@@ -24,22 +27,33 @@ const {
   selectedPersonaId,
   selectedPersona,
   currentPersona,
+  currentConversationId,
   currentConversationTitle,
+  availableConversations,
   canApplySelectedPersona,
+  canApplySelectedPersonaToBatch,
   canDeleteSelectedPersona,
   selectedPersonaStatus,
   editorMode,
   editorDraft,
   deleteResult,
+  batchConversationIds,
+  batchApplyingPersona,
+  batchApplyResult,
   refreshAll,
   selectPersona,
   beginCreatePersona,
+  loadPresetDraft,
   resetEditorDraft,
   addBeginDialog,
   removeBeginDialog,
   savePersonaDraft,
   deleteSelectedPersona,
   applySelectedPersona,
+  toggleBatchConversation,
+  selectAllBatchConversations,
+  clearBatchConversations,
+  applySelectedPersonaToBatch,
 } = usePersonaSettings()
 
 const sourceLabelMap = {
@@ -56,12 +70,70 @@ const listModeOptions = [
 
 const avatarInput = ref<HTMLInputElement | null>(null)
 const uploadingAvatar = ref(false)
-type PersonaPanelId = 'editor' | 'overview'
+type PersonaPanelId = 'editor' | 'batch' | 'presets'
 
 const currentPanel = ref<PersonaPanelId>('editor')
 const panelOptions: ReadonlyArray<{ label: string; value: PersonaPanelId; icon: IconifyIcon }> = [
-  { label: '人设编辑', value: 'editor', icon: userIdBold },
-  { label: '当前会话', value: 'overview', icon: listCheckBold },
+  { label: '人设仓库', value: 'editor', icon: userIdBold },
+  { label: '批量修改', value: 'batch', icon: listCheckBold },
+  { label: '模板 / 预设', value: 'presets', icon: magicStick3Bold },
+]
+
+const personaPresetCards: ReadonlyArray<{
+  badge: string
+  draft: PersonaPresetDraftInput
+  id: string
+  summary: string
+  title: string
+}> = [
+  {
+    badge: '写作',
+    draft: {
+      beginDialogs: [
+        { role: 'assistant', content: '我会先给出结构，再补全文案。' },
+      ],
+      description: '适合文章起草、润色和风格统一。',
+      name: '写作助手',
+      prompt: '你是一名注重结构与节奏的中文写作助手。先识别目标读者、文体和信息密度，再给出清晰、自然、可直接交付的内容。避免空话，优先输出成品。',
+      toolInput: 'memory.search',
+      toolMode: 'selected',
+    },
+    id: 'preset-writer',
+    summary: '面向文章、公告、邮件和长文改写的通用写作人格。',
+    title: '写作助手',
+  },
+  {
+    badge: '产品',
+    draft: {
+      beginDialogs: [
+        { role: 'assistant', content: '我会先梳理目标、约束和优先级。' },
+      ],
+      description: '适合需求拆解、方案评审和信息对齐。',
+      name: '产品策划',
+      prompt: '你是一名讲求判断依据的产品策划助手。面对需求时，先明确目标、用户、约束和成功标准，再输出结构化结论。优先识别风险、边界和实现成本。',
+      toolMode: 'all',
+    },
+    id: 'preset-product',
+    summary: '适合 PRD、需求评审、优先级排序和方案比较。',
+    title: '产品策划',
+  },
+  {
+    badge: '审阅',
+    draft: {
+      beginDialogs: [
+        { role: 'assistant', content: '我会先指出高风险问题，再补充次要建议。' },
+      ],
+      customErrorMessage: '当前审阅人格暂时无法完成此次分析。',
+      description: '适合代码审阅、文案审稿和质量把关。',
+      name: '严格审阅者',
+      prompt: '你是一名严格、克制的审阅者。输出时优先指出会导致错误、歧义、返工或体验下滑的问题，要求结论有依据、有优先级，并给出最小可执行修正建议。',
+      toolInput: 'memory.search',
+      toolMode: 'selected',
+    },
+    id: 'preset-reviewer',
+    summary: '强调问题优先级、风险识别和可执行修改建议。',
+    title: '严格审阅者',
+  },
 ]
 
 function triggerAvatarUpload() { avatarInput.value?.click() }
@@ -87,6 +159,18 @@ function readPersonaAvatarLabel(name?: string | null) {
 
 function readPersonaAvatarAlt(name?: string | null) {
   return `${name?.trim() || 'Persona'} 头像`
+}
+
+function openPreset(preset: PersonaPresetDraftInput) {
+  loadPresetDraft(preset)
+  currentPanel.value = 'editor'
+}
+
+function readToolModeLabel(mode: 'all' | 'none' | 'selected') {
+  if (mode === 'selected') {
+    return '指定工具'
+  }
+  return mode === 'none' ? '禁用工具' : '全部工具'
 }
 </script>
 
@@ -134,32 +218,111 @@ function readPersonaAvatarAlt(name?: string | null) {
           已删除 <strong>{{ deleteResult.deletedPersonaId }}</strong>，共回退 {{ deleteResult.reassignedConversationCount }} 个对话到
           <strong>{{ deleteResult.fallbackPersonaId }}</strong>。
         </p>
-        <section v-if="currentPanel === 'overview'" class="persona-overview-card">
+        <section v-if="currentPanel === 'batch'" class="persona-overview-card">
           <div class="section-header">
             <div>
-              <h2>当前会话人设状态</h2>
+              <h2>批量修改会话人设</h2>
+              <p>把当前选中的人设批量应用到多个主会话。</p>
+            </div>
+            <div class="editor-actions">
+              <ElButton class="ghost-button" :disabled="availableConversations.length === 0" @click="selectAllBatchConversations">
+                全选
+              </ElButton>
+              <ElButton class="ghost-button" :disabled="batchConversationIds.length === 0" @click="clearBatchConversations">
+                清空
+              </ElButton>
             </div>
           </div>
           <div class="detail-summary">
+            <div class="summary-item">
+              <span class="summary-label">当前选中人设</span>
+              <span>{{ selectedPersona?.name ?? '请先在仓库中选择一个人设' }}</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-label">已选会话</span>
+              <span>{{ batchConversationIds.length }} 个</span>
+            </div>
             <div class="summary-item">
               <span class="summary-label">当前对话</span>
               <span>{{ currentConversationTitle ?? '当前未选中对话' }}</span>
             </div>
             <div class="summary-item">
-              <span class="summary-label">当前生效人设</span>
-              <span v-if="loadingCurrentPersona">读取中...</span>
-              <span v-else-if="currentPersona">{{ currentPersona.name }}</span>
-              <span v-else>无会话级人设</span>
-            </div>
-            <div class="summary-item">
-              <span class="summary-label">来源</span>
-              <span v-if="currentPersona">{{ sourceLabelMap[currentPersona.source] }}</span>
-              <span v-else>默认回退</span>
-            </div>
-            <div class="summary-item">
-              <span class="summary-label">可应用状态</span>
+              <span class="summary-label">仓库状态</span>
               <span>{{ selectedPersonaStatus }}</span>
             </div>
+          </div>
+          <div v-if="availableConversations.length === 0" class="section-state">
+            暂无可批量修改的主会话。
+          </div>
+          <div v-else class="conversation-selector-list">
+            <label
+              v-for="conversation in availableConversations"
+              :key="conversation.id"
+              class="conversation-selector-item"
+            >
+              <input
+                class="conversation-selector-checkbox"
+                type="checkbox"
+                :checked="batchConversationIds.includes(conversation.id)"
+                @change="toggleBatchConversation(conversation.id)"
+              >
+              <div class="conversation-selector-copy">
+                <div class="conversation-selector-row">
+                  <strong>{{ conversation.title || '未命名对话' }}</strong>
+                  <span v-if="conversation.id === currentConversationId" class="persona-badge">当前</span>
+                </div>
+                <p>{{ conversation.id }}</p>
+              </div>
+            </label>
+          </div>
+          <p v-if="batchApplyResult" class="page-hint">
+            已将 <strong>{{ batchApplyResult.personaName }}</strong> 应用到 <strong>{{ batchApplyResult.appliedConversationCount }}</strong> 个会话。
+            <span v-if="batchApplyResult.failedConversationIds.length > 0">
+              失败 {{ batchApplyResult.failedConversationIds.length }} 个。
+            </span>
+          </p>
+          <div class="footer-actions">
+            <ElButton
+              type="primary"
+              class="primary-button"
+              :disabled="!canApplySelectedPersonaToBatch || batchApplyingPersona"
+              @click="applySelectedPersonaToBatch"
+            >
+              {{ batchApplyingPersona ? '批量应用中...' : `应用到选中会话（${batchConversationIds.length}）` }}
+            </ElButton>
+          </div>
+        </section>
+        <section v-else-if="currentPanel === 'presets'" class="persona-overview-card">
+          <div class="section-header">
+            <div>
+              <h2>模板 / 预设</h2>
+              <p>从常用人设草稿开始，减少重复配置。</p>
+            </div>
+          </div>
+          <div class="preset-grid">
+            <article v-for="preset in personaPresetCards" :key="preset.id" class="preset-card">
+              <div class="preset-card-head">
+                <div class="preset-card-copy">
+                  <h3>{{ preset.title }}</h3>
+                  <p>{{ preset.summary }}</p>
+                </div>
+                <span class="preset-tag">{{ preset.badge }}</span>
+              </div>
+              <div class="preset-meta">
+                <div class="summary-item">
+                  <span class="summary-label">默认名称</span>
+                  <span>{{ preset.draft.name }}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">工具策略</span>
+                  <span>{{ readToolModeLabel(preset.draft.toolMode ?? 'all') }}</span>
+                </div>
+              </div>
+              <ElButton class="ghost-button" @click="openPreset(preset.draft)">
+                <Icon :icon="widgetBold" class="button-icon" aria-hidden="true" />
+                套用到编辑器
+              </ElButton>
+            </article>
           </div>
         </section>
 
@@ -167,7 +330,7 @@ function readPersonaAvatarAlt(name?: string | null) {
           <section class="persona-list-card">
             <div class="section-header">
               <div>
-                <h2>可用人设</h2>
+                <h2>人设仓库</h2>
               </div>
               <span class="section-meta">{{ personas.length }} 个</span>
             </div>
@@ -508,15 +671,25 @@ function readPersonaAvatarAlt(name?: string | null) {
 }
 
 .hero-card h2,
+.preset-card h3,
 .hero-card p,
 .section-header h2,
 .detail-block p {
   margin: 0;
 }
 
+.section-header p,
+.preset-card p,
+.conversation-selector-copy p {
+  margin: 0;
+}
+
 .page-header p,
 .section-meta,
+.section-header p,
 .persona-list-item p,
+.conversation-selector-copy p,
+.preset-card p,
 .section-state {
   color: var(--text-muted);
 }
@@ -564,7 +737,9 @@ function readPersonaAvatarAlt(name?: string | null) {
 .hero-card,
 .persona-overview-card,
 .persona-list-card,
-.persona-detail-card {
+.persona-detail-card,
+.preset-card,
+.conversation-selector-item {
   display: grid;
   gap: 14px;
   padding: 18px;
@@ -597,6 +772,57 @@ function readPersonaAvatarAlt(name?: string | null) {
   border-radius: 20px;
   background: var(--surface-card-gradient);
   border: 1px solid var(--border, rgba(133, 163, 199, 0.16));
+}
+
+.conversation-selector-list,
+.preset-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.conversation-selector-item {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  cursor: pointer;
+  padding: 14px 16px;
+}
+
+.conversation-selector-checkbox {
+  margin-top: 3px;
+}
+
+.conversation-selector-copy,
+.preset-card-copy,
+.preset-meta {
+  display: grid;
+  gap: 8px;
+}
+
+.conversation-selector-row,
+.preset-card-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.preset-card {
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--surface-panel-soft-strong);
+}
+
+.preset-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(11, 99, 181, 0.14);
+  color: #78b8ff;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .summary-label {
