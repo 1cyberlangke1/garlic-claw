@@ -143,17 +143,25 @@ export class ConversationController {
       );
       return;
     }
-    await streamTaskEvents(res, this.conversationTaskService, async () => {
-      const result = await this.conversationMessageLifecycleService.startMessageGeneration(id, toSendMessagePayload(dto), userId);
-      return {
-        assistantMessageId: String(result.assistantMessage.id),
-        startPayload: {
-          assistantMessage: result.assistantMessage,
-          type: 'message-start' as const,
-          userMessage: result.userMessage,
-        },
-      };
-    });
+    await streamTaskEvents(
+      res,
+      this.conversationTaskService,
+      async () => {
+        const result = await this.conversationMessageLifecycleService.startMessageGeneration(id, toSendMessagePayload(dto), userId);
+        return {
+          assistantMessageId: String(result.assistantMessage.id),
+          startPayload: {
+            assistantMessage: result.assistantMessage,
+            type: 'message-start' as const,
+            userMessage: result.userMessage,
+          },
+        };
+      },
+      async (assistantMessageId) => readConversationTaskContinuationStart(
+        this.conversationStore.requireConversation(id, userId),
+        assistantMessageId,
+      ),
+    );
   }
 
   @Post('conversations/:id/messages/:messageId/retry')
@@ -202,13 +210,21 @@ export class ConversationController {
       );
       return;
     }
-    await streamTaskEvents(res, this.conversationTaskService, async () => {
-      const assistantMessage = await this.conversationMessageLifecycleService.retryMessageGeneration(id, messageId, dto, userId);
-      return {
-        assistantMessageId: String(assistantMessage.id),
-        startPayload: { assistantMessage, type: 'message-start' as const },
-      };
-    });
+    await streamTaskEvents(
+      res,
+      this.conversationTaskService,
+      async () => {
+        const assistantMessage = await this.conversationMessageLifecycleService.retryMessageGeneration(id, messageId, dto, userId);
+        return {
+          assistantMessageId: String(assistantMessage.id),
+          startPayload: { assistantMessage, type: 'message-start' as const },
+        };
+      },
+      async (assistantMessageId) => readConversationTaskContinuationStart(
+        this.conversationStore.requireConversation(id, userId),
+        assistantMessageId,
+      ),
+    );
   }
 
   @Post('conversations/:id/messages/:messageId/stop')
@@ -255,15 +271,21 @@ async function streamTaskEvents(
   res: Response,
   conversationTaskService: ConversationTaskService,
   startTask: () => Promise<{ assistantMessageId: string; startPayload: object }>,
+  readNextTaskStart?: (assistantMessageId: string) => Promise<{ assistantMessageId: string; startPayload: object } | null> | { assistantMessageId: string; startPayload: object } | null,
 ) {
   let unsubscribe: () => void = () => undefined;
   initSse(res);
   res.on('close', () => unsubscribe());
   try {
-    const { assistantMessageId, startPayload } = await startTask();
-    writeSse(res, startPayload);
-    unsubscribe = conversationTaskService.subscribe(assistantMessageId, (event) => writeSse(res, event));
-    await conversationTaskService.waitForTask(assistantMessageId);
+    let nextTask: { assistantMessageId: string; startPayload: object } | null = await startTask();
+    while (nextTask) {
+      writeSse(res, nextTask.startPayload);
+      unsubscribe = conversationTaskService.subscribe(nextTask.assistantMessageId, (event) => writeSse(res, event));
+      await conversationTaskService.waitForTask(nextTask.assistantMessageId);
+      unsubscribe();
+      unsubscribe = () => undefined;
+      nextTask = readNextTaskStart ? await readNextTaskStart(nextTask.assistantMessageId) : null;
+    }
   } catch (error) {
     writeSse(res, { error: error instanceof Error ? error.message : '未知错误', type: 'error' });
   }
@@ -437,6 +459,34 @@ function readSubagentConversationEvents(
     });
   }
   return events;
+}
+
+function readConversationTaskContinuationStart(
+  conversation: RuntimeConversationRecord,
+  completedAssistantMessageId: string,
+): { assistantMessageId: string; startPayload: object } | null {
+  const completedAssistantIndex = conversation.messages.findIndex((message) => message.id === completedAssistantMessageId);
+  if (completedAssistantIndex < 0 || completedAssistantIndex + 2 >= conversation.messages.length) {
+    return null;
+  }
+  const syntheticContinueUser = conversation.messages[completedAssistantIndex + 1];
+  const nextAssistant = conversation.messages[completedAssistantIndex + 2];
+  if (
+    syntheticContinueUser?.role !== 'user'
+    || !isAutoCompactionContinueMessage(syntheticContinueUser)
+    || nextAssistant?.role !== 'assistant'
+    || typeof nextAssistant.id !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    assistantMessageId: nextAssistant.id,
+    startPayload: {
+      assistantMessage: serializeConversationMessage(nextAssistant as unknown as JsonObject),
+      type: 'message-start' as const,
+      userMessage: serializeConversationMessage(syntheticContinueUser as unknown as JsonObject),
+    },
+  };
 }
 
 function readPreviousSubagentUserMessage(
