@@ -1,62 +1,36 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type {
-  PluginSubagentDetail,
-  PluginSubagentStatus,
   PluginSubagentSummary,
 } from '@garlic-claw/shared'
 import { useAsyncState } from '@/shared/composables/use-async-state'
 import { usePagination } from '@/shared/composables/use-pagination'
 import {
-  loadPluginSubagentDetail as loadSubagentDetail,
   loadPluginSubagentOverview as loadSubagentOverview,
   closePluginSubagentConversation as requestCloseSubagentConversation,
 } from './subagents.data'
 
 type SubagentFilter = 'all' | 'running' | 'completed' | 'error'
-type SubagentWorkspaceWindow = SubagentMainWindow | SubagentSessionWindow
 
 interface SubagentWorkspaceSummary {
   id: string
   label: string
   newestRequestedAt: string
   subagents: PluginSubagentSummary[]
-  windows: SubagentWorkspaceWindow[]
-}
-
-interface SubagentMainWindow {
-  id: 'main'
-  kind: 'main'
-  label: 'main'
-}
-
-interface SubagentSessionWindow {
-  id: string
-  kind: 'subagent'
-  label: string
-  conversationId: string
-  status: PluginSubagentStatus
-  summary: PluginSubagentSummary
 }
 
 const POLL_INTERVAL_MS = 5000
-const MAIN_WINDOW_ID = 'main'
 const GLOBAL_WORKSPACE_ID = '__global__'
 
 export function useSubagents() {
   const requestState = useAsyncState(false)
-  const detailState = useAsyncState(false)
   const loading = requestState.loading
   const error = requestState.error
   const appError = requestState.appError
-  const detailLoading = detailState.loading
-  const detailError = detailState.error
   const subagents = shallowRef<PluginSubagentSummary[]>([])
-  const activeSubagentDetail = shallowRef<PluginSubagentDetail | null>(null)
   const closingConversationId = ref<string | null>(null)
   const searchKeyword = ref('')
   const filter = ref<SubagentFilter>('all')
   const activeConversationId = ref<string | null>(null)
-  const activeWindowId = ref<string>(MAIN_WINDOW_ID)
   const normalizedKeyword = computed(() => searchKeyword.value.trim().toLocaleLowerCase())
   const filteredSubagents = computed(() =>
     subagents.value.filter((subagent) =>
@@ -69,12 +43,7 @@ export function useSubagents() {
       ? conversationWorkspaces.value.find((workspace) => workspace.id === activeConversationId.value) ?? null
       : null,
   )
-  const activeWorkspaceWindows = computed(() => activeConversationWorkspace.value?.windows ?? [])
   const activeConversationSubagents = computed(() => activeConversationWorkspace.value?.subagents ?? [])
-  const activeWindow = computed(() =>
-    activeWorkspaceWindows.value.find((window) => window.id === activeWindowId.value) ?? activeWorkspaceWindows.value[0] ?? null,
-  )
-  const activeWindowKind = computed(() => activeWindow.value?.kind ?? 'main')
   const orderedSubagents = computed(() =>
     [...filteredSubagents.value].sort((left, right) => {
       const attentionDiff = subagentAttentionWeight(left) - subagentAttentionWeight(right)
@@ -133,7 +102,6 @@ export function useSubagents() {
       const overview = await loadSubagentOverview()
       subagents.value = overview.subagents
       syncWorkspaceSelection()
-      await refreshActiveSubagentDetail()
     } catch (caughtError) {
       requestState.setError(caughtError, '加载后台子代理失败')
     } finally {
@@ -146,52 +114,17 @@ export function useSubagents() {
       return
     }
     activeConversationId.value = conversationId
-    activeWindowId.value = MAIN_WINDOW_ID
-    void refreshActiveSubagentDetail()
-  }
-
-  function selectWindow(windowId: string) {
-    if (activeWindowId.value === windowId) {
-      return
-    }
-    activeWindowId.value = windowId
-    void refreshActiveSubagentDetail()
   }
 
   function syncWorkspaceSelection() {
     if (conversationWorkspaces.value.length === 0) {
       activeConversationId.value = null
-      activeWindowId.value = MAIN_WINDOW_ID
-      activeSubagentDetail.value = null
-      detailState.clearError()
       return
     }
     const nextConversation = conversationWorkspaces.value.find(
       (workspace) => workspace.id === activeConversationId.value,
     ) ?? conversationWorkspaces.value[0]
     activeConversationId.value = nextConversation.id
-    if (!nextConversation.windows.some((window) => window.id === activeWindowId.value)) {
-      activeWindowId.value = MAIN_WINDOW_ID
-    }
-  }
-
-  async function refreshActiveSubagentDetail() {
-    const window = activeWindow.value
-    if (!window || window.kind === 'main') {
-      activeSubagentDetail.value = null
-      detailState.clearError()
-      return
-    }
-    detailLoading.value = true
-    detailState.clearError()
-    try {
-      activeSubagentDetail.value = await loadSubagentDetail(window.conversationId)
-    } catch (caughtError) {
-      activeSubagentDetail.value = null
-      detailState.setError(caughtError, '加载子代理上下文失败')
-    } finally {
-      detailLoading.value = false
-    }
   }
 
   async function closeSubagentConversation(conversationId: string) {
@@ -216,17 +149,10 @@ export function useSubagents() {
     loading,
     error,
     appError,
-    detailLoading,
-    detailError,
     subagents,
     conversationWorkspaces,
     activeConversationId,
     activeConversationSubagents,
-    activeWindowId,
-    activeWindow,
-    activeWindowKind,
-    activeWorkspaceWindows,
-    activeSubagentDetail,
     closingConversationId,
     searchKeyword,
     filter,
@@ -244,7 +170,6 @@ export function useSubagents() {
     runningSubagentCount,
     errorSubagentCount,
     selectConversation,
-    selectWindow,
     refreshAll,
     closeSubagentConversation,
   }
@@ -266,27 +191,11 @@ function createConversationWorkspaceSummaries(
   return [...workspaces.entries()]
     .map(([workspaceId, workspaceSubagents]) => {
       const orderedSubagents = [...workspaceSubagents].sort(compareSubagentsByRequestedAt)
-      const windows: SubagentWorkspaceWindow[] = [
-        {
-          id: MAIN_WINDOW_ID,
-          kind: 'main',
-          label: 'main',
-        },
-        ...orderedSubagents.map((subagent, index) => ({
-          id: subagent.conversationId,
-          kind: 'subagent' as const,
-          label: readSubagentWindowLabel(subagent, index),
-          conversationId: subagent.conversationId,
-          status: subagent.status,
-          summary: subagent,
-        })),
-      ]
       return {
         id: workspaceId,
         label: readWorkspaceLabel(workspaceId),
         newestRequestedAt: orderedSubagents.at(-1)?.requestedAt ?? '',
         subagents: orderedSubagents,
-        windows,
       }
     })
     .sort((left, right) => right.newestRequestedAt.localeCompare(left.newestRequestedAt))
@@ -327,11 +236,6 @@ function matchesSubagent(subagent: PluginSubagentSummary, keyword: string): bool
     .join(' ')
     .toLocaleLowerCase()
     .includes(keyword)
-}
-
-function readSubagentWindowLabel(subagent: PluginSubagentSummary, index: number): string {
-  const title = subagent.title.trim()
-  return title || `agent${index + 1}`
 }
 
 function matchesFilter(subagent: PluginSubagentSummary, filter: SubagentFilter): boolean {

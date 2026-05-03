@@ -27,6 +27,7 @@
         :node-schema="rootSchema"
         :model-value="draft"
         :root-values="draft"
+        :scope-values="draft"
         :special-options="specialOptions"
         @update:model-value="applyDraft"
       />

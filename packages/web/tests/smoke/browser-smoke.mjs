@@ -222,9 +222,10 @@ async function ensureDevServices() {
     isPortListening(23333),
   ]);
   const webIsGarlic = webReady ? await isGarlicWebApp(webOrigin) : false;
-  console.log(`[browser-smoke] service probe apiReady=${apiReady} webReady=${webReady} webIsGarlic=${webIsGarlic}`);
+  const apiAcceptsSmokeLogin = apiReady ? await canReuseBrowserSmokeBackend() : false;
+  console.log(`[browser-smoke] service probe apiReady=${apiReady} webReady=${webReady} webIsGarlic=${webIsGarlic} apiAcceptsSmokeLogin=${apiAcceptsSmokeLogin}`);
 
-  if (apiReady && webReady && webIsGarlic) {
+  if (apiReady && webReady && webIsGarlic && apiAcceptsSmokeLogin) {
     console.log('[browser-smoke] reuse existing backend and web dev services');
     return {
       mode: 'reuse',
@@ -232,7 +233,14 @@ async function ensureDevServices() {
     };
   }
 
+  if (apiReady && webReady && webIsGarlic && !apiAcceptsSmokeLogin) {
+    console.log('[browser-smoke] existing Garlic backend does not accept smoke login secret, restart managed dev services');
+  }
+
   if (webReady && !webIsGarlic) {
+    if (apiReady && !apiAcceptsSmokeLogin) {
+      throw new Error('浏览器 smoke 检测到现有后端端口被占用，但当前服务不接受 smoke 登录密钥，无法安全复用或隔离启动。');
+    }
     console.log('[browser-smoke] keep external web port, start isolated Garlic services');
     const started = [];
     if (!apiReady) {
@@ -1044,14 +1052,27 @@ async function listAutomations(accessToken) {
 }
 
 async function loginBrowserSmokeAdmin() {
+  const payload = await requestBrowserSmokeLoginPayload();
+  assert.equal(typeof payload?.accessToken, 'string', '浏览器 smoke 登录未返回 accessToken');
+  return payload.accessToken;
+}
+
+async function canReuseBrowserSmokeBackend() {
+  try {
+    const payload = await requestBrowserSmokeLoginPayload();
+    return typeof payload?.accessToken === 'string';
+  } catch {
+    return false;
+  }
+}
+
+async function requestBrowserSmokeLoginPayload() {
   const response = await fetchWithRetry(`${API_ORIGIN}/auth/login`, {
     body: JSON.stringify({ secret: LOGIN_SECRET }),
     headers: { 'content-type': 'application/json' },
     method: 'POST',
   });
-  const payload = await response.json();
-  assert.equal(typeof payload?.accessToken, 'string', '浏览器 smoke 登录未返回 accessToken');
-  return payload.accessToken;
+  return response.json();
 }
 
 async function requestJson(routePath, options = {}) {

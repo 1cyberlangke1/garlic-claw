@@ -8,6 +8,7 @@ import { ConversationStoreService } from '../runtime/host/conversation-store.ser
 import { PluginDispatchService } from '../runtime/host/plugin-dispatch.service';
 import { asJsonValue, DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/host-input.codec';
 import { AiVisionService } from '../vision/ai-vision.service';
+import { ConversationAfterResponseCompactionService } from './conversation-after-response-compaction.service';
 import { createConversationHistorySignatureFromModelMessages } from './conversation-history-signature';
 import { buildConversationVisibleModelMessages } from './conversation-model-visible-history';
 import { ContextGovernanceService, type DeferredInternalCommandAction } from './context-governance.service';
@@ -20,6 +21,7 @@ type BeforeModelState = { action: 'continue'; activePersonaId?: string; conversa
 type BeforeModelResult = BeforeModelState | { action: 'short-circuit'; assistantContent: string; assistantParts: ChatMessagePart[]; modelId: string; providerId: string };
 export type ConversationResponseSource = 'model' | 'short-circuit';
 export type ConversationStreamPlan = ResolvedConversationTaskStreamSource & { responseSource: ConversationResponseSource; shortCircuitParts: ChatMessagePart[] | null };
+export type ConversationAfterSendResult = { compactionTriggered: boolean };
 export type MessageReceivedPlanningResult =
   | { action: 'continue'; content: string; conversationId: string; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string }
   | { action: 'deferred-short-circuit'; content: string; conversationId: string; deferred: DeferredInternalCommandAction; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string }
@@ -30,6 +32,7 @@ export class ConversationMessagePlanningService {
   constructor(
     private readonly aiModelExecutionService: AiModelExecutionService,
     private readonly aiVisionService: AiVisionService,
+    private readonly conversationAfterResponseCompactionService: ConversationAfterResponseCompactionService,
     private readonly contextGovernanceService: ContextGovernanceService,
     private readonly runtimeHostConversationRecordService: ConversationStoreService,
     private readonly personaService: PersonaService,
@@ -122,9 +125,14 @@ export class ConversationMessagePlanningService {
     return this.applyAssistantMutation('response:before-send', context, assistantResult, responseSource);
   }
 
-  async broadcastAfterSend(contextInput: { activePersonaId?: string; conversationId: string; userId?: string }, result: CompletedConversationTaskResult, responseSource: ConversationResponseSource): Promise<void> {
+  async runAfterResponseCompaction(input: { conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<boolean> {
+    return this.conversationAfterResponseCompactionService.run(input);
+  }
+
+  async broadcastAfterSend(contextInput: { activePersonaId?: string; conversationId: string; userId?: string }, result: CompletedConversationTaskResult, responseSource: ConversationResponseSource): Promise<ConversationAfterSendResult> {
+    let compactionTriggered = false;
     if (responseSource === 'model') {
-      await this.contextGovernanceService.rewriteHistoryAfterCompletedResponse({
+      compactionTriggered = await this.runAfterResponseCompaction({
         conversationId: result.conversationId,
         modelId: result.modelId,
         providerId: result.providerId,
@@ -136,6 +144,7 @@ export class ConversationMessagePlanningService {
     for (const pluginId of listDispatchableHookPluginIds({ context, hookName: 'response:after-send', kernel: this.runtimeHostPluginDispatchService })) {
       await this.runtimeHostPluginDispatchService.invokeHook({ context, hookName: 'response:after-send', payload, pluginId });
     }
+    return { compactionTriggered };
   }
 
   private async buildModelMessages(conversationId: string, messageId: string): Promise<ModelMessage[]> {

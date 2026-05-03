@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createConversationHistorySignatureFromHistoryMessages } from '../../src/conversation/conversation-history-signature';
+import { ConversationAfterResponseCompactionService } from '../../src/conversation/conversation-after-response-compaction.service';
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
@@ -26,6 +27,7 @@ describe('ConversationMessagePlanningService', () => {
   let settingsConfigPath: string;
   let conversationsPath: string;
   let conversationId: string;
+  let contextGovernanceService: ContextGovernanceService;
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
   let runtimeHostConversationRecordService: ConversationStoreService;
   let service: ConversationMessagePlanningService;
@@ -65,16 +67,18 @@ describe('ConversationMessagePlanningService', () => {
     });
     runtimeHostConversationRecordService = new ConversationStoreService();
     contextGovernanceSettingsService = new ContextGovernanceSettingsService();
+    contextGovernanceService = new ContextGovernanceService(
+      aiManagementService as never,
+      aiModelExecutionService as never,
+      contextGovernanceSettingsService,
+      runtimeHostConversationRecordService,
+    );
     conversationId = (runtimeHostConversationRecordService.createConversation({ title: '窗口预览', userId: 'user-1' }) as { id: string }).id;
     service = new ConversationMessagePlanningService(
       aiModelExecutionService as never,
       aiVisionService as never,
-      new ContextGovernanceService(
-        aiManagementService as never,
-        aiModelExecutionService as never,
-        contextGovernanceSettingsService,
-        runtimeHostConversationRecordService,
-      ),
+      new ConversationAfterResponseCompactionService(contextGovernanceService),
+      contextGovernanceService,
       runtimeHostConversationRecordService,
       personaService as never,
       toolRegistryService as never,
@@ -536,11 +540,15 @@ describe('ConversationMessagePlanningService', () => {
       createMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(4)),
     ]);
 
-    await service.broadcastAfterSend(
+    await expect(service.broadcastAfterSend(
       { conversationId, userId: 'user-1' },
       {
         assistantMessageId: 'assistant-final',
         content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(4),
+        continuationState: {
+          hasAssistantTextOutput: true,
+          hasToolActivity: false,
+        },
         conversationId,
         modelId: 'gpt-5.4',
         parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(4), type: 'text' }],
@@ -549,7 +557,7 @@ describe('ConversationMessagePlanningService', () => {
         toolResults: [],
       },
       'model',
-    );
+    )).resolves.toEqual({ compactionTriggered: true });
 
     const history = runtimeHostConversationRecordService.readConversationHistory(conversationId, 'user-1') as {
       messages: Array<{ content?: string; metadata?: { annotations?: Array<{ data?: Record<string, unknown>; owner?: string; type?: string }> }; role: string }>;
@@ -586,6 +594,10 @@ describe('ConversationMessagePlanningService', () => {
       {
         assistantMessageId: 'assistant-final',
         content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10),
+        continuationState: {
+          hasAssistantTextOutput: true,
+          hasToolActivity: false,
+        },
         conversationId,
         modelId: 'gpt-5.4',
         parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10), type: 'text' }],
@@ -594,7 +606,7 @@ describe('ConversationMessagePlanningService', () => {
         toolResults: [],
       },
       'model',
-    )).resolves.toBeUndefined();
+    )).resolves.toEqual({ compactionTriggered: false });
 
     const history = runtimeHostConversationRecordService.readConversationHistory(conversationId, 'user-1') as {
       messages: Array<{ content?: string }>;
@@ -667,6 +679,10 @@ describe('ConversationMessagePlanningService', () => {
       {
         assistantMessageId: 'assistant-final',
         content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300),
+        continuationState: {
+          hasAssistantTextOutput: true,
+          hasToolActivity: false,
+        },
         conversationId,
         modelId: 'gpt-5.4',
         parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300), type: 'text' }],
@@ -675,7 +691,7 @@ describe('ConversationMessagePlanningService', () => {
         toolResults: [],
       },
       'model',
-    )).resolves.toBeUndefined();
+    )).resolves.toEqual({ compactionTriggered: false });
 
     await expect(service.createStreamPlan({
       abortSignal: new AbortController().signal,

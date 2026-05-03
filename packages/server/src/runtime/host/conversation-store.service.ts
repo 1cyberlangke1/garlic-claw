@@ -6,7 +6,7 @@ import { uuidv7 } from 'uuidv7';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
 import { createConversationHistorySignatureFromHistoryMessages } from '../../conversation/conversation-history-signature';
 import { buildConversationVisibleModelMessages, readConversationVisiblePreviewText } from '../../conversation/conversation-model-visible-history';
-import { readConversationModelUsageAnnotation } from '../../conversation/conversation-model-usage.annotation';
+import { readConversationModelUsageAnnotation, readLatestConversationModelUsageAnnotation } from '../../conversation/conversation-model-usage.annotation';
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../../core/runtime/server-workspace-paths';
@@ -471,23 +471,57 @@ function readStoredConversationMetadata(value: unknown): ChatMessageMetadata | n
 }
 
 function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { historySignature: string; modelId: string | null; preferLatestProviderUsage?: boolean; providerId: string | null; textBytes: number }): { estimatedTokens: number; source: 'estimated' | 'provider' } {
-  let latestProviderTotalTokens: number | null = null;
-  if (input.modelId && input.providerId) {for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const usage = readConversationModelUsageAnnotation(readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined, { modelId: input.modelId, providerId: input.providerId });
-    if (usage?.source !== 'provider') {
-      continue;
+  if (input.preferLatestProviderUsage) {
+    const latestProviderUsage = readLatestConversationHistoryProviderUsage(messages, input);
+    if (latestProviderUsage) {
+      return { estimatedTokens: latestProviderUsage.totalTokens, source: 'provider' };
     }
-    if (latestProviderTotalTokens === null) {
-      latestProviderTotalTokens = usage.totalTokens;
+  }
+  if (input.modelId && input.providerId) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const usage = readConversationModelUsageAnnotation(
+        readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined,
+        { modelId: input.modelId, providerId: input.providerId },
+      );
+      if (usage?.source !== 'provider') {
+        continue;
+      }
+      if (usage.responseHistorySignature === input.historySignature) {
+        return { estimatedTokens: usage.totalTokens, source: 'provider' };
+      }
     }
-    if (usage.responseHistorySignature === input.historySignature) {
-      return { estimatedTokens: usage.totalTokens, source: 'provider' };
-    }
-  }}
-  if (input.preferLatestProviderUsage && latestProviderTotalTokens !== null) {
-    return { estimatedTokens: latestProviderTotalTokens, source: 'provider' };
   }
   return { estimatedTokens: Math.ceil(input.textBytes / 4), source: 'estimated' };
+}
+
+function readLatestConversationHistoryProviderUsage(
+  messages: JsonObject[],
+  input: { modelId: string | null; providerId: string | null },
+): { totalTokens: number } | null {
+  const target = input.modelId && input.providerId
+    ? { modelId: input.modelId, providerId: input.providerId }
+    : undefined;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const usage = readLatestConversationModelUsageAnnotation(
+      readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined,
+      target,
+    );
+    if (usage?.source === 'provider') {
+      return usage;
+    }
+  }
+  if (!target) {
+    return null;
+  }
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const usage = readLatestConversationModelUsageAnnotation(
+      readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined,
+    );
+    if (usage?.source === 'provider') {
+      return usage;
+    }
+  }
+  return null;
 }
 
 function readConversationHistoryPreviewMetadata(message: JsonObject | undefined, index: number): ChatMessageMetadata | null { return message ? (readConversationHistoryMetadata(message.metadata, index) ?? readStoredConversationMetadata(message.metadataJson)) : null; }

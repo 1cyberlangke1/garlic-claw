@@ -1,6 +1,7 @@
 import type { AiModelUsage, ChatMessageCustomBlock, ChatMessageMetadata, ChatMessagePart, ChatMessageStatus, JsonValue, PluginSubagentToolCall, PluginSubagentToolResult, SSEEvent } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import { createConversationHistorySignatureFromHistoryMessages } from './conversation-history-signature';
+import type { ConversationCompactionContinuationState } from './conversation-compaction-continuation';
 import { appendConversationModelUsageMetadata, readConversationModelUsageAnnotation } from './conversation-model-usage.annotation';
 import { RuntimeToolPermissionService } from '../execution/runtime/runtime-tool-permission.service';
 import { ConversationMessageService } from '../runtime/host/conversation-message.service';
@@ -22,6 +23,7 @@ export type ResolvedConversationTaskStreamSource = {
 export interface CompletedConversationTaskResult {
   assistantMessageId: string;
   content: string;
+  continuationState: ConversationCompactionContinuationState;
   conversationId: string;
   metadata?: ChatMessageMetadata;
   modelId: string;
@@ -52,7 +54,14 @@ type ConversationTaskOutcome = { status: 'completed' | 'stopped' } | { error: st
 type ConversationTaskSnapshot = Omit<CompletedConversationTaskResult, 'assistantMessageId' | 'conversationId'>;
 type ConversationTaskRuntime = Omit<StartConversationTaskInput, 'createStream'> & {
   requestHistorySignature?: string;
-  state: { content: string; metadata?: ChatMessageMetadata; toolCalls: ConversationTaskToolCall[]; toolResults: ConversationTaskToolResult[] };
+  state: {
+    content: string;
+    hasAssistantTextOutput: boolean;
+    hasToolActivity: boolean;
+    metadata?: ChatMessageMetadata;
+    toolCalls: ConversationTaskToolCall[];
+    toolResults: ConversationTaskToolResult[];
+  };
 };
 
 interface ConversationTaskHandle {
@@ -99,7 +108,16 @@ export class ConversationTaskService {
   }
 
   private async runTask(task: ConversationTaskHandle, input: StartConversationTaskInput): Promise<void> {
-    const runtime: ConversationTaskRuntime = { ...input, state: { content: '', toolCalls: [], toolResults: [] } };
+    const runtime: ConversationTaskRuntime = {
+      ...input,
+      state: {
+        content: '',
+        hasAssistantTextOutput: false,
+        hasToolActivity: false,
+        toolCalls: [],
+        toolResults: [],
+      },
+    };
     const unsubscribePermission = this.runtimeToolPermissionService.subscribe(input.conversationId, (event) => {
       this.emit(task, toConversationTaskPermissionEvent(event, input.assistantMessageId));
     });
@@ -182,6 +200,10 @@ export class ConversationTaskService {
   private async writeTaskSnapshot(runtime: ConversationTaskRuntime, status: ChatMessageStatus, error: string | null = null): Promise<ConversationTaskSnapshot> {
     const snapshot: ConversationTaskSnapshot = {
       content: runtime.state.content.trim(),
+      continuationState: {
+        hasAssistantTextOutput: runtime.state.hasAssistantTextOutput,
+        hasToolActivity: runtime.state.hasToolActivity,
+      },
       ...(runtime.state.metadata ? { metadata: finalizeConversationTaskMetadata(runtime.state.metadata, status) } : {}),
       modelId: runtime.modelId,
       parts: toAssistantParts(runtime.state.content),
@@ -286,13 +308,16 @@ function readConversationTaskEvents(
   if (!part) {return metadataEvents;}
   if (part.type === 'text-delta') {
     state.content += part.text;
+    state.hasAssistantTextOutput = state.hasAssistantTextOutput || part.text.trim().length > 0;
     return [...metadataEvents, { messageId, text: part.text, type: 'text-delta' }];
   }
   if (part.type === 'tool-call') {
+    state.hasToolActivity = true;
     state.toolCalls.push({ input: part.input, toolCallId: part.toolCallId, toolName: part.toolName });
     return [...metadataEvents, { input: part.input, messageId, toolCallId: part.toolCallId, toolName: part.toolName, type: 'tool-call' }];
   }
   const output = compactConversationToolResultOutput(part.output);
+  state.hasToolActivity = true;
   state.toolResults.push({ output, toolCallId: part.toolCallId, toolName: part.toolName });
   return [...metadataEvents, { messageId, output, toolCallId: part.toolCallId, toolName: part.toolName, type: 'tool-result' }];
 }

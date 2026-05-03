@@ -4,7 +4,6 @@ import type {
 } from '@garlic-claw/shared'
 import {
   closeSubagent,
-  getSubagent,
   listSubagentOverview,
 } from '@/modules/subagents/api/subagents'
 import { getErrorMessage } from '@/shared/utils/error'
@@ -19,15 +18,6 @@ export interface PluginSubagentOverviewData {
  */
 export function loadPluginSubagentOverview(): Promise<PluginSubagentOverviewData> {
   return listSubagentOverview()
-}
-
-/**
- * 读取单个后台子代理详情。
- * @param conversationId 子代理会话 ID
- * @returns 子代理详情
- */
-export function loadPluginSubagentDetail(conversationId: string): Promise<PluginSubagentDetail> {
-  return getSubagent(conversationId)
 }
 
 /**
