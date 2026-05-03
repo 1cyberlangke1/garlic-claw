@@ -1150,4 +1150,5 @@ function buildUpdatedParts(
 }
 </script>
 
+<style src="../../../shared/styles/markdown.css"></style>
 <style scoped src="../styles/message-list.css"></style>

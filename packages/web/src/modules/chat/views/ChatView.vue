@@ -489,47 +489,6 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   font-weight: 500;
 }
 
-.service-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.service-label {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.service-chip {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--surface-info-soft);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.service-chip.disabled {
-  background: var(--surface-danger-soft);
-  color: var(--danger);
-}
-
-.service-toggle {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: var(--surface-overlay);
-  color: var(--text);
-  border-radius: 999px;
-  padding: 6px 12px;
-  cursor: pointer;
-}
-
-.service-toggle:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
 .chat-todo-panel {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -614,29 +573,7 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   color: var(--success);
 }
 
-.chat-todo-empty {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
 .chat-stage > :deep(.messages) { flex: 1; min-height: 0; overflow-y: auto; }
-
-.subagent-view { display:flex; flex-direction:column; gap:12px; overflow-y:auto; }
-.subagent-bar { display:flex; align-items:center; gap:10px; padding:8px 14px; background:var(--shell-bg-elevated); border-radius:6px; font-size:14px; color:var(--shell-text); }
-.subagent-status { font-size:11px; padding:1px 8px; border-radius:999px; text-transform:uppercase; }
-.subagent-status.queued,.subagent-status.running { background:rgba(245,158,11,.15); color:#f59e0b; }
-.subagent-status.completed { background:rgba(34,197,94,.1); color:#22c55e; }
-.subagent-status.error { background:rgba(239,68,68,.1); color:#ef4444; }
-.subagent-msgs { display:grid; gap:8px; }
-.subagent-msg { padding:10px 14px; border-radius:6px; background:var(--shell-bg-elevated); }
-.subagent-msg.user { border-left:2px solid #3b82f6; }
-.subagent-msg.assistant { border-left:2px solid #22c55e; }
-.subagent-msg strong { display:block; margin-bottom:4px; font-size:11px; color:var(--shell-text-tertiary); text-transform:uppercase; }
-.subagent-msg pre { margin:0; font-size:13px; color:var(--shell-text); white-space:pre-wrap; word-break:break-word; font-family:inherit; }
-.subagent-tools { display:grid; gap:6px; margin-top:8px; }
-.subagent-tool { padding:8px 12px; border-radius:4px; background:var(--shell-bg); }
-.subagent-tool-name { font-size:11px; color:var(--shell-active); font-weight:500; }
 
 .no-conversation {
   display: grid;
