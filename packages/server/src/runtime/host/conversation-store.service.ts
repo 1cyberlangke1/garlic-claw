@@ -27,9 +27,9 @@ export class ConversationStoreService {
   private readonly conversations: Map<string, RuntimeConversationRecord>;
 
   constructor(
-    @Optional() private readonly runtimeHostPluginDispatchService?: PluginDispatchService,
+    @Optional() private readonly pluginDispatch?: PluginDispatchService,
     @Optional() private readonly runtimeSessionEnvironmentService?: RuntimeSessionEnvironmentService,
-    @Optional() @Inject(forwardRef(() => ConversationTodoService)) private readonly runtimeHostConversationTodoService?: ConversationTodoService,
+    @Optional() @Inject(forwardRef(() => ConversationTodoService)) private readonly conversationTodoService?: ConversationTodoService,
   ) {
     const stored = this.readStoredConversations();
     this.conversationSessions = stored.sessions;
@@ -64,7 +64,7 @@ export class ConversationStoreService {
     this.requireConversation(conversationId, userId);
     const conversationIds = this.collectConversationTreeIds(conversationId, userId);
     for (const currentConversationId of conversationIds) {
-      this.runtimeHostConversationTodoService?.deleteSessionTodo(currentConversationId);
+      this.conversationTodoService?.deleteSessionTodo(currentConversationId);
       this.conversations.delete(currentConversationId);
       this.removeConversationSessions(currentConversationId);
       await this.runtimeSessionEnvironmentService?.deleteSessionEnvironment(currentConversationId);
@@ -317,7 +317,7 @@ export class ConversationStoreService {
   }
 
   private async broadcastConversationCreated(conversation: JsonObject, userId: string): Promise<void> {
-    const kernel = this.runtimeHostPluginDispatchService;
+    const kernel = this.pluginDispatch;
     if (!kernel) {return;}
     const context = { conversationId: String(conversation.id), source: 'http-route' as const, userId };
     for (const pluginId of listDispatchableHookPluginIds({ context, hookName: 'conversation:created', kernel })) { await kernel.invokeHook({ context, hookName: 'conversation:created', payload: asJsonValue({ context, conversation }), pluginId }); }

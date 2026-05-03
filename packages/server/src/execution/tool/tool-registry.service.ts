@@ -59,15 +59,15 @@ export class ToolRegistryService {
     private readonly runtimeToolsSettingsService: RuntimeToolsSettingsService,
     private readonly toolManagementSettingsService: ToolManagementSettingsService,
     private readonly pluginBootstrapService: PluginBootstrapService,
-    private readonly runtimeHostConversationRecordService: ConversationStoreService,
-    private readonly runtimeHostPluginRuntimeService: PluginRuntimeService,
+    private readonly conversationStore: ConversationStoreService,
+    private readonly pluginRuntime: PluginRuntimeService,
     @Inject(forwardRef(() => SubagentToolService)) private readonly subagentToolService: SubagentToolService,
     private readonly todoToolService: TodoToolService,
     private readonly webFetchToolService: WebFetchToolService,
     private readonly writeToolService: WriteToolService,
     private readonly skillToolService: SkillToolService,
     private readonly toolOutputCaptureService: ToolOutputCaptureService,
-    @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService,
+    @Inject(PluginDispatchService) private readonly pluginDispatch: PluginDispatchService,
     @Inject(RuntimePluginGovernanceService) private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService,
   ) {}
 
@@ -99,8 +99,8 @@ export class ToolRegistryService {
     if (action === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadLocal(sourceId)) {
       const reloaded = this.pluginBootstrapService.reloadLocal(sourceId);
       if (reloaded.removed) {
-        this.runtimeHostPluginRuntimeService.deletePluginRuntimeState(sourceId);
-        this.runtimeHostConversationRecordService.deletePluginConversationSessions(sourceId);
+        this.pluginRuntime.deletePluginRuntimeState(sourceId);
+        this.conversationStore.deletePluginConversationSessions(sourceId);
         this.runtimePluginGovernanceService.deletePluginRuntimeState(sourceId);
         this.toolManagementSettingsService.deleteSourceOverrides(`plugin:${sourceId}`);
         return { accepted: true, action, sourceKind: source.kind, sourceId, message: '本地插件目录已删除，已清理旧记录' };
@@ -191,7 +191,7 @@ export class ToolRegistryService {
     return (await this.listOverview()).tools
       .filter((entry) => entry.sourceKind !== 'internal')
       .filter((entry) => (!input.excludedPluginId || entry.pluginId !== input.excludedPluginId) && this.isToolEnabledForContext(entry, input.context) && (!input.allowedToolNames || input.allowedToolNames.includes(entry.callName)))
-      .map((entry) => toExecutableToolDefinition(entry, input.context, input.assistantMessageId, this.mcpService, this.runtimeHostPluginDispatchService));
+      .map((entry) => toExecutableToolDefinition(entry, input.context, input.assistantMessageId, this.mcpService, this.pluginDispatch));
   }
 
   private async resolveRegisteredToolExecution(input: {
@@ -217,7 +217,7 @@ export class ToolRegistryService {
     if (!this.isToolEnabledForContext(tool, input.context)) {
       throw new ForbiddenException(`Tool disabled for current context: ${input.sourceKind}:${input.sourceId}:${input.toolName}`);
     }
-    return toExecutableToolDefinition(tool, input.context, undefined, this.mcpService, this.runtimeHostPluginDispatchService);
+    return toExecutableToolDefinition(tool, input.context, undefined, this.mcpService, this.pluginDispatch);
   }
 
   private async resolveInternalRegisteredToolExecution(input: {
@@ -590,7 +590,7 @@ function createPluginToolInfo(plugin: RegisteredPluginRecord, source: ToolSource
   return { toolId: `plugin:${plugin.pluginId}:${tool.name}`, name: tool.name, callName: tool.name, description: tool.description, parameters: tool.parameters, enabled, sourceKind: 'plugin' as const, sourceId: plugin.pluginId, sourceLabel: plugin.manifest.name, health: source.health, lastError: source.lastError, lastCheckedAt: source.lastCheckedAt, pluginId: plugin.pluginId, runtimeKind: plugin.manifest.runtime } satisfies ToolInfo;
 }
 
-function toExecutableToolDefinition(entry: ToolInfo, context: PluginCallContext, assistantMessageId: string | undefined, mcpService: McpService, runtimeHostPluginDispatchService: PluginDispatchService): ExecutableToolDefinition {
+function toExecutableToolDefinition(entry: ToolInfo, context: PluginCallContext, assistantMessageId: string | undefined, mcpService: McpService, pluginDispatch: PluginDispatchService): ExecutableToolDefinition {
   const toolContext = assistantMessageId ? { ...context, metadata: { ...(context.metadata ?? {}), assistantMessageId } } : context;
   return {
     availableTool: { callName: entry.callName, description: entry.description, name: entry.name, parameters: entry.parameters, pluginId: entry.pluginId, runtimeKind: entry.runtimeKind, sourceId: entry.sourceId, sourceKind: entry.sourceKind },
@@ -598,7 +598,7 @@ function toExecutableToolDefinition(entry: ToolInfo, context: PluginCallContext,
     description: entry.description,
     execute: async (args) => entry.sourceKind === 'mcp'
       ? mcpService.callTool({ arguments: args, serverName: entry.sourceId, toolName: entry.name })
-      : runtimeHostPluginDispatchService.executeTool({ context: toolContext, params: args as never, pluginId: entry.pluginId ?? entry.sourceId, toolName: entry.name }),
+      : pluginDispatch.executeTool({ context: toolContext, params: args as never, pluginId: entry.pluginId ?? entry.sourceId, toolName: entry.name }),
     parameters: entry.parameters,
     sessionId: context.conversationId,
     wrapExecutionOutput: true,

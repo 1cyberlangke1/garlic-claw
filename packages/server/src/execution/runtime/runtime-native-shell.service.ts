@@ -12,9 +12,9 @@ import {
   readRuntimeNativeShellTimeout,
 } from './runtime-native-shell-options';
 import { RuntimeOneShotShellService } from './runtime-one-shot-shell.service';
-import { toRuntimeHostPath } from './host-path';
+import { toHostPath } from './host-path';
 import {
-  isRuntimeHostAbsoluteShellWorkdir,
+  isAbsoluteShellWorkdir,
   readRuntimeShellToolName,
 } from './runtime-shell-tool-name';
 import { RuntimeSessionEnvironmentService } from './runtime-session-environment.service';
@@ -39,16 +39,16 @@ export class RuntimeNativeShellService implements RuntimeBackend {
     const session = await this.runtimeSessionEnvironmentService.getSessionEnvironment(input.sessionId);
     const toolName = readRuntimeShellToolName('native-shell');
     const rawWorkdir = typeof input.workdir === 'string' ? input.workdir.trim() : '';
-    const cwd = isRuntimeHostAbsoluteShellWorkdir('native-shell', rawWorkdir)
+    const cwd = isAbsoluteShellWorkdir('native-shell', rawWorkdir)
       ? path.resolve(rawWorkdir)
       : resolveRuntimeVisiblePath(
           session.visibleRoot,
           input.workdir,
           `${toolName}.workdir 必须位于 ${session.visibleRoot} 内`,
         );
-    const hostCwd = isRuntimeHostAbsoluteShellWorkdir('native-shell', rawWorkdir)
+    const hostCwd = isAbsoluteShellWorkdir('native-shell', rawWorkdir)
       ? path.resolve(rawWorkdir)
-      : toRuntimeHostPath(session.sessionRoot, session.visibleRoot, cwd);
+      : toHostPath(session.sessionRoot, session.visibleRoot, cwd);
     if (!fs.existsSync(hostCwd)) {
       throw new Error(`${toolName}.workdir 不存在: ${cwd}`);
     }

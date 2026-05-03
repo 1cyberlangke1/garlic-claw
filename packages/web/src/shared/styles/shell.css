@@ -1,0 +1,39 @@
+/* 应用壳层：根背景、主题背景与装饰图案。 */
+html,
+body,
+#app {
+  background:
+    radial-gradient(circle at top right, rgba(103, 199, 207, 0.14), transparent 32%),
+    radial-gradient(circle at bottom left, rgba(240, 198, 118, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(9, 15, 24, 0.98), rgba(8, 13, 21, 0.99));
+  position: relative;
+}
+
+html.light,
+html.light body,
+html.light #app {
+  background:
+    radial-gradient(circle at top right, rgba(8, 145, 178, 0.1), transparent 32%),
+    radial-gradient(circle at bottom left, rgba(217, 119, 6, 0.08), transparent 28%),
+    linear-gradient(180deg, #f8fafc, #f1f5f9);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: linear-gradient(180deg, rgba(255, 255, 255, 0.35), transparent 72%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+html.light body::before {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.2), transparent 72%);
+}

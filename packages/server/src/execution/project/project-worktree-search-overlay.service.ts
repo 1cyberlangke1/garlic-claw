@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { readRuntimeSearchSuggestedReadPath } from '../file/runtime-search-result-report';
-import { toRuntimeHostPath } from '../runtime/host-path';
+import { toHostPath } from '../runtime/host-path';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { ProjectWorktreeRootService } from './project-worktree-root.service';
 
@@ -42,7 +42,7 @@ export class ProjectWorktreeSearchOverlayService {
     label: 'Project Base' | 'Project Next Read',
   ): Promise<string | undefined> {
     const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(sessionId);
-    const hostPath = toRuntimeHostPath(
+    const hostPath = toHostPath(
       sessionEnvironment.sessionRoot,
       sessionEnvironment.visibleRoot,
       virtualPath,

@@ -18,19 +18,19 @@ interface ShortCircuitedAutomationRun extends AutomationExecutionOutcome { actio
 @Injectable()
 export class AutomationExecutionService {
   constructor(
-    @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService,
+    @Inject(PluginDispatchService) private readonly pluginDispatch: PluginDispatchService,
     @Inject(ConversationMessageService) private readonly conversationMessageService: ConversationMessageService,
     private readonly toolRegistryService: ToolRegistryService,
   ) {}
 
   async executeAutomation(automation: RuntimeAutomationRecord): Promise<JsonValue> {
     const plan = createAutomationRunPlan(automation);
-    const prepared = await prepareAutomationRun(plan, this.runtimeHostPluginDispatchService);
+    const prepared = await prepareAutomationRun(plan, this.pluginDispatch);
     if ('action' in prepared) {
       return asJsonValue({ results: prepared.results, status: prepared.status });
     }
     const execution = await executeAutomationActions(prepared, this.conversationMessageService, this.toolRegistryService);
-    return asJsonValue(await settleAutomationRun(prepared, execution, this.runtimeHostPluginDispatchService));
+    return asJsonValue(await settleAutomationRun(prepared, execution, this.pluginDispatch));
   }
 }
 

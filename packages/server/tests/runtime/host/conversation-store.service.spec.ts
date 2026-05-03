@@ -887,8 +887,8 @@ describe('ConversationStoreService', () => {
     process.env[conversationTodosEnvKey] = todoStoragePath;
     const service = new ConversationStoreService();
     const todoService = new ConversationTodoService(service);
-    Object.assign(service as unknown as { runtimeHostConversationTodoService?: ConversationTodoService }, {
-      runtimeHostConversationTodoService: todoService,
+    Object.assign(service as unknown as { conversationTodoService?: ConversationTodoService }, {
+      conversationTodoService: todoService,
     });
     const parentConversationId = (service.createConversation({ title: 'Parent Chat', userId: 'user-1' }) as { id: string }).id;
     const childConversationId = (service.createConversation({
@@ -1151,3 +1151,4 @@ describe('ConversationStoreService', () => {
     });
   });
 });
+
