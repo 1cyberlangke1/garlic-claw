@@ -1,0 +1,88 @@
+/* 全局基础层：reset、基础排版、基础控件与浏览器杂项。 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  width: 100%;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+button:not(.el-button) {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 1.2rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: var(--accent);
+  color: #fff;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+button:not(.el-button):hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+button:not(.el-button):active:not(:disabled) {
+  background: var(--accent);
+}
+
+button:not(.el-button):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.el-input input,
+.el-select input,
+.el-textarea textarea,
+.el-input-number input {
+  width: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  box-shadow: none;
+}
+
+.el-input input:focus,
+.el-select input:focus,
+.el-textarea textarea:focus,
+.el-input-number input:focus {
+  border: none;
+  box-shadow: none;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}

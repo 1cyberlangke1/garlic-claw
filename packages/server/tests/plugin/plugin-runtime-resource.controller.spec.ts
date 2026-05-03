@@ -11,15 +11,15 @@ describe('PluginController runtime resources', () => {
     recordPluginEvent: jest.fn(),
     upsertPlugin: jest.fn(),
   };
-  const runtimeHostConversationRecordService = {
+  const conversationStore = {
     finishPluginConversationSession: jest.fn(),
     listPluginConversationSessions: jest.fn(),
   };
-  const runtimeHostPluginDispatchService = {
+  const pluginDispatch = {
     invokeRoute: jest.fn(),
     listPlugins: jest.fn(),
   };
-  const runtimeHostPluginRuntimeService = {
+  const pluginRuntime = {
     deleteCronJob: jest.fn(),
     listCronJobs: jest.fn(),
     deletePluginStorage: jest.fn(),
@@ -43,25 +43,25 @@ describe('PluginController runtime resources', () => {
     controller = new PluginController(
       pluginRemoteBootstrapService as never,
       pluginPersistenceService as never,
-      runtimeHostConversationRecordService as never,
-      runtimeHostPluginDispatchService as never,
-      runtimeHostPluginRuntimeService as never,
+      conversationStore as never,
+      pluginDispatch as never,
+      pluginRuntime as never,
       runtimePluginGovernanceService as never,
       toolManagementSettingsService as never,
     );
   });
 
   it('delegates storage, cron and session routes to matching runtime owners', async () => {
-    runtimeHostPluginRuntimeService.listPluginStorage.mockReturnValue([
+    pluginRuntime.listPluginStorage.mockReturnValue([
       { key: 'greeting', value: 'hello' },
     ]);
-    runtimeHostPluginRuntimeService.setPluginStorage.mockReturnValue('world');
-    runtimeHostPluginRuntimeService.deletePluginStorage.mockReturnValue(true);
-    runtimeHostPluginRuntimeService.listCronJobs.mockReturnValue([
+    pluginRuntime.setPluginStorage.mockReturnValue('world');
+    pluginRuntime.deletePluginStorage.mockReturnValue(true);
+    pluginRuntime.listCronJobs.mockReturnValue([
       { id: 'cron-job-1', name: 'heartbeat' },
     ]);
-    runtimeHostPluginRuntimeService.deleteCronJob.mockReturnValue(true);
-    runtimeHostConversationRecordService.listPluginConversationSessions.mockReturnValue([
+    pluginRuntime.deleteCronJob.mockReturnValue(true);
+    conversationStore.listPluginConversationSessions.mockReturnValue([
       {
         pluginId: 'builtin.idiom-session',
         conversationId: 'conversation-1',
@@ -73,7 +73,7 @@ describe('PluginController runtime resources', () => {
         historyMessages: [],
       },
     ]);
-    runtimeHostConversationRecordService.finishPluginConversationSession.mockReturnValue(true);
+    conversationStore.finishPluginConversationSession.mockReturnValue(true);
 
     expect(controller.listPluginStorage('builtin.memory', 'greet')).toEqual([
       { key: 'greeting', value: 'hello' },
@@ -97,6 +97,6 @@ describe('PluginController runtime resources', () => {
 
   it('rejects empty storage keys before touching runtime host storage', () => {
     expect(() => controller.deletePluginStorage('builtin.memory', '   ')).toThrow(BadRequestException);
-    expect(runtimeHostPluginRuntimeService.deletePluginStorage).not.toHaveBeenCalled();
+    expect(pluginRuntime.deletePluginStorage).not.toHaveBeenCalled();
   });
 });

@@ -26,12 +26,12 @@ export async function bootstrapHttpApp(): Promise<void> {
   );
   const pluginBootstrapService = app.get(PluginBootstrapService);
   const conversationStore = app.get(ConversationStoreService);
-  const runtimeHostPluginRuntimeService = app.get(PluginRuntimeService);
+  const pluginRuntime = app.get(PluginRuntimeService);
   const runtimePluginGovernanceService = app.get(RuntimePluginGovernanceService);
   const toolManagementSettingsService = app.get(ToolManagementSettingsService);
   pluginBootstrapService.bootstrapBuiltins();
   pluginBootstrapService.bootstrapProjectPlugins((pluginId) => {
-    runtimeHostPluginRuntimeService.deletePluginRuntimeState(pluginId);
+    pluginRuntime.deletePluginRuntimeState(pluginId);
     conversationStore.deletePluginConversationSessions(pluginId);
     runtimePluginGovernanceService.deletePluginRuntimeState(pluginId);
     toolManagementSettingsService.deleteSourceOverrides(`plugin:${pluginId}`);

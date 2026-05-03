@@ -6,7 +6,7 @@ import { UserContextService } from './user-context.service';
 @UseGuards(JwtAuthGuard)
 export class MemoryController {
   constructor(
-    private readonly runtimeHostUserContextService: UserContextService,
+    private readonly userContext: UserContextService,
   ) {}
 
   @Get()
@@ -21,17 +21,17 @@ export class MemoryController {
     const resolvedLimit = readLimit(limit);
 
     if (normalizedQuery) {
-      return this.runtimeHostUserContextService.searchMemoriesByUser(userId, normalizedQuery, resolvedLimit);
+      return this.userContext.searchMemoriesByUser(userId, normalizedQuery, resolvedLimit);
     }
     if (normalizedCategory) {
-      return this.runtimeHostUserContextService.getMemoriesByCategory(userId, normalizedCategory, resolvedLimit);
+      return this.userContext.getMemoriesByCategory(userId, normalizedCategory, resolvedLimit);
     }
-    return this.runtimeHostUserContextService.getRecentMemories(userId, resolvedLimit);
+    return this.userContext.getRecentMemories(userId, resolvedLimit);
   }
 
   @Delete(':id')
   async deleteMemory(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    return this.runtimeHostUserContextService.deleteMemory(id, userId);
+    return this.userContext.deleteMemory(id, userId);
   }
 }
 

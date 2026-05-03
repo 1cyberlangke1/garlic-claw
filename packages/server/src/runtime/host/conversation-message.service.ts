@@ -8,7 +8,7 @@ import { asJsonValue, cloneJsonValue, readJsonValue, readMessageTarget, readOpti
 
 @Injectable()
 export class ConversationMessageService {
-  constructor(private readonly runtimeHostConversationRecordService: ConversationStoreService, @Optional() private readonly runtimeHostPluginDispatchService?: Pick<PluginDispatchService, 'invokeHook' | 'listPlugins'>) {}
+  constructor(private readonly conversationStore: ConversationStoreService, @Optional() private readonly pluginDispatch?: Pick<PluginDispatchService, 'invokeHook' | 'listPlugins'>) {}
 
   private createMessageRecord(input: MessageWriteInput, timestamp: string): JsonObject {
     const message: JsonObject = { content: input.content ?? '', createdAt: timestamp, id: uuidv7(), role: input.role, status: input.status, updatedAt: timestamp };
@@ -21,13 +21,13 @@ export class ConversationMessageService {
   }
 
   createMessage(conversationId: string, input: MessageWriteInput) {
-    const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId);
+    const conversation = this.conversationStore.requireConversation(conversationId);
     const message = this.createMessageRecord(input, new Date().toISOString());
-    return cloneJsonValue(this.runtimeHostConversationRecordService.replaceMessages(conversationId, [...conversation.messages, message]).messages.at(-1) as JsonObject);
+    return cloneJsonValue(this.conversationStore.replaceMessages(conversationId, [...conversation.messages, message]).messages.at(-1) as JsonObject);
   }
 
   async createMessageWithHooks(conversationId: string, input: MessageWriteInput, userId?: string, kernelOverride?: Pick<PluginDispatchService, 'invokeHook' | 'listPlugins'>): Promise<Record<string, unknown>> {
-    const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
+    const conversation = this.conversationStore.requireConversation(conversationId, userId);
     if (input.role === 'display') {
       return this.createMessage(conversation.id, input);
     }
@@ -38,20 +38,20 @@ export class ConversationMessageService {
   }
 
   async deleteMessage(conversationId: string, messageId: string, userId?: string): Promise<JsonValue> {
-    const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
+    const conversation = this.conversationStore.requireConversation(conversationId, userId);
     const message = conversation.messages.find((entry) => entry.id === messageId);
     if (!message) {throw new NotFoundException(`Message not found: ${messageId}`);}
     await this.broadcastMessageDeleted(conversation, message);
-    this.runtimeHostConversationRecordService.replaceMessages(conversationId, conversation.messages.filter((entry) => entry.id !== messageId), userId);
+    this.conversationStore.replaceMessages(conversationId, conversation.messages.filter((entry) => entry.id !== messageId), userId);
     return { success: true };
   }
 
-  readConversationRevision(conversationId: string): string | null { return this.runtimeHostConversationRecordService.readConversationRevision(conversationId); }
+  readConversationRevision(conversationId: string): string | null { return this.conversationStore.readConversationRevision(conversationId); }
 
   async sendMessage(context: PluginCallContext, params: JsonObject): Promise<JsonValue> {
     const target = readMessageTarget(params.target);
     const conversationId = target?.id ?? requireContextField(context, 'conversationId');
-    const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, context.userId);
+    const conversation = this.conversationStore.requireConversation(conversationId, context.userId);
     const content = readOptionalString(params, 'content');
     const parts = readJsonValue(params.parts);
     if (!content && parts === null) {throw new BadRequestException('message.send requires content or parts');}
@@ -62,17 +62,17 @@ export class ConversationMessageService {
   }
 
   async updateMessage(conversationId: string, messageId: string, dto: Pick<MessagePatch, 'content' | 'parts'>, userId?: string): Promise<JsonValue> {
-    const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
+    const conversation = this.conversationStore.requireConversation(conversationId, userId);
     const message = conversation.messages.find((entry) => entry.id === messageId);
     if (!message) {throw new NotFoundException(`Message not found: ${messageId}`);}
     return asJsonValue(serializeConversationMessage(this.writeMessage(conversationId, messageId, await this.applyMessageUpdatedHooks(conversation, message, { ...(typeof dto.content === 'string' ? { content: dto.content } : {}), ...(dto.parts ? { parts: dto.parts } : {}) }), userId) as JsonObject));
   }
 
   writeMessage(conversationId: string, messageId: string, patch: MessagePatch, userId?: string): Record<string, unknown> {
-    const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
+    const conversation = this.conversationStore.requireConversation(conversationId, userId);
     const messages = conversation.messages.map((entry) => entry.id === messageId ? this.applyMessagePatch(entry, patch) : entry);
     if (messages.every((entry) => entry.id !== messageId)) {throw new NotFoundException(`Message not found: ${messageId}`);}
-    const updatedConversation = this.runtimeHostConversationRecordService.replaceMessages(conversationId, messages, userId);
+    const updatedConversation = this.conversationStore.replaceMessages(conversationId, messages, userId);
     const message = updatedConversation.messages.find((entry) => entry.id === messageId);
     if (!message) {throw new NotFoundException(`Message not found: ${messageId}`);}
     return cloneJsonValue(message);
@@ -94,7 +94,7 @@ export class ConversationMessageService {
   }
 
   private async applyMessageCreatedHooks(conversation: { activePersonaId?: string; id: string; title: string; userId: string }, message: ConversationMessageWriteInput, kernelOverride?: Pick<PluginDispatchService, 'invokeHook' | 'listPlugins'>): Promise<ConversationMessageWriteInput> {
-    const kernel = kernelOverride ?? this.runtimeHostPluginDispatchService;
+    const kernel = kernelOverride ?? this.pluginDispatch;
     if (!kernel) {return message;}
     return applyMutatingDispatchableHooks({
       applyMutation: (nextMessage, mutation) => applyMessageHookMutation(nextMessage, mutation, true),
@@ -114,7 +114,7 @@ export class ConversationMessageService {
   private async applyMessageUpdatedHooks(conversation: { activePersonaId?: string; id: string; userId: string }, message: JsonObject, patch: Pick<MessagePatch, 'content' | 'parts'>): Promise<MessagePatch> {
     const currentMessage = readStoredHookMessage(message);
     const nextMessage = { ...currentMessage, content: typeof patch.content === 'string' ? patch.content : currentMessage.content, parts: patch.parts ?? currentMessage.parts };
-    const kernel = this.runtimeHostPluginDispatchService;
+    const kernel = this.pluginDispatch;
     return toMessagePatch(!kernel ? nextMessage : await applyMutatingDispatchableHooks({
       applyMutation: (candidate, mutation) => applyMessageHookMutation(candidate, mutation, false),
       hookName: 'message:updated',
@@ -126,7 +126,7 @@ export class ConversationMessageService {
   }
 
   private async broadcastMessageDeleted(conversation: { activePersonaId?: string; id: string; userId: string }, message: JsonObject): Promise<void> {
-    const kernel = this.runtimeHostPluginDispatchService;
+    const kernel = this.pluginDispatch;
     if (!kernel) {return;}
     const hookMessage = readStoredHookMessage(message);
     const context = createHookContext(conversation, hookMessage);

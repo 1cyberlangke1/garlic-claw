@@ -19,7 +19,7 @@ const TODO_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
 
 @Injectable()
 export class TodoToolService {
-  constructor(private readonly runtimeHostConversationTodoService: ConversationTodoService) {}
+  constructor(private readonly conversationTodoService: ConversationTodoService) {}
 
   getToolName(): string {
     return 'todowrite';
@@ -51,7 +51,7 @@ export class TodoToolService {
       throw new BadRequestException('todowrite 工具只能在 session 上下文中使用');
     }
     const normalizedTodos = normalizeTodoItems(input.todos);
-    this.runtimeHostConversationTodoService.replaceSessionTodo(
+    this.conversationTodoService.replaceSessionTodo(
       input.sessionId,
       normalizedTodos,
       input.userId,

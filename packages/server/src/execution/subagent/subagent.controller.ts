@@ -4,27 +4,27 @@ import { SubagentRunnerService } from '../../runtime/host/subagent-runner.servic
 
 @Controller('subagents')
 export class SubagentController {
-  constructor(private readonly runtimeHostSubagentRunnerService: SubagentRunnerService) {}
+  constructor(private readonly subagentRunner: SubagentRunnerService) {}
 
   @Get('overview')
   listOverview(): PluginSubagentOverview {
-    return this.runtimeHostSubagentRunnerService.listOverview();
+    return this.subagentRunner.listOverview();
   }
 
   @Get('types')
   listTypes(): PluginSubagentTypeSummary[] {
-    return this.runtimeHostSubagentRunnerService.listTypes();
+    return this.subagentRunner.listTypes();
   }
 
   @Get(':conversationId')
   getSubagent(@Param('conversationId') conversationId: string): PluginSubagentDetail {
-    return this.runtimeHostSubagentRunnerService.getSubagentOrThrow(conversationId);
+    return this.subagentRunner.getSubagentOrThrow(conversationId);
   }
 
   @Post(':conversationId/close')
   async closeSubagent(@Param('conversationId') conversationId: string) {
-    const subagent = this.runtimeHostSubagentRunnerService.getSubagentOrThrow(conversationId);
-    await this.runtimeHostSubagentRunnerService.closeSubagent(subagent.pluginId, { conversationId });
-    return this.runtimeHostSubagentRunnerService.getSubagentOrThrow(conversationId);
+    const subagent = this.subagentRunner.getSubagentOrThrow(conversationId);
+    await this.subagentRunner.closeSubagent(subagent.pluginId, { conversationId });
+    return this.subagentRunner.getSubagentOrThrow(conversationId);
   }
 }

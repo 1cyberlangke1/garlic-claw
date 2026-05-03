@@ -41,7 +41,7 @@ interface PluginEventQueryInput { limit?: string; level?: string; type?: string;
 
 @Controller()
 export class PluginController {
-  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly pluginPersistenceService: PluginPersistenceService, private readonly runtimeHostConversationRecordService: ConversationStoreService, @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService, private readonly runtimeHostPluginRuntimeService: PluginRuntimeService, private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService, private readonly toolManagementSettingsService: ToolManagementSettingsService) {}
+  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly pluginPersistenceService: PluginPersistenceService, private readonly conversationStore: ConversationStoreService, @Inject(PluginDispatchService) private readonly pluginDispatch: PluginDispatchService, private readonly pluginRuntime: PluginRuntimeService, private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService, private readonly toolManagementSettingsService: ToolManagementSettingsService) {}
 
   @Get('plugins')
   listPlugins() { return this.runtimePluginGovernanceService.listPlugins().map((plugin) => buildPluginInfo(plugin, this.runtimePluginGovernanceService.listSupportedActions(plugin.pluginId))); }
@@ -76,8 +76,8 @@ export class PluginController {
   @Delete('plugins/:pluginId')
   deletePlugin(@Param('pluginId') pluginId: string) {
     const deleted = this.pluginPersistenceService.deletePlugin(pluginId);
-    this.runtimeHostPluginRuntimeService.deletePluginRuntimeState(pluginId);
-    this.runtimeHostConversationRecordService.deletePluginConversationSessions(pluginId);
+    this.pluginRuntime.deletePluginRuntimeState(pluginId);
+    this.conversationStore.deletePluginConversationSessions(pluginId);
     this.runtimePluginGovernanceService.deletePluginRuntimeState(pluginId);
     this.toolManagementSettingsService.deleteSourceOverrides(`plugin:${pluginId}`);
     return deleted;
@@ -136,7 +136,7 @@ export class PluginController {
     if (actionName === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadLocal(pluginId)) {
       const reloaded = this.pluginBootstrapService.reloadLocal(pluginId);
       if (reloaded.removed) {
-        cleanupDetachedLocalPluginState(pluginId, this.runtimeHostPluginRuntimeService, this.runtimeHostConversationRecordService, this.runtimePluginGovernanceService, this.toolManagementSettingsService);
+        cleanupDetachedLocalPluginState(pluginId, this.pluginRuntime, this.conversationStore, this.runtimePluginGovernanceService, this.toolManagementSettingsService);
         detachedAfterAction = true;
         result = { accepted: true, action: actionName, pluginId, message: '本地插件目录已删除，已清理旧记录' };
       } else {
@@ -156,11 +156,11 @@ export class PluginController {
   }
 
   @Get('plugins/:pluginId/storage')
-  listPluginStorage(@Param('pluginId') pluginId: string, @Query('prefix') prefix?: string) { return this.runtimeHostPluginRuntimeService.listPluginStorage(pluginId, prefix?.trim() || undefined); }
+  listPluginStorage(@Param('pluginId') pluginId: string, @Query('prefix') prefix?: string) { return this.pluginRuntime.listPluginStorage(pluginId, prefix?.trim() || undefined); }
 
   @Put('plugins/:pluginId/storage')
   setPluginStorage(@Param('pluginId') pluginId: string, @Body() dto: UpdatePluginStorageDto) {
-    const entry = { key: dto.key, value: this.runtimeHostPluginRuntimeService.setPluginStorage(pluginId, dto.key, dto.value) };
+    const entry = { key: dto.key, value: this.pluginRuntime.setPluginStorage(pluginId, dto.key, dto.value) };
     this.recordPluginEvent(pluginId, createPluginStorageUpdatedEvent(dto.key));
     return entry;
   }
@@ -169,7 +169,7 @@ export class PluginController {
   deletePluginStorage(@Param('pluginId') pluginId: string, @Query('key') key?: string) {
     if (!key?.trim()) {throw new BadRequestException('key 必填');}
     const normalizedKey = key.trim();
-    const deleted = this.runtimeHostPluginRuntimeService.deletePluginStorage(pluginId, normalizedKey);
+    const deleted = this.pluginRuntime.deletePluginStorage(pluginId, normalizedKey);
     if (deleted) {
       this.recordPluginEvent(pluginId, createPluginStorageDeletedEvent(normalizedKey));
     }
@@ -177,16 +177,16 @@ export class PluginController {
   }
 
   @Get('plugins/:pluginId/crons')
-  listPluginCrons(@Param('pluginId') pluginId: string) { return this.runtimeHostPluginRuntimeService.listCronJobs(pluginId); }
+  listPluginCrons(@Param('pluginId') pluginId: string) { return this.pluginRuntime.listCronJobs(pluginId); }
 
   @Delete('plugins/:pluginId/crons/:jobId')
-  deletePluginCron(@Param('pluginId') pluginId: string, @Param('jobId') jobId: string) { return this.runtimeHostPluginRuntimeService.deleteCronJob(pluginId, { jobId }) as boolean; }
+  deletePluginCron(@Param('pluginId') pluginId: string, @Param('jobId') jobId: string) { return this.pluginRuntime.deleteCronJob(pluginId, { jobId }) as boolean; }
 
   @Get('plugins/:pluginId/sessions')
-  listPluginConversationSessions(@Param('pluginId') pluginId: string) { return this.runtimeHostConversationRecordService.listPluginConversationSessions(pluginId); }
+  listPluginConversationSessions(@Param('pluginId') pluginId: string) { return this.conversationStore.listPluginConversationSessions(pluginId); }
 
   @Delete('plugins/:pluginId/sessions/:conversationId')
-  finishPluginConversationSession(@Param('pluginId') pluginId: string, @Param('conversationId') conversationId: string) { return this.runtimeHostConversationRecordService.finishPluginConversationSession(pluginId, conversationId); }
+  finishPluginConversationSession(@Param('pluginId') pluginId: string, @Param('conversationId') conversationId: string) { return this.conversationStore.finishPluginConversationSession(pluginId, conversationId); }
 
   private recordPluginEvent(inputPluginId: string, input: Omit<LogEventPayload, 'level'> & { level?: LogEventPayload['level'] }): void {
     this.pluginPersistenceService.recordPluginEvent(inputPluginId, { level: input.level ?? 'info', message: input.message, ...(input.metadata ? { metadata: input.metadata } : {}), type: input.type });
@@ -196,7 +196,7 @@ export class PluginController {
   @UseGuards(JwtAuthGuard)
   async handleRoute(@Param('pluginId') pluginId: string, @Query() query: Record<string, unknown>, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<JsonValue> {
     const route = readPluginRouteInvocation(req, query);
-    const result = await this.runtimeHostPluginDispatchService.invokeRoute({ pluginId, request: route.request, context: route.context });
+    const result = await this.pluginDispatch.invokeRoute({ pluginId, request: route.request, context: route.context });
     return writePluginRouteResponse(res, result);
   }
 }
@@ -208,13 +208,13 @@ function readPluginActionName(action: string): PluginActionName {
 
 function cleanupDetachedLocalPluginState(
   pluginId: string,
-  runtimeHostPluginRuntimeService: PluginRuntimeService,
-  runtimeHostConversationRecordService: ConversationStoreService,
+  pluginRuntime: PluginRuntimeService,
+  conversationStore: ConversationStoreService,
   runtimePluginGovernanceService: RuntimePluginGovernanceService,
   toolManagementSettingsService: ToolManagementSettingsService,
 ): void {
-  runtimeHostPluginRuntimeService.deletePluginRuntimeState(pluginId);
-  runtimeHostConversationRecordService.deletePluginConversationSessions(pluginId);
+  pluginRuntime.deletePluginRuntimeState(pluginId);
+  conversationStore.deletePluginConversationSessions(pluginId);
   runtimePluginGovernanceService.deletePluginRuntimeState(pluginId);
   toolManagementSettingsService.deleteSourceOverrides(`plugin:${pluginId}`);
 }

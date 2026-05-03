@@ -27,7 +27,7 @@ export function isRuntimeShellToolAlias(
   );
 }
 
-export function isRuntimeHostAbsoluteShellWorkdir(
+export function isAbsoluteShellWorkdir(
   backendKind: RuntimeBackendKind | undefined,
   workdir: string,
 ): boolean {

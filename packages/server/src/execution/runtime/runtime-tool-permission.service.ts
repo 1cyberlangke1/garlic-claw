@@ -27,7 +27,7 @@ export class RuntimeToolPermissionService {
   private readonly listeners = new Map<string, Set<(event: RuntimePermissionEvent) => void>>();
 
   constructor(
-    @Optional() private readonly runtimeHostConversationRecordService?: ConversationStoreService,
+    @Optional() private readonly conversationStore?: ConversationStoreService,
     @Optional() private readonly runtimeToolsSettingsService?: RuntimeToolsSettingsService,
   ) {}
 
@@ -109,13 +109,13 @@ export class RuntimeToolPermissionService {
     const approvals = this.readApprovalSet(conversationId);
     approvals.add(approvalKey);
     this.approvals.set(conversationId, approvals);
-    this.runtimeHostConversationRecordService?.rememberRuntimePermissionApproval(conversationId, approvalKey);
+    this.conversationStore?.rememberRuntimePermissionApproval(conversationId, approvalKey);
   }
 
   private readApprovalSet(conversationId: string): Set<string> {
     let approvals = this.approvals.get(conversationId);
     if (!approvals) {
-      approvals = new Set(this.runtimeHostConversationRecordService?.readRuntimePermissionApprovals(conversationId) ?? []);
+      approvals = new Set(this.conversationStore?.readRuntimePermissionApprovals(conversationId) ?? []);
       this.approvals.set(conversationId, approvals);
     }
     return approvals;
@@ -126,7 +126,7 @@ export class RuntimeToolPermissionService {
       return false;
     }
     try {
-      return this.runtimeHostConversationRecordService?.requireConversation(conversationId).kind === 'subagent';
+      return this.conversationStore?.requireConversation(conversationId).kind === 'subagent';
     } catch {
       return false;
     }

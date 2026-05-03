@@ -504,7 +504,7 @@ function createService(options?: { projectPluginRegistryService?: unknown }) {
     } as never,
     conversationStore,
   );
-  const runtimeHostAutomationService = new AutomationService(
+  const automationService = new AutomationService(
     new AutomationExecutionService(
       {
         executeTool: jest.fn(),
@@ -526,23 +526,23 @@ function createService(options?: { projectPluginRegistryService?: unknown }) {
     pluginBootstrapService,
     runtimeGatewayRemoteTransportService,
   );
-  const runtimeHostPluginRuntimeService = new PluginRuntimeService();
-  const runtimeHostService = new PluginHostService(
+  const pluginRuntime = new PluginRuntimeService();
+  const pluginHost = new PluginHostService(
     pluginBootstrapService,
-    runtimeHostAutomationService,
+    automationService,
     conversationMessages,
     conversationStore,
     aiModelExecutionService as never,
     aiManagementService,
     new KnowledgeReaderService(),
     pluginDispatch,
-    runtimeHostPluginRuntimeService,
+    pluginRuntime,
     {} as never,
     subagentRunner,
     new UserContextService(),
     new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), conversationStore),
   );
-  runtimeHostService.onModuleInit();
+  pluginHost.onModuleInit();
   return {
     builtinPluginRegistryService,
     pluginBootstrapService,
@@ -550,7 +550,9 @@ function createService(options?: { projectPluginRegistryService?: unknown }) {
     runtimeGatewayRemoteTransportService,
     conversationStore,
     pluginDispatch,
-    runtimeHostPluginRuntimeService,
+    pluginRuntime,
     service: runtimePluginGovernanceService,
   };
 }
+
+

@@ -9,7 +9,7 @@ import { RuntimeFilesystemPostWriteService } from '../runtime/runtime-filesystem
 import { RuntimeMountedWorkspaceFileSystem } from '../runtime/runtime-mounted-workspace-file-system';
 import type { RuntimeSessionEnvironment } from '../runtime/runtime-session-environment.types';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
-import { toRuntimeHostPath } from '../runtime/host-path';
+import { toHostPath } from '../runtime/host-path';
 import { joinRuntimeVisiblePath, normalizeRuntimeVisiblePath, resolveRuntimeVisiblePath } from '../runtime/runtime-visible-path';
 import { buildRuntimeFilesystemDiff } from './runtime-file-diff';
 import { collectRuntimeFileTreeEntries, containsRuntimeBinarySample, readRuntimeDirectoryEntryNames, readRuntimePathType } from './runtime-file-tree';
@@ -26,14 +26,14 @@ const PLAIN_TEXT_MIME_EXTENSIONS = new Set(['.txt', '.log', '.js', '.jsx', '.ts'
 const MIME_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = { '.avif': 'image/avif', '.bmp': 'image/bmp', '.gif': 'image/gif', '.jpeg': 'image/jpeg', '.jpg': 'image/jpeg', '.json': 'application/json', '.md': 'text/markdown', '.pdf': 'application/pdf', '.png': 'image/png', '.svg': 'image/svg+xml', '.svgz': 'image/svg+xml', '.webp': 'image/webp' };
 const BINARY_PATH_EXTENSIONS = new Set(['.zip', '.tar', '.gz', '.exe', '.dll', '.so', '.class', '.jar', '.war', '.7z', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp', '.bin', '.dat', '.obj', '.o', '.a', '.lib', '.wasm', '.pyc', '.pyo']);
 
-type RuntimeHostFilesystemResolveMode = 'directory' | 'existing' | 'file' | 'missing' | 'writable-file';
-interface RuntimeHostFilesystemResolvedPath extends RuntimeFilesystemResolvedPath { hostPath: string; }
-interface RuntimeHostFilesystemFileEntry extends RuntimeFilesystemFileEntry { hostPath: string; }
-interface RuntimeHostFilesystemReadMetadata { mimeType: string; nonTextType?: 'image' | 'pdf' | 'binary'; size: number; }
-interface RuntimeHostFilesystemTextSource extends RuntimeHostFilesystemReadMetadata { content: string; normalizedContent: string; }
+type HostFilesystemResolveMode = 'directory' | 'existing' | 'file' | 'missing' | 'writable-file';
+interface HostFilesystemResolvedPath extends RuntimeFilesystemResolvedPath { hostPath: string; }
+interface HostFilesystemFileEntry extends RuntimeFilesystemFileEntry { hostPath: string; }
+interface HostFilesystemReadMetadata { mimeType: string; nonTextType?: 'image' | 'pdf' | 'binary'; size: number; }
+interface HostFilesystemTextSource extends HostFilesystemReadMetadata { content: string; normalizedContent: string; }
 
 @Injectable()
-export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBackend {
+export class HostFilesystemBackendService implements RuntimeFilesystemBackend {
   constructor(
     private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
     @Optional() private readonly runtimeFilesystemPostWriteService?: RuntimeFilesystemPostWriteService,
@@ -114,9 +114,9 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     let partial = listed.partial;
     for (const file of listed.files) {
       if (input.include && !matchesFilesystemGlobPattern(input.include, toFilesystemRelativePath(listed.basePath, file.virtualPath))) {continue;}
-      let source: RuntimeHostFilesystemTextSource;
+      let source: HostFilesystemTextSource;
       try {
-        source = await readRuntimeHostFilesystemTextSource(file);
+        source = await readHostFilesystemTextSource(file);
       } catch (error) {
         if (error instanceof BadRequestException && error.message.includes('暂不支持读取二进制文件')) {
           pushRuntimeSkippedEntry(skippedEntries, file.virtualPath, 'binary');
@@ -146,10 +146,10 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     };
   }
 
-  async resolvePath(sessionId: string, inputPath?: string): Promise<RuntimeHostFilesystemResolvedPath> {
+  async resolvePath(sessionId: string, inputPath?: string): Promise<HostFilesystemResolvedPath> {
     const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(sessionId);
     const virtualPath = resolveRuntimeVisiblePath(sessionEnvironment.visibleRoot, inputPath);
-    const hostPath = toRuntimeHostPath(sessionEnvironment.sessionRoot, sessionEnvironment.visibleRoot, virtualPath);
+    const hostPath = toHostPath(sessionEnvironment.sessionRoot, sessionEnvironment.visibleRoot, virtualPath);
     const type = await readRuntimePathType(hostPath);
     return { exists: type !== 'missing', hostPath, type, virtualPath };
   }
@@ -175,7 +175,7 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
       const visibleEntries = entries.slice(startIndex, startIndex + input.limit);
       return { entries: visibleEntries, limit: input.limit, offset: input.offset, path: target.virtualPath, totalEntries: entries.length, truncated: startIndex + visibleEntries.length < entries.length, type: 'directory' };
     }
-    const metadata = await readRuntimeHostFilesystemReadMetadata(target);
+    const metadata = await readHostFilesystemReadMetadata(target);
     if (metadata.nonTextType) {return { mimeType: metadata.mimeType, path: target.virtualPath, size: metadata.size, type: metadata.nonTextType };}
     const file = await readFilesystemTextRange(target.hostPath, { limit: input.limit, maxBytes: MAX_READ_BYTES, maxLineLength: input.maxLineLength, offset: input.offset });
     return { byteLimited: file.byteLimited, limit: input.limit, lines: file.lines, mimeType: metadata.mimeType, offset: input.offset, path: target.virtualPath, totalBytes: metadata.size, totalLines: file.totalLines, truncated: file.truncated, type: 'file' };
@@ -183,19 +183,19 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
 
   async readTextFile(sessionId: string, inputPath?: string): Promise<{ content: string; path: string }> {
     const target = await this.resolveValidatedPath(sessionId, inputPath, { mode: 'file' });
-    return { content: (await readRuntimeHostFilesystemTextSource(target)).normalizedContent, path: target.virtualPath };
+    return { content: (await readHostFilesystemTextSource(target)).normalizedContent, path: target.virtualPath };
   }
 
   async listFiles(sessionId: string, inputPath?: string, options?: { nextStepHint?: string }): Promise<{
     basePath: string;
-    files: RuntimeHostFilesystemFileEntry[];
+    files: HostFilesystemFileEntry[];
     partial: boolean;
     skippedEntries: RuntimeFilesystemSkippedEntry[];
     skippedPaths: string[];
   }> {
     const target = await this.resolveValidatedPath(sessionId, inputPath, { mode: 'existing', ...options });
     if (target.type === 'file') {return { basePath: target.virtualPath, files: [{ hostPath: target.hostPath, virtualPath: target.virtualPath }], partial: false, skippedEntries: [], skippedPaths: [] };}
-    const files: RuntimeHostFilesystemFileEntry[] = [], skippedEntries: RuntimeFilesystemSkippedEntry[] = [], skippedPaths: string[] = [];
+    const files: HostFilesystemFileEntry[] = [], skippedEntries: RuntimeFilesystemSkippedEntry[] = [], skippedPaths: string[] = [];
     let partial = false;
     await collectRuntimeFileTreeEntries({
       absolutePath: target.hostPath,
@@ -221,7 +221,7 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
   async editTextFile(sessionId: string, input: { filePath: string; newString: string; oldString: string; replaceAll?: boolean }): Promise<RuntimeFilesystemEditResult> {
     if (input.oldString === input.newString) {throw new BadRequestException('edit.oldString 和 edit.newString 不能完全相同');}
     const target = await this.resolveValidatedPath(sessionId, input.filePath, { mode: input.oldString === '' ? 'writable-file' : 'file' });
-    const previousContent = target.exists ? (await readRuntimeHostFilesystemTextSource(target)).content : '';
+    const previousContent = target.exists ? (await readHostFilesystemTextSource(target)).content : '';
     const replaced = input.oldString === '' ? { content: input.newString, occurrences: 1, strategy: 'empty-old-string' as const } : replaceRuntimeText(previousContent, input.oldString, input.newString, input.replaceAll);
     const nextContent = input.oldString === '' && !previousContent ? replaced.content : normalizeWorkspaceLineEnding(replaced.content, detectWorkspaceLineEnding(previousContent));
     const writeResult = await this.writeResolvedTextFile(sessionId, target, nextContent, previousContent);
@@ -229,9 +229,9 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     return { diff: writeResult.diff, occurrences: replaced.occurrences, postWrite: writeResult.postWrite, path: writeResult.path, strategy: replaced.strategy };
   }
 
-  private async writeResolvedTextFile(sessionId: string, target: RuntimeHostFilesystemResolvedPath, content: string, previousContent?: string | null): Promise<RuntimeFilesystemWriteResult> {
+  private async writeResolvedTextFile(sessionId: string, target: HostFilesystemResolvedPath, content: string, previousContent?: string | null): Promise<RuntimeFilesystemWriteResult> {
     const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(sessionId);
-    const diffBase = previousContent ?? await readRuntimeHostFilesystemDiffBase(target);
+    const diffBase = previousContent ?? await readFileDiffBase(target);
     const processed = this.runtimeFilesystemPostWriteService?.processTextFile({ content, hostPath: target.hostPath, path: target.virtualPath, sessionRoot: sessionEnvironment.sessionRoot, visibleRoot: sessionEnvironment.visibleRoot }) ?? { content, postWrite: { diagnostics: [], formatting: null } };
     await fsPromises.mkdir(path.dirname(target.hostPath), { recursive: true });
     await fsPromises.writeFile(target.hostPath, processed.content, 'utf8');
@@ -249,7 +249,7 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     sessionId: string,
     fromPath: string,
     toPath: string,
-    transfer: (source: RuntimeHostFilesystemResolvedPath, target: RuntimeHostFilesystemResolvedPath) => Promise<void>,
+    transfer: (source: HostFilesystemResolvedPath, target: HostFilesystemResolvedPath) => Promise<void>,
   ): Promise<RuntimeFilesystemTransferResult> {
     const source = await this.resolveValidatedPath(sessionId, fromPath, { mode: 'existing' });
     const target = await this.resolveValidatedPath(sessionId, toPath, { mode: 'missing' });
@@ -261,8 +261,8 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
   private async resolveValidatedPath(
     sessionId: string,
     inputPath: string | undefined,
-    options: { label?: string; mode: RuntimeHostFilesystemResolveMode; nextStepHint?: string },
-  ): Promise<RuntimeHostFilesystemResolvedPath> {
+    options: { label?: string; mode: HostFilesystemResolveMode; nextStepHint?: string },
+  ): Promise<HostFilesystemResolvedPath> {
     const target = await this.resolvePath(sessionId, inputPath);
     if (options.mode === 'missing') {
       if (target.exists) {throw new BadRequestException(`目标路径已存在: ${target.virtualPath}`);}
@@ -320,7 +320,7 @@ async function readFilesystemTextRange(hostPath: string, input: { limit: number;
 
 async function readNearbyVisiblePaths(sessionEnvironment: RuntimeSessionEnvironment, virtualPath: string): Promise<string[]> {
   const directoryVirtualPath = path.posix.dirname(virtualPath) === '.' ? sessionEnvironment.visibleRoot : path.posix.dirname(virtualPath);
-  const directoryHostPath = toRuntimeHostPath(sessionEnvironment.sessionRoot, sessionEnvironment.visibleRoot, directoryVirtualPath);
+  const directoryHostPath = toHostPath(sessionEnvironment.sessionRoot, sessionEnvironment.visibleRoot, directoryVirtualPath);
   let entries: fs.Dirent[];
   try { entries = await fsPromises.readdir(directoryHostPath, { withFileTypes: true }); } catch { return []; }
   const missingName = path.posix.basename(virtualPath).toLowerCase();
@@ -349,16 +349,16 @@ function splitFilesystemTextLines(content: string): string[] { return !content.l
 function truncateFilesystemLine(line: string, maxLineLength: number): string { return line.length > maxLineLength ? `${line.slice(0, maxLineLength)}${MAX_READ_LINE_SUFFIX}` : line; }
 function normalizeWorkspaceLineEnding(content: string, lineEnding: '\n' | '\r\n'): string { return lineEnding === '\n' ? content.replace(/\r\n/g, '\n') : content.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'); }
 
-async function readRuntimeHostFilesystemDiffBase(target: RuntimeHostFilesystemResolvedPath): Promise<string | null> { if (!target.exists || target.type !== 'file') {return '';} const metadata = await readRuntimeHostFilesystemReadMetadata(target); return metadata.nonTextType ? null : fsPromises.readFile(target.hostPath, 'utf8'); }
+async function readFileDiffBase(target: HostFilesystemResolvedPath): Promise<string | null> { if (!target.exists || target.type !== 'file') {return '';} const metadata = await readHostFilesystemReadMetadata(target); return metadata.nonTextType ? null : fsPromises.readFile(target.hostPath, 'utf8'); }
 
-async function readRuntimeHostFilesystemTextSource(target: Pick<RuntimeHostFilesystemResolvedPath, 'hostPath' | 'virtualPath'>): Promise<RuntimeHostFilesystemTextSource> {
-  const metadata = await readRuntimeHostFilesystemReadMetadata(target);
+async function readHostFilesystemTextSource(target: Pick<HostFilesystemResolvedPath, 'hostPath' | 'virtualPath'>): Promise<HostFilesystemTextSource> {
+  const metadata = await readHostFilesystemReadMetadata(target);
   if (metadata.nonTextType) {throw new BadRequestException(`暂不支持读取二进制文件: ${target.virtualPath} (${metadata.mimeType})`);}
   const content = await fsPromises.readFile(target.hostPath, 'utf8');
   return { ...metadata, content, normalizedContent: content.replace(/\r\n/g, '\n') };
 }
 
-async function readRuntimeHostFilesystemReadMetadata(target: Pick<RuntimeHostFilesystemResolvedPath, 'hostPath' | 'virtualPath'>): Promise<RuntimeHostFilesystemReadMetadata> {
+async function readHostFilesystemReadMetadata(target: Pick<HostFilesystemResolvedPath, 'hostPath' | 'virtualPath'>): Promise<HostFilesystemReadMetadata> {
   const stat = await fsPromises.stat(target.hostPath);
   const extension = path.extname(target.virtualPath).toLowerCase();
   const mimeType = MIME_TYPE_BY_EXTENSION[extension] ?? (PLAIN_TEXT_MIME_EXTENSIONS.has(extension) ? 'text/plain' : 'application/octet-stream');

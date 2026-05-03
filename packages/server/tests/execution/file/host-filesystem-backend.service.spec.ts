@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
+import { HostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
 import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 
-describe('RuntimeHostFilesystemBackendService', () => {
+describe('HostFilesystemBackendService', () => {
   const originalWorkspaceRoot = process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
   const runtimeWorkspaceRoots: string[] = [];
 
@@ -31,7 +31,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-1');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -111,7 +111,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-2');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'nested'), { recursive: true });
@@ -183,7 +183,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-partial');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'private'), { recursive: true });
@@ -255,7 +255,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-glob-suggest');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -285,7 +285,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-grep-suggest');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -317,7 +317,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-crlf');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -360,7 +360,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-grep-total');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -406,7 +406,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-3');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -459,7 +459,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-3b');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -493,7 +493,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-4');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -561,7 +561,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-5');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -592,7 +592,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-6');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -654,7 +654,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-empty-edit');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -692,7 +692,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-line-trimmed');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -759,7 +759,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-empty-edit-crlf');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
@@ -802,7 +802,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(
+    const service = new HostFilesystemBackendService(
       runtimeSessionEnvironmentService,
       {
         processTextFile: jest.fn(({
@@ -907,7 +907,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const service = new HostFilesystemBackendService(runtimeSessionEnvironmentService);
     const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-edit-ambiguous');
 
     fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
