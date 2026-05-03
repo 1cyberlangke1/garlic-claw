@@ -1,12 +1,12 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../app/app.module';
-import { BootstrapUserService } from '../auth/bootstrap-user.service';
-import { ToolManagementSettingsService } from '../execution/tool/tool-management-settings.service';
-import { PluginBootstrapService } from '../plugin/bootstrap/plugin-bootstrap.service';
-import { ConversationStoreService } from '../runtime/host/conversation-store.service';
-import { PluginRuntimeService } from '../runtime/host/plugin-runtime.service';
-import { RuntimePluginGovernanceService } from '../runtime/kernel/runtime-plugin-governance.service';
+import { BootstrapUserService } from '../modules/auth/bootstrap-user.service';
+import { ToolManagementSettingsService } from '../modules/execution/tool/tool-management-settings.service';
+import { PluginBootstrapService } from '../modules/plugin/bootstrap/plugin-bootstrap.service';
+import { ConversationStoreService } from '../modules/runtime/host/conversation-store.service';
+import { PluginRuntimeService } from '../modules/runtime/host/plugin-runtime.service';
+import { RuntimePluginGovernanceService } from '../modules/runtime/kernel/runtime-plugin-governance.service';
 
 const DEFAULT_GLOBAL_PREFIX = 'api';
 const DEFAULT_HTTP_PORT = 23330;

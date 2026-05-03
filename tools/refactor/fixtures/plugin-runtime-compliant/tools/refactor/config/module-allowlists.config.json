@@ -3,7 +3,7 @@
     "plugin-runtime": {
       "moduleFiles": [
         {
-          "file": "packages/server/src/plugin/plugin.module.ts",
+          "file": "packages/server/src/modules/plugin/plugin.module.ts",
           "allowedImports": [
             "JwtModule",
             "AuthModule",
