@@ -93,3 +93,8 @@ html.dark {
   --el-disabled-text-color: #6e84a0;
   --el-disabled-border-color: rgba(133, 163, 199, 0.12);
 }
+
+/* 让布局容器拥有按钮间距，而不是 Element Plus 同级边距。 */
+.el-button + .el-button {
+  margin-left: 0;
+}

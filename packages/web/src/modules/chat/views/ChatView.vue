@@ -2,10 +2,10 @@
   <div class="chat-view">
     <template v-if="chat.currentConversationId">
       <div v-if="subagentTabs.length" class="chat-tabs">
-        <button class="chat-tab" :class="{ active: activeTab === 'main' }" @click="switchToMainConversation">对话</button>
-        <button v-for="s in subagentTabs" :key="s.id" class="chat-tab" :class="{ active: activeTab === s.id }" @click="switchToSubagent(s.id)">
+        <ElButton class="chat-tab" :class="{ active: activeTab === 'main' }" native-type="button" @click="switchToMainConversation">对话</ElButton>
+        <ElButton v-for="s in subagentTabs" :key="s.id" class="chat-tab" :class="{ active: activeTab === s.id }" native-type="button" @click="switchToSubagent(s.id)">
           {{ s.title || '子代理' }}
-        </button>
+        </ElButton>
       </div>
 
       <div class="chat-stage">
@@ -112,6 +112,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElButton } from 'element-plus'
 import ChatComposer from '@/modules/chat/components/ChatComposer.vue'
 import ChatMessageList from '@/modules/chat/components/ChatMessageList.vue'
 import ChatRuntimePermissionPanel from '@/modules/chat/components/ChatRuntimePermissionPanel.vue'
@@ -342,9 +343,9 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   border-right: 1px solid var(--border);
   border-radius: 0;
   background: var(--surface-subtle);
+  box-shadow: none;
   color: var(--text-muted);
   font-size: 12px;
-  cursor: pointer;
   white-space: nowrap;
   font-family: inherit;
   transition: background-color .12s ease, color .12s ease;

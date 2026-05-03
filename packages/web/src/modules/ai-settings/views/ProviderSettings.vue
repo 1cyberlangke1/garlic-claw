@@ -8,17 +8,17 @@
     <div class="ai-settings-inner">
       <aside class="ai-settings-sidebar">
         <nav class="sider-menu">
-          <button
+          <ElButton
             v-for="item in navItems"
             :key="item.id"
-            type="button"
             class="menu-item"
+            native-type="button"
             :class="{ active: activeSection === item.id, 'menu-item--divided': item.divided }"
             @click="activeSection = item.id"
           >
             <Icon class="menu-icon" :icon="item.icon" aria-hidden="true" />
             <span class="menu-label">{{ item.label }}</span>
-          </button>
+          </ElButton>
         </nav>
     </aside>
 
@@ -211,14 +211,6 @@
           :saving="savingRuntimeToolsConfig"
           @save="saveRuntimeToolsConfig"
         />
-
-        <article class="tool-management-hint">
-          <div>
-            <h3>工具启用状态</h3>
-            <p>执行工具的启用/禁用已统一移到工具管理页，这里只保留运行参数配置。</p>
-          </div>
-          <a class="btn-ghost tool-management-link" href="/tools?kind=internal&source=runtime-tools">打开工具管理</a>
-        </article>
       </section>
 
       <section v-if="activeSection === 'subagent'" class="settings-stack">
@@ -227,14 +219,6 @@
           :saving="savingSubagentConfig"
           @save="saveSubagentConfig"
         />
-
-        <article class="tool-management-hint">
-          <div>
-            <h3>子代理工具状态</h3>
-            <p>子代理工具的启用/禁用已统一移到工具管理页，这里只保留运行参数配置。</p>
-          </div>
-          <a class="btn-ghost tool-management-link" href="/tools?kind=internal&source=subagent">打开工具管理</a>
-        </article>
       </section>
 
       <ContextGovernanceSettingsPanel
@@ -552,10 +536,11 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   padding: 0 20px;
   background: transparent;
+  box-shadow: none;
+  margin: 0;
   color: var(--shell-text-secondary, #cbd5e1);
   font-size: 14px;
   text-align: left;
-  cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 .menu-item:hover { background: var(--shell-bg-hover, #334155); color: var(--shell-text, #f1f5f9); }
@@ -586,34 +571,6 @@ onBeforeUnmount(() => {
 .settings-stack {
   display: grid;
   gap: 16px;
-}
-
-.tool-management-hint {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  padding: 16px 18px;
-  border: 1px solid var(--shell-border, #334155);
-  border-radius: 12px;
-  background: var(--shell-bg-elevated, #1e293b);
-}
-
-.tool-management-hint h3,
-.tool-management-hint p {
-  margin: 0;
-}
-
-.tool-management-hint p {
-  color: var(--shell-text-tertiary, #94a3b8);
-  font-size: 13px;
-}
-
-.tool-management-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -1008,7 +965,6 @@ onBeforeUnmount(() => {
   .provider-column { border-right: none; border-bottom: 1px solid var(--shell-border, #334155); padding: 0 0 12px; }
   .model-column { padding: 12px 0 0; }
   .ai-settings-content { padding: 16px; }
-  .tool-management-hint { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
   .ai-settings-page { padding: 1rem; }
