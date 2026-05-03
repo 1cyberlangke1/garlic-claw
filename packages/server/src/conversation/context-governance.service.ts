@@ -120,9 +120,9 @@ export class ContextGovernanceService {
     }
   }
 
-  async rewriteHistoryAfterCompletedResponse(input: { conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<void> {
+  async rewriteHistoryAfterCompletedResponse(input: { conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<boolean> {
     const runtimeConfig = this.contextGovernanceSettingsService.readRuntimeConfig().contextCompaction;
-    if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary') {return;}
+    if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary') {return false;}
     try {
       const result = await this.runContextCompaction({
         conversationId: input.conversationId,
@@ -133,15 +133,19 @@ export class ContextGovernanceService {
       });
       if (result.compacted) {
         this.clearPendingPreModelStop(input.conversationId);
-        return;
+        return true;
       }
       if (result.reason && result.reason !== 'threshold-not-reached') {
         this.updatePendingPreModelStop(input.conversationId, result.reason);
         this.logCompactionFailure(input.conversationId, result.reason);
+      } else {
+        this.clearPendingPreModelStop(input.conversationId);
       }
+      return false;
     } catch (error) {
       this.clearPendingPreModelStop(input.conversationId);
       this.logCompactionFailure(input.conversationId, error);
+      return false;
     }
   }
 
@@ -251,9 +255,11 @@ export class ContextGovernanceService {
       windowTarget.modelId,
       windowTarget.providerId,
       input.userId,
-      input.trigger === 'after-response' ? 'latest-provider' : 'exact',
+      'exact',
     );
-    if (input.trigger === 'prepare-model' && beforePreview.estimatedTokens < thresholdTokens) {return { beforePreview, compacted: false, reason: 'threshold-not-reached', thresholdTokens };}
+    if (input.trigger !== 'manual' && beforePreview.estimatedTokens < thresholdTokens) {
+      return { beforePreview, compacted: false, reason: 'threshold-not-reached', thresholdTokens };
+    }
     let lastAfterPreview: PluginConversationHistoryPreviewResult | undefined;
     let lastReason: string = beforePreview.estimatedTokens >= thresholdTokens
       ? 'overflow-without-compaction'

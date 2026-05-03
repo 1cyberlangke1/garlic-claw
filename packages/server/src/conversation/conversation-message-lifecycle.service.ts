@@ -5,6 +5,11 @@ import { ConversationStoreService, serializeConversationMessage } from '../runti
 import { DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/host-input.codec';
 import { PluginDispatchService } from '../runtime/host/plugin-dispatch.service';
 import { PersonaService } from '../persona/persona.service';
+import {
+  AUTO_COMPACTION_CONTINUE_TEXT,
+  createAutoCompactionContinuationMetadata,
+  shouldAutoContinueAfterCompaction,
+} from './conversation-compaction-continuation';
 import { ConversationTaskService } from './conversation-task.service';
 import { ConversationMessagePlanningService, createShortCircuitStream, type ConversationResponseSource } from './conversation-message-planning.service';
 import type { DeferredInternalCommandAction } from './context-governance.service';
@@ -184,10 +189,53 @@ export class ConversationMessageLifecycleService {
       resolveErrorMessage: () => customErrorMessage,
       onSent: async (result) => {
         const conversation = this.runtimeHostConversationRecordService.requireConversation(result.conversationId);
-        await this.conversationMessagePlanningService.broadcastAfterSend({ activePersonaId: conversation.activePersonaId, conversationId: result.conversationId, userId: conversation.userId }, result, responseSource);
+        const afterSend = await this.conversationMessagePlanningService.broadcastAfterSend({ activePersonaId: conversation.activePersonaId, conversationId: result.conversationId, userId: conversation.userId }, result, responseSource);
+        if (afterSend.compactionTriggered && shouldAutoContinueAfterCompaction({
+          continuationState: result.continuationState,
+          responseSource,
+        })) {
+          this.startAutoCompactionContinuationTask({
+            activePersonaId: conversation.activePersonaId,
+            conversationId: result.conversationId,
+            modelId: result.modelId,
+            providerId: result.providerId,
+            userId: conversation.userId,
+          });
+        }
       },
       providerId: input.providerId,
     });
+  }
+
+  private startAutoCompactionContinuationTask(input: { activePersonaId?: string; conversationId: string; modelId: string; providerId: string; userId?: string }): void {
+    const userMessage = this.runtimeHostConversationMessageService.createMessage(input.conversationId, {
+      content: AUTO_COMPACTION_CONTINUE_TEXT,
+      metadata: createAutoCompactionContinuationMetadata(),
+      parts: [{ text: AUTO_COMPACTION_CONTINUE_TEXT, type: 'text' }],
+      provider: input.providerId,
+      model: input.modelId,
+      role: 'user',
+      status: 'completed',
+    });
+    const assistantMessage = this.runtimeHostConversationMessageService.createMessage(input.conversationId, {
+      content: '',
+      model: input.modelId,
+      parts: [],
+      provider: input.providerId,
+      role: 'assistant',
+      status: 'pending',
+    });
+
+    this.startConversationTask({
+      activePersonaId: input.activePersonaId,
+      conversationId: input.conversationId,
+      messageId: readMessageId(assistantMessage),
+      modelId: input.modelId,
+      providerId: input.providerId,
+      userId: input.userId,
+    });
+
+    void userMessage;
   }
 }
 

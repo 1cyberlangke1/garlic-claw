@@ -413,6 +413,60 @@ describe('SchemaConfigForm', () => {
     expect(wrapper.text()).not.toContain('隐藏字段')
   })
 
+  it('resolves nested field conditions against the current object scope', async () => {
+    const wrapper = mountSchemaConfigForm({
+      props: {
+        saving: false,
+        snapshot: {
+          schema: {
+            type: 'object',
+            items: {
+              contextCompaction: {
+                type: 'object',
+                description: '上下文压缩',
+                items: {
+                  strategy: {
+                    type: 'string',
+                    description: '策略',
+                    options: [
+                      {
+                        value: 'summary',
+                        label: '摘要压缩',
+                      },
+                      {
+                        value: 'sliding',
+                        label: '滑动窗口',
+                      },
+                    ],
+                  },
+                  compressionThreshold: {
+                    type: 'int',
+                    description: '自动触发阈值',
+                    condition: {
+                      strategy: 'summary',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          values: {
+            contextCompaction: {
+              strategy: 'summary',
+              compressionThreshold: 72,
+            },
+          },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('自动触发阈值')
+
+    await wrapper.findAll('select')[0].setValue('sliding')
+
+    expect(wrapper.text()).not.toContain('自动触发阈值')
+  })
+
   it('shows a clear error when list fields contain invalid JSON', async () => {
     const wrapper = mountSchemaConfigForm({
       props: {

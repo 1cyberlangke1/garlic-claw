@@ -120,12 +120,13 @@ describe('SubagentRunnerService', () => {
       },
       status: 'completed',
     });
-    expect(fixture.contextGovernanceService.rewriteHistoryAfterCompletedResponse).toHaveBeenCalledWith({
+    expect(fixture.afterResponseCompactionService.run).toHaveBeenCalledWith({
       conversationId: summary.conversationId,
       modelId: 'gpt-5.4',
       providerId: 'openai',
       userId: 'user-1',
     });
+    expect(fixture.contextGovernanceService.rewriteHistoryAfterCompletedResponse).not.toHaveBeenCalled();
   });
 
   it('runs post-completion auto compaction for subagent conversations without rewriting completed status on failure', async () => {
@@ -142,7 +143,7 @@ describe('SubagentRunnerService', () => {
       toolCalls: [],
       toolResults: [],
     })));
-    fixture.contextGovernanceService.rewriteHistoryAfterCompletedResponse.mockRejectedValueOnce(new Error('compaction failed'));
+    fixture.afterResponseCompactionService.run.mockRejectedValueOnce(new Error('compaction failed'));
 
     const summary = await fixture.runner.spawnSubagent('builtin.memory', 'Memory', {
       conversationId: fixture.parentConversationId,
@@ -155,12 +156,13 @@ describe('SubagentRunnerService', () => {
 
     await jest.runAllTimersAsync();
 
-    expect(fixture.contextGovernanceService.rewriteHistoryAfterCompletedResponse).toHaveBeenCalledWith({
+    expect(fixture.afterResponseCompactionService.run).toHaveBeenCalledWith({
       conversationId: summary.conversationId,
       modelId: 'gpt-5.4',
       providerId: 'openai',
       userId: 'user-1',
     });
+    expect(fixture.contextGovernanceService.rewriteHistoryAfterCompletedResponse).not.toHaveBeenCalled();
     expect(fixture.runner.getSubagent('builtin.memory', summary.conversationId)).toMatchObject({
       conversationId: summary.conversationId,
       result: {
@@ -168,6 +170,74 @@ describe('SubagentRunnerService', () => {
       },
       status: 'completed',
     });
+  });
+
+  it('auto-continues the same subagent conversation after post-response compaction only when the previous round had tool activity and no final text', async () => {
+    const fixture = createFixture();
+    fixture.afterResponseCompactionService.run
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    Reflect.set(fixture.runner as object, 'executeSubagent', jest.fn()
+      .mockResolvedValueOnce({
+        finishReason: 'stop',
+        message: {
+          content: '',
+          role: 'assistant',
+        },
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        text: '',
+        toolCalls: [{ input: { topic: 'smoke' }, toolCallId: 'tool-call-1', toolName: 'save_memory' }],
+        toolResults: [{ output: { kind: 'tool:text', value: 'done' }, toolCallId: 'tool-call-1', toolName: 'save_memory' }],
+      })
+      .mockResolvedValueOnce({
+        finishReason: 'stop',
+        message: {
+          content: 'Generated: 自动续跑后的第二轮',
+          role: 'assistant',
+        },
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        text: 'Generated: 自动续跑后的第二轮',
+        toolCalls: [],
+        toolResults: [],
+      }));
+
+    const summary = await fixture.runner.spawnSubagent('builtin.memory', 'Memory', {
+      conversationId: fixture.parentConversationId,
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      messages: [{ content: '先调用工具，再继续', role: 'user' }],
+      providerId: 'openai',
+    } as never) as { conversationId: string };
+
+    const waitPromise = fixture.runner.waitSubagent('builtin.memory', {
+      conversationId: summary.conversationId,
+    });
+
+    await jest.runAllTimersAsync();
+
+    await expect(waitPromise).resolves.toMatchObject({
+      conversationId: summary.conversationId,
+      result: 'Generated: 自动续跑后的第二轮',
+      status: 'completed',
+    });
+
+    const conversation = fixture.recordService.requireConversation(summary.conversationId, 'user-1');
+    expect(conversation.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+        role: 'user',
+      }),
+      expect.objectContaining({
+        content: 'Generated: 自动续跑后的第二轮',
+        role: 'assistant',
+        status: 'completed',
+      }),
+    ]));
+    expect(fixture.afterResponseCompactionService.run).toHaveBeenCalledTimes(2);
+    expect(fixture.contextGovernanceService.rewriteHistoryAfterCompletedResponse).not.toHaveBeenCalled();
   });
 
   it('interrupts a queued subagent before it starts running', async () => {
@@ -396,6 +466,9 @@ function createFixture() {
   const contextGovernanceService = {
     rewriteHistoryAfterCompletedResponse: jest.fn().mockResolvedValue(undefined),
   };
+  const afterResponseCompactionService = {
+    run: jest.fn().mockResolvedValue(false),
+  };
   const parentConversationId = (recordService.createConversation({
     title: 'Parent Chat',
     userId: 'user-1',
@@ -411,11 +484,18 @@ function createFixture() {
       listPlugins: jest.fn().mockReturnValue([]),
     } as never,
     new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
-    { get: jest.fn().mockReturnValue(contextGovernanceService) } as never,
+    {
+      get: jest.fn((token: { name?: string }) => {
+        if (token?.name === 'ConversationAfterResponseCompactionService') {
+          return afterResponseCompactionService;
+        }
+        return contextGovernanceService;
+      }),
+    } as never,
     recordService,
-    contextGovernanceService as never,
   );
   return {
+    afterResponseCompactionService,
     contextGovernanceService,
     parentConversationId,
     recordService,

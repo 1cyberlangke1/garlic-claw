@@ -605,6 +605,82 @@ describe('ConversationStoreService', () => {
     });
   });
 
+  it('reuses the newest real provider total for preview display even when the selected model no longer matches', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new ConversationStoreService();
+    const conversationId = (service.createConversation({ title: 'Latest Provider Usage Fallback Preview Chat' }) as { id: string }).id;
+    const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
+
+    service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [
+        {
+          content: '前一条回复',
+          createdAt: '2026-04-19T10:00:00.000Z',
+          id: 'assistant-message-1',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  inputTokens: 70,
+                  modelId: 'gpt-5.4',
+                  outputTokens: 20,
+                  providerId: 'openai',
+                  source: 'provider',
+                  totalTokens: 90,
+                },
+                owner: 'conversation.model-usage',
+                type: 'model-usage',
+                version: '1',
+              },
+            ],
+          },
+          parts: [{ text: '前一条回复', type: 'text' }],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:00:00.000Z',
+        },
+        {
+          content: '最后一条真实回复',
+          createdAt: '2026-04-19T10:01:00.000Z',
+          id: 'assistant-message-2',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  inputTokens: 91,
+                  modelId: 'deepseek-v4-flash',
+                  outputTokens: 29,
+                  providerId: 'ds2api',
+                  source: 'provider',
+                  totalTokens: 120,
+                },
+                owner: 'conversation.model-usage',
+                type: 'model-usage',
+                version: '1',
+              },
+            ],
+          },
+          parts: [{ text: '最后一条真实回复', type: 'text' }],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:01:00.000Z',
+        },
+      ],
+    });
+
+    expect(service.previewConversationHistory(conversationId, {
+      modelId: 'claude-3-7-sonnet',
+      providerId: 'anthropic',
+      usagePreference: 'latest-provider',
+    })).toEqual({
+      estimatedTokens: 120,
+      messageCount: 2,
+      source: 'provider',
+      textBytes: Buffer.byteLength('assistant\n前一条回复\nassistant\n最后一条真实回复', 'utf8'),
+    });
+  });
+
   it('falls back to estimated history tokens when the preview model changes', () => {
     process.env[conversationsEnvKey] = storagePath;
     const service = new ConversationStoreService();

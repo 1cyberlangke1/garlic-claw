@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { HostModule } from '../runtime/host/host.module';
 import { RuntimeKernelModule } from '../runtime/kernel/runtime-kernel.module';
 import { CommandCatalogController } from './command-catalog.controller';
+import { ConversationAfterResponseCompactionService } from './conversation-after-response-compaction.service';
 import { ContextCommandCatalogService } from './context-command-catalog.service';
 import { ContextGovernanceSettingsService } from './context-governance-settings.service';
 import { ContextGovernanceService } from './context-governance.service';
@@ -16,6 +17,7 @@ import { ConversationTaskService } from './conversation-task.service';
   controllers: [CommandCatalogController, ConversationController],
   providers: [
     ContextCommandCatalogService,
+    ConversationAfterResponseCompactionService,
     ContextGovernanceSettingsService,
     ContextGovernanceService,
     ConversationMessageLifecycleService,
@@ -24,6 +26,7 @@ import { ConversationTaskService } from './conversation-task.service';
   ],
   exports: [
     ContextCommandCatalogService,
+    ConversationAfterResponseCompactionService,
     ContextGovernanceSettingsService,
     ContextGovernanceService,
     ConversationMessageLifecycleService,

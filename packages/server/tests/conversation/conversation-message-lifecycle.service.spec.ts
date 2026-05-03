@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ChatMessagePart } from '@garlic-claw/shared';
+import { ConversationAfterResponseCompactionService } from '../../src/conversation/conversation-after-response-compaction.service';
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
@@ -41,6 +42,7 @@ describe('ConversationMessageLifecycleService', () => {
   let conversationId: string;
   let settingsConfigPath: string;
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
+  let contextGovernanceService: ContextGovernanceService;
   let storagePath: string;
   let conversationMessagePlanningService: ConversationMessagePlanningService;
   let runtimeHostConversationRecordService: ConversationStoreService;
@@ -100,15 +102,19 @@ describe('ConversationMessageLifecycleService', () => {
       runtimeHostConversationTodoService,
     );
     contextGovernanceSettingsService = new ContextGovernanceSettingsService();
+    contextGovernanceService = new ContextGovernanceService(
+      aiManagementService as never,
+      aiModelExecutionService as never,
+      contextGovernanceSettingsService,
+      runtimeHostConversationRecordService,
+    );
     conversationMessagePlanningService = new ConversationMessagePlanningService(
       aiModelExecutionService as never,
       aiVisionService as never,
-      new ContextGovernanceService(
-        aiManagementService as never,
-        aiModelExecutionService as never,
-        contextGovernanceSettingsService,
-        runtimeHostConversationRecordService,
+      new ConversationAfterResponseCompactionService(
+        contextGovernanceService,
       ),
+      contextGovernanceService,
       runtimeHostConversationRecordService,
       personaService as never,
       toolRegistryService as never,
@@ -861,6 +867,129 @@ describe('ConversationMessageLifecycleService', () => {
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
   })
 
+  it('does not auto-continue after after-response compaction when the completed reply has no tool activity', async () => {
+    jest.spyOn(conversationMessagePlanningService, 'broadcastAfterSend')
+      .mockResolvedValueOnce({ compactionTriggered: true })
+      .mockResolvedValue({ compactionTriggered: false })
+    aiModelExecutionService.streamText.mockReturnValueOnce(streamed('gpt-5.4', 'openai', '第一轮先完成这里，再继续后续步骤。'))
+
+    const started = await startAndWait(service, conversationTaskService, {
+      content: '请先完成第一步，然后继续后续步骤。',
+      model: 'gpt-5.4',
+      provider: 'openai',
+    }, 'user-1')
+
+    await waitForConversationToSettle(conversationTaskService, runtimeHostConversationRecordService)
+
+    const messages = readConversation(runtimeHostConversationRecordService).messages
+    const syntheticContinueMessage = messages.find(hasContextCompactionContinueAnnotation)
+
+    expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
+    expect(conversationMessagePlanningService.broadcastAfterSend).toHaveBeenCalledTimes(1)
+    expect(aiModelExecutionService.streamText).toHaveBeenCalledTimes(1)
+    expect(syntheticContinueMessage).toBeUndefined()
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        content: '第一轮先完成这里，再继续后续步骤。',
+        role: 'assistant',
+        status: 'completed',
+      }),
+    ]))
+  })
+
+  it('does not auto-continue after after-response compaction when the completed reply already includes final assistant text', async () => {
+    jest.spyOn(conversationMessagePlanningService, 'broadcastAfterSend')
+      .mockResolvedValueOnce({ compactionTriggered: true })
+      .mockResolvedValue({ compactionTriggered: false })
+    aiModelExecutionService.streamText.mockReturnValueOnce(
+      streamedWithToolActivity('gpt-5.4', 'openai', '第一轮先调用工具，再继续后续步骤。'),
+    )
+
+    const started = await startAndWait(service, conversationTaskService, {
+      content: '请先调用工具，再继续后续步骤。',
+      model: 'gpt-5.4',
+      provider: 'openai',
+    }, 'user-1')
+
+    await waitForConversationToSettle(conversationTaskService, runtimeHostConversationRecordService)
+
+    const messages = readConversation(runtimeHostConversationRecordService).messages
+    const syntheticContinueMessage = messages.find((message) => (
+      message.role === 'user'
+      && message.content === 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.'
+      && hasContextCompactionContinueAnnotation(message)
+    ))
+
+    expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
+    expect(conversationMessagePlanningService.broadcastAfterSend).toHaveBeenCalledTimes(1)
+    expect(aiModelExecutionService.streamText).toHaveBeenCalledTimes(1)
+    expect(syntheticContinueMessage).toBeUndefined()
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        content: '第一轮先调用工具，再继续后续步骤。',
+        role: 'assistant',
+        status: 'completed',
+      }),
+    ]))
+  })
+
+  it('auto-continues after after-response compaction only when the completed reply has tool activity and no final assistant text', async () => {
+    jest.spyOn(conversationMessagePlanningService, 'broadcastAfterSend')
+      .mockResolvedValueOnce({ compactionTriggered: true })
+      .mockResolvedValue({ compactionTriggered: false })
+    aiModelExecutionService.streamText
+      .mockReturnValueOnce(streamedWithToolActivity('gpt-5.4', 'openai', ''))
+      .mockReturnValueOnce(streamed('gpt-5.4', 'openai', '压缩后已自动继续执行，下面是后续步骤。'))
+
+    const started = await startAndWait(service, conversationTaskService, {
+      content: '请先调用工具，再继续后续步骤。',
+      model: 'gpt-5.4',
+      provider: 'openai',
+    }, 'user-1')
+
+    await waitForConversationToSettle(conversationTaskService, runtimeHostConversationRecordService)
+
+    const messages = readConversation(runtimeHostConversationRecordService).messages
+    const syntheticContinueMessage = messages.find((message) => (
+      message.role === 'user'
+      && message.content === 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.'
+      && hasContextCompactionContinueAnnotation(message)
+    ))
+
+    expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
+    expect(conversationMessagePlanningService.broadcastAfterSend).toHaveBeenCalledTimes(2)
+    expect(aiModelExecutionService.streamText).toHaveBeenCalledTimes(2)
+    expect(syntheticContinueMessage).toBeTruthy()
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        content: '',
+        role: 'assistant',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        content: '压缩后已自动继续执行，下面是后续步骤。',
+        role: 'assistant',
+        status: 'completed',
+      }),
+    ]))
+    expect(aiModelExecutionService.streamText).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      allowFallbackChatModels: true,
+      messages: expect.arrayContaining([
+        {
+          content: [
+            {
+              text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+              type: 'text',
+            },
+          ],
+          role: 'user',
+        },
+      ]),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    }))
+  })
+
   it('marks the assistant message as error when pre-model auto compaction still cannot fit the context', async () => {
     aiManagementService.getProviderModel.mockReturnValue({
       contextLength: 256,
@@ -888,6 +1017,10 @@ describe('ConversationMessageLifecycleService', () => {
       {
         assistantMessageId: 'assistant-final',
         content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300),
+        continuationState: {
+          hasAssistantTextOutput: true,
+          hasToolActivity: false,
+        },
         conversationId,
         modelId: 'gpt-5.4',
         parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300), type: 'text' }],
@@ -1171,6 +1304,23 @@ function streamed(
   };
 }
 
+function streamedWithToolActivity(
+  modelId: string,
+  providerId: string,
+  text: string,
+) {
+  return {
+    finishReason: Promise.resolve('stop'),
+    fullStream: (async function* () {
+      yield { input: { content: '自动续跑验证' }, toolCallId: 'tool-call-1', toolName: 'save_memory', type: 'tool-call' };
+      yield { output: { kind: 'tool:text', value: '保存完成' }, toolCallId: 'tool-call-1', toolName: 'save_memory', type: 'tool-result' };
+      yield { text, type: 'text-delta' };
+    })(),
+    modelId,
+    providerId,
+  };
+}
+
 function createHistoryMessage(id: string, role: 'assistant' | 'user', content: string) {
   return {
     content,
@@ -1214,4 +1364,48 @@ function readMessageAnnotations(message: Record<string, unknown>): Array<Record<
   return Array.isArray(metadata?.annotations)
     ? metadata.annotations.filter(isRecord)
     : [];
+}
+
+function hasContextCompactionContinueAnnotation(message: Record<string, unknown>): boolean {
+  return readMessageAnnotations(message).some((annotation) => (
+    annotation.owner === 'conversation.context-governance'
+    && annotation.type === 'context-compaction'
+    && isRecord(annotation.data)
+    && annotation.data.role === 'continue'
+    && annotation.data.synthetic === true
+  ));
+}
+
+async function waitForConversationToSettle(
+  conversationTaskService: ConversationTaskService,
+  runtimeHostConversationRecordService: ConversationStoreService,
+): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const conversation = readConversation(runtimeHostConversationRecordService);
+    const activeAssistant = [...conversation.messages].reverse().find((message) => (
+      message.role === 'assistant'
+      && (message.status === 'pending' || message.status === 'streaming')
+    ));
+    if (activeAssistant?.id) {
+      await conversationTaskService.waitForTask(String(activeAssistant.id));
+      continue;
+    }
+    const lastMessage = conversation.messages.at(-1);
+    if (lastMessage && hasContextCompactionContinueAnnotation(lastMessage)) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      continue;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const refreshedConversation = readConversation(runtimeHostConversationRecordService);
+    const refreshedActiveAssistant = [...refreshedConversation.messages].reverse().find((message) => (
+      message.role === 'assistant'
+      && (message.status === 'pending' || message.status === 'streaming')
+    ));
+    if (!refreshedActiveAssistant?.id) {
+      return;
+    }
+    await conversationTaskService.waitForTask(String(refreshedActiveAssistant.id));
+  }
+  throw new Error('等待自动续跑稳定超时');
 }

@@ -51,6 +51,29 @@ export function readConversationModelUsageAnnotation(
   return null;
 }
 
+export function readLatestConversationModelUsageAnnotation(
+  metadata: ChatMessageMetadata | undefined,
+  target?: { modelId: string; providerId: string },
+): ConversationModelUsageAnnotationData | null {
+  for (let index = (metadata?.annotations ?? []).length - 1; index >= 0; index -= 1) {
+    const annotation = metadata?.annotations?.[index];
+    if (!annotation || !isConversationModelUsageAnnotation(annotation)) {
+      continue;
+    }
+    const data = annotation.data;
+    if (
+      isConversationModelUsageAnnotationData(data)
+      && (
+        !target
+        || (data.modelId === target.modelId && data.providerId === target.providerId)
+      )
+    ) {
+      return data;
+    }
+  }
+  return null;
+}
+
 function createConversationModelUsageAnnotation(
   data: ConversationModelUsageAnnotationData,
 ): ChatMessageAnnotation {

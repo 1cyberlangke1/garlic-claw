@@ -657,6 +657,62 @@ describe('ContextGovernanceService', () => {
     });
   });
 
+  it('does not run post-response summary compaction before the configured threshold is reached', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 90,
+        enabled: true,
+        keepRecentMessages: 1,
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    const currentHistory = [
+      createHistoryMessage('history-1', 'user', '这是一条很短的历史消息。'),
+      createHistoryMessage('assistant-final', 'assistant', '这是一条很短的完成回复。'),
+    ];
+    const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages(currentHistory);
+    conversationRecordService.replaceMessages(conversationId, [
+      currentHistory[0],
+      {
+        ...currentHistory[1],
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                inputTokens: 20,
+                modelId: 'gpt-oss-20b',
+                outputTokens: 8,
+                providerId: 'nvidia',
+                responseHistorySignature,
+                source: 'provider',
+                totalTokens: 28,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+    ], 'user-1');
+
+    await service.rewriteHistoryAfterCompletedResponse({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    expect(aiModelExecutionService.generateText).not.toHaveBeenCalled();
+    expect(service.consumePendingPreModelStop(conversationId)).toBeNull();
+    const history = conversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+      messages: Array<{ content?: string }>;
+    };
+    expect(history.messages.some((message) => message.content === '压缩后的历史摘要')).toBe(false);
+  });
+
   it('surfaces provider token source in the context window preview when the current history matches real usage', async () => {
     const previewMessages = [
       {
@@ -760,6 +816,62 @@ describe('ContextGovernanceService', () => {
       userId: 'user-1',
     })).resolves.toEqual(expect.objectContaining({
       estimatedTokens: 100,
+      source: 'provider',
+    }));
+  });
+
+  it('reuses the newest real provider total for context window preview even when the selected model has changed', async () => {
+    conversationRecordService.replaceMessages(conversationId, [
+      {
+        ...createHistoryMessage('history-1', 'assistant', '前一条回复'),
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                inputTokens: 70,
+                modelId: 'gpt-oss-20b',
+                outputTokens: 20,
+                providerId: 'nvidia',
+                source: 'provider',
+                totalTokens: 90,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+      {
+        ...createHistoryMessage('history-2', 'assistant', '最后一条真实回复'),
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                inputTokens: 91,
+                modelId: 'deepseek-v4-flash',
+                outputTokens: 29,
+                providerId: 'ds2api',
+                source: 'provider',
+                totalTokens: 120,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+    ], 'user-1');
+
+    await expect(service.getContextWindowPreview({
+      conversationId,
+      modelId: 'claude-3-7-sonnet',
+      providerId: 'anthropic',
+      userId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
+      estimatedTokens: 120,
+      includedMessageIds: ['history-1', 'history-2'],
       source: 'provider',
     }));
   });
