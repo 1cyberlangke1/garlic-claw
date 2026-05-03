@@ -314,7 +314,7 @@
                 修改
               </button>
               <button
-                v-else-if="row.message.role === 'assistant'"
+                v-else-if="shouldShowRetryAction(row.message)"
                 type="button"
                 class="action-text retry-text"
                 @click="emit('retry-message', row.message.id)"
@@ -386,6 +386,7 @@ import type {
   ChatToolCallEntry,
   ChatToolResultEntry,
 } from "@/modules/chat/store/chat";
+import { isTemporaryChatMessageId } from "@/modules/chat/store/chat-store.helpers";
 import { renderMarkdown } from '@/shared/utils/markdown'
 
 interface VisibleMessageRow {
@@ -733,6 +734,10 @@ function readRetryDelayLabel(message: ChatMessage): string {
 
 function shouldRenderAssistantAvatar(message: ChatMessage): boolean {
   return message.role === "assistant";
+}
+
+function shouldShowRetryAction(message: ChatMessage): boolean {
+  return message.role === "assistant" && !isTemporaryChatMessageId(message.id);
 }
 
 function isNonContextMessage(message: ChatMessage): boolean {

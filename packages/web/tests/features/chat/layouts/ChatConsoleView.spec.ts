@@ -59,6 +59,8 @@ describe('ChatConsoleView', () => {
     }
     authState.logout.mockClear()
     chatState.loadConversations.mockClear()
+    chatState.selectConversation.mockClear()
+    chatState.currentConversationId = 'conversation-1'
   })
 
   it('renders a dedicated conversation sidebar inside the chat page', () => {
@@ -78,5 +80,24 @@ describe('ChatConsoleView', () => {
     expect(wrapper.text()).toContain('新对话')
     expect(wrapper.find('.chat-rail').exists()).toBe(true)
     expect(wrapper.find('.chat-content').exists()).toBe(true)
+  })
+
+  it('reopens the latest visible conversation after mount when no conversation is currently selected', async () => {
+    chatState.currentConversationId = null
+
+    mount(ChatConsoleView, {
+      global: {
+        stubs: {
+          ChatView: {
+            template: '<div class="chat-view-stub" />',
+          },
+        },
+      },
+    })
+
+    await Promise.resolve()
+
+    expect(chatState.loadConversations).toHaveBeenCalled()
+    expect(chatState.selectConversation).toHaveBeenCalledWith('conversation-1')
   })
 })
