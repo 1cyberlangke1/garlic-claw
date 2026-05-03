@@ -5,13 +5,9 @@ import { ConversationStoreService, serializeConversationMessage } from '../runti
 import { DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/host-input.codec';
 import { PluginDispatchService } from '../runtime/host/plugin-dispatch.service';
 import { PersonaService } from '../persona/persona.service';
-import {
-  AUTO_COMPACTION_CONTINUE_TEXT,
-  createAutoCompactionContinuationMetadata,
-  shouldAutoContinueAfterCompaction,
-} from './conversation-compaction-continuation';
 import { ConversationTaskService } from './conversation-task.service';
 import { ConversationMessagePlanningService, createShortCircuitStream, type ConversationResponseSource } from './conversation-message-planning.service';
+import type { AfterResponseCompactionContinuation } from './conversation-after-response-compaction.service';
 import type { DeferredInternalCommandAction } from './context-governance.service';
 
 @Injectable()
@@ -190,13 +186,11 @@ export class ConversationMessageLifecycleService {
       onSent: async (result) => {
         const conversation = this.conversationStore.requireConversation(result.conversationId);
         const afterSend = await this.conversationMessagePlanningService.broadcastAfterSend({ activePersonaId: conversation.activePersonaId, conversationId: result.conversationId, userId: conversation.userId }, result, responseSource);
-        if (afterSend.compactionTriggered && shouldAutoContinueAfterCompaction({
-          continuationState: result.continuationState,
-          responseSource,
-        })) {
+        if (afterSend.continuation) {
           this.startAutoCompactionContinuationTask({
             activePersonaId: conversation.activePersonaId,
             conversationId: result.conversationId,
+            continuation: afterSend.continuation,
             modelId: result.modelId,
             providerId: result.providerId,
             userId: conversation.userId,
@@ -207,11 +201,11 @@ export class ConversationMessageLifecycleService {
     });
   }
 
-  private startAutoCompactionContinuationTask(input: { activePersonaId?: string; conversationId: string; modelId: string; providerId: string; userId?: string }): void {
+  private startAutoCompactionContinuationTask(input: { activePersonaId?: string; continuation: AfterResponseCompactionContinuation; conversationId: string; modelId: string; providerId: string; userId?: string }): void {
     const userMessage = this.conversationMessages.createMessage(input.conversationId, {
-      content: AUTO_COMPACTION_CONTINUE_TEXT,
-      metadata: createAutoCompactionContinuationMetadata(),
-      parts: [{ text: AUTO_COMPACTION_CONTINUE_TEXT, type: 'text' }],
+      content: input.continuation.content,
+      metadata: input.continuation.metadata,
+      parts: input.continuation.parts,
       provider: input.providerId,
       model: input.modelId,
       role: 'user',

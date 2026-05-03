@@ -4,12 +4,13 @@ import { ModuleRef } from '@nestjs/core';
 import { uuidv7 } from 'uuidv7';
 import { AiModelExecutionService } from '../../ai/ai-model-execution.service';
 import {
-  AUTO_COMPACTION_CONTINUE_TEXT,
-  createAutoCompactionContinuationMetadata,
-  shouldAutoContinueAfterCompaction,
   type ConversationCompactionContinuationState,
 } from '../../conversation/conversation-compaction-continuation';
-import { ConversationAfterResponseCompactionService } from '../../conversation/conversation-after-response-compaction.service';
+import {
+  ConversationAfterResponseCompactionService,
+  type AfterResponseCompactionContinuation,
+  type AfterResponseCompactionResult,
+} from '../../conversation/conversation-after-response-compaction.service';
 import { ProjectSubagentTypeRegistryService } from '../../execution/project/project-subagent-type-registry.service';
 import { ToolRegistryService } from '../../execution/tool/tool-registry.service';
 import { applyMutatingDispatchableHooks, runDispatchableHookChain } from '../kernel/runtime-plugin-hook-governance';
@@ -439,7 +440,7 @@ export class SubagentRunnerService {
             this.runtimeHostConversationMessageService.writeMessage(refreshed.id, assistantMessageId, { content: `${text}…`, status: 'streaming' });
           },
         }));
-        const { continuationState, result } = execution;
+        const { result } = execution;
         this.runtimeHostConversationMessageService.writeMessage(refreshed.id, assistantMessageId, {
           content: result.text,
           model: result.modelId,
@@ -449,18 +450,17 @@ export class SubagentRunnerService {
           toolCalls: result.toolCalls as unknown as JsonValue[],
           toolResults: result.toolResults as unknown as JsonValue[],
         });
-        const compactionTriggered = await this.runSubagentPostCompletionCompaction({
+        const compaction = await this.runSubagentPostCompletionCompaction({
           conversationId: refreshed.id,
+          continuationState: execution.continuationState,
           modelId: result.modelId,
           providerId: result.providerId,
           userId: refreshed.userId,
         });
-        if (compactionTriggered && shouldAutoContinueAfterCompaction({
-          continuationState,
-          responseSource: 'model',
-        })) {
+        if (compaction.continuation) {
           assistantMessageId = this.queueSubagentAutoCompactionContinuation({
             conversationId: refreshed.id,
+            continuation: compaction.continuation,
             modelId: result.modelId,
             providerId: result.providerId,
             userId: refreshed.userId,
@@ -515,29 +515,31 @@ export class SubagentRunnerService {
 
   private async runSubagentPostCompletionCompaction(input: {
     conversationId: string;
+    continuationState: ConversationCompactionContinuationState;
     modelId: string;
     providerId: string;
     userId?: string;
-  }): Promise<boolean> {
+  }): Promise<AfterResponseCompactionResult> {
     try {
-      return await this.readAfterResponseCompactionService()?.run(input) ?? false;
+      return await this.readAfterResponseCompactionService()?.run(input) ?? { compactionTriggered: false, continuation: null };
     } catch {
       // 上下文治理服务内部会自行记录失败并阻断后续轮次，这里不能把已完成子代理改写成错误态。
-      return false;
+      return { compactionTriggered: false, continuation: null };
     }
   }
 
   private queueSubagentAutoCompactionContinuation(input: {
     conversationId: string;
+    continuation: AfterResponseCompactionContinuation;
     modelId: string;
     providerId: string;
     userId?: string;
   }): string {
     this.runtimeHostConversationMessageService.createMessage(input.conversationId, {
-      content: AUTO_COMPACTION_CONTINUE_TEXT,
-      metadata: createAutoCompactionContinuationMetadata(),
+      content: input.continuation.content,
+      metadata: input.continuation.metadata,
       model: input.modelId,
-      parts: [{ text: AUTO_COMPACTION_CONTINUE_TEXT, type: 'text' }],
+      parts: input.continuation.parts,
       provider: input.providerId,
       role: 'user',
       status: 'completed',

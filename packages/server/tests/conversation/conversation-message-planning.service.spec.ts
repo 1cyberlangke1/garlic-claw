@@ -27,6 +27,7 @@ describe('ConversationMessagePlanningService', () => {
   let settingsConfigPath: string;
   let conversationsPath: string;
   let conversationId: string;
+  let conversationAfterResponseCompactionService: ConversationAfterResponseCompactionService;
   let contextGovernanceService: ContextGovernanceService;
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
   let conversationStore: ConversationStoreService;
@@ -73,11 +74,15 @@ describe('ConversationMessagePlanningService', () => {
       contextGovernanceSettingsService,
       conversationStore,
     );
+    conversationAfterResponseCompactionService = new ConversationAfterResponseCompactionService(
+      contextGovernanceService,
+      conversationStore,
+    );
     conversationId = (conversationStore.createConversation({ title: '窗口预览', userId: 'user-1' }) as { id: string }).id;
     service = new ConversationMessagePlanningService(
       aiModelExecutionService as never,
       aiVisionService as never,
-      new ConversationAfterResponseCompactionService(contextGovernanceService),
+      conversationAfterResponseCompactionService,
       contextGovernanceService,
       conversationStore,
       personaService as never,
@@ -125,6 +130,38 @@ describe('ConversationMessagePlanningService', () => {
       slidingWindowUsagePercent: 50,
       source: 'estimated',
       strategy: 'sliding',
+    }));
+  });
+
+  it('routes /compact through the unified compaction owner instead of ContextGovernanceService command handling', async () => {
+    const compactionOwnerSpy = jest.spyOn(conversationAfterResponseCompactionService, 'applyMessageReceived');
+
+    const result = await service.applyMessageReceived({
+      content: '/compact',
+      conversationId,
+      modelId: 'gpt-5.4',
+      parts: [{ text: '/compact', type: 'text' }],
+      providerId: 'openai',
+      userId: 'user-1',
+    });
+
+    expect(compactionOwnerSpy).toHaveBeenCalledWith({
+      content: '/compact',
+      conversationId,
+      modelId: 'gpt-5.4',
+      parts: [{ text: '/compact', type: 'text' }],
+      providerId: 'openai',
+      userId: 'user-1',
+    });
+    expect(result).toEqual(expect.objectContaining({
+      action: 'deferred-short-circuit',
+      content: '/compact',
+      deferred: expect.objectContaining({
+        commandId: 'internal.context-governance:/compact:command',
+        execute: expect.any(Function),
+      }),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
     }));
   });
 
@@ -540,7 +577,7 @@ describe('ConversationMessagePlanningService', () => {
       createMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(4)),
     ]);
 
-    await expect(service.broadcastAfterSend(
+    const afterSend = await service.broadcastAfterSend(
       { conversationId, userId: 'user-1' },
       {
         assistantMessageId: 'assistant-final',
@@ -557,7 +594,23 @@ describe('ConversationMessagePlanningService', () => {
         toolResults: [],
       },
       'model',
-    )).resolves.toEqual({ compactionTriggered: true });
+    );
+
+    expect(afterSend).toEqual({
+      compactionTriggered: true,
+      continuation: {
+        content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+        metadata: expect.objectContaining({
+          annotations: expect.arrayContaining([
+            expect.objectContaining({
+              owner: 'conversation.context-governance',
+              type: 'context-compaction',
+            }),
+          ]),
+        }),
+        parts: [{ text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.', type: 'text' }],
+      },
+    });
 
     const history = conversationStore.readConversationHistory(conversationId, 'user-1') as {
       messages: Array<{ content?: string; metadata?: { annotations?: Array<{ data?: Record<string, unknown>; owner?: string; type?: string }> }; role: string }>;
@@ -568,6 +621,125 @@ describe('ConversationMessagePlanningService', () => {
       annotation.owner === 'conversation.context-governance'
       && annotation.type === 'context-compaction'
       && annotation.data?.role === 'summary')).toBe(true);
+  });
+
+  it('prunes old tool outputs after a completed model reply is sent', async () => {
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 100,
+        enabled: false,
+        keepRecentMessages: 1,
+        reservedTokens: 1,
+        strategy: 'summary',
+      },
+    });
+    conversationStore.replaceMessages(conversationId, [
+      {
+        content: '先查一下更早的天气',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'history-0',
+        parts: [{ text: '先查一下更早的天气', type: 'text' as const }],
+        role: 'user',
+        status: 'completed',
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+      {
+        content: '',
+        createdAt: '2026-04-25T00:00:00.500Z',
+        id: 'assistant-0',
+        model: 'gpt-5.4',
+        parts: [],
+        provider: 'openai',
+        role: 'assistant',
+        status: 'completed',
+        toolCalls: [{ input: { city: 'Hangzhou' }, toolCallId: 'tool-call-0', toolName: 'weather.search' }],
+        toolResults: [{ output: { kind: 'tool:text', value: '天气详情'.repeat(30000) }, toolCallId: 'tool-call-0', toolName: 'weather.search' }],
+        updatedAt: '2026-04-25T00:00:00.500Z',
+      },
+      {
+        content: '先查一下天气',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'history-1',
+        parts: [{ text: '先查一下天气', type: 'text' as const }],
+        role: 'user',
+        status: 'completed',
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+      {
+        content: '',
+        createdAt: '2026-04-25T00:00:01.000Z',
+        id: 'assistant-1',
+        model: 'gpt-5.4',
+        parts: [],
+        provider: 'openai',
+        role: 'assistant',
+        status: 'completed',
+        toolCalls: [{ input: { city: 'Shanghai' }, toolCallId: 'tool-call-1', toolName: 'weather.search' }],
+        toolResults: [{ output: { kind: 'tool:text', value: '天气详情'.repeat(15000) }, toolCallId: 'tool-call-1', toolName: 'weather.search' }],
+        updatedAt: '2026-04-25T00:00:01.000Z',
+      },
+      {
+        content: '再查一下天气',
+        createdAt: '2026-04-25T00:00:01.500Z',
+        id: 'history-2',
+        parts: [{ text: '再查一下天气', type: 'text' as const }],
+        role: 'user',
+        status: 'completed',
+        updatedAt: '2026-04-25T00:00:01.500Z',
+      },
+      {
+        content: '',
+        createdAt: '2026-04-25T00:00:02.000Z',
+        id: 'assistant-2',
+        model: 'gpt-5.4',
+        parts: [],
+        provider: 'openai',
+        role: 'assistant',
+        status: 'completed',
+        toolCalls: [{ input: { city: 'Suzhou' }, toolCallId: 'tool-call-2', toolName: 'weather.search' }],
+        toolResults: [{ output: { kind: 'tool:text', value: '天气详情'.repeat(5000) }, toolCallId: 'tool-call-2', toolName: 'weather.search' }],
+        updatedAt: '2026-04-25T00:00:02.000Z',
+      },
+      createMessage('history-3', 'user', '继续下一步'),
+      createMessage('assistant-final', 'assistant', '当前轮已经完成'),
+    ]);
+
+    const afterSend = await service.broadcastAfterSend(
+      { conversationId, userId: 'user-1' },
+      {
+        assistantMessageId: 'assistant-final',
+        content: '当前轮已经完成',
+        continuationState: {
+          hasAssistantTextOutput: true,
+          hasToolActivity: false,
+        },
+        conversationId,
+        modelId: 'gpt-5.4',
+        parts: [{ text: '当前轮已经完成', type: 'text' }],
+        providerId: 'openai',
+        toolCalls: [],
+        toolResults: [],
+      },
+      'model',
+    );
+
+    expect(afterSend).toEqual({ compactionTriggered: false, continuation: null });
+
+    const history = conversationStore.requireConversation(conversationId, 'user-1').messages;
+    const prunedAssistant = history.find((message) => message.id === 'assistant-0');
+
+    expect(prunedAssistant).toMatchObject({
+      toolResults: [
+        {
+          output: {
+            kind: 'tool:text',
+            value: '[旧工具输出已从当前上下文裁剪]',
+          },
+          toolCallId: 'tool-call-0',
+          toolName: 'weather.search',
+        },
+      ],
+    });
   });
 
   it('keeps the completed reply successful and continues the next reply when post-response compaction fails', async () => {
@@ -606,7 +778,7 @@ describe('ConversationMessagePlanningService', () => {
         toolResults: [],
       },
       'model',
-    )).resolves.toEqual({ compactionTriggered: false });
+    )).resolves.toEqual({ compactionTriggered: false, continuation: null });
 
     const history = conversationStore.readConversationHistory(conversationId, 'user-1') as {
       messages: Array<{ content?: string }>;
@@ -691,7 +863,7 @@ describe('ConversationMessagePlanningService', () => {
         toolResults: [],
       },
       'model',
-    )).resolves.toEqual({ compactionTriggered: false });
+    )).resolves.toEqual({ compactionTriggered: false, continuation: null });
 
     await expect(service.createStreamPlan({
       abortSignal: new AbortController().signal,
