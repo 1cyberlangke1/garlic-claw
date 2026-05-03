@@ -9,7 +9,7 @@ import { ConversationMessageService } from '../runtime/host/conversation-message
 import { ConversationStoreService, serializeConversationMessage, type RuntimeConversationRecord } from '../runtime/host/conversation-store.service';
 import { ConversationTodoService } from '../runtime/host/conversation-todo.service';
 import { SubagentRunnerService } from '../runtime/host/subagent-runner.service';
-import type { ChatMessagePart } from '@garlic-claw/shared';
+import type { ChatMessagePart, JsonObject } from '@garlic-claw/shared';
 import {
   ConversationTodoItemDto,
   CreateConversationDto,
@@ -138,29 +138,7 @@ export class ConversationController {
         async (assistantMessageId) => {
           await this.subagentRunner.waitSubagent(pluginId, { conversationId: id });
           const latestConversation = this.conversationStore.requireConversation(id, userId);
-          const assistantMessage = latestConversation.messages.find((message) => message.id === assistantMessageId);
-          if (!assistantMessage) {
-            return [];
-          }
-          return [
-            ...readAssistantToolEvents(assistantMessageId, assistantMessage),
-            {
-              content: typeof assistantMessage.content === 'string' ? assistantMessage.content : '',
-              messageId: assistantMessageId,
-              type: 'message-patch' as const,
-            },
-            {
-              ...(typeof assistantMessage.error === 'string' ? { error: assistantMessage.error } : {}),
-              messageId: assistantMessageId,
-              status: String(assistantMessage.status) as 'completed' | 'error' | 'pending' | 'stopped' | 'streaming',
-              type: 'status' as const,
-            },
-            {
-              messageId: assistantMessageId,
-              status: String(assistantMessage.status) as 'completed' | 'error' | 'pending' | 'stopped' | 'streaming',
-              type: 'finish' as const,
-            },
-          ];
+          return readSubagentConversationEvents(latestConversation, assistantMessageId);
         },
       );
       return;
@@ -219,29 +197,7 @@ export class ConversationController {
         async (assistantMessageId) => {
           await this.subagentRunner.waitSubagent(pluginId, { conversationId: id });
           const latestConversation = this.conversationStore.requireConversation(id, userId);
-          const assistantMessage = latestConversation.messages.find((message) => message.id === assistantMessageId);
-          if (!assistantMessage) {
-            return [];
-          }
-          return [
-            ...readAssistantToolEvents(assistantMessageId, assistantMessage),
-            {
-              content: typeof assistantMessage.content === 'string' ? assistantMessage.content : '',
-              messageId: assistantMessageId,
-              type: 'message-patch' as const,
-            },
-            {
-              ...(typeof assistantMessage.error === 'string' ? { error: assistantMessage.error } : {}),
-              messageId: assistantMessageId,
-              status: String(assistantMessage.status) as 'completed' | 'error' | 'pending' | 'stopped' | 'streaming',
-              type: 'status' as const,
-            },
-            {
-              messageId: assistantMessageId,
-              status: String(assistantMessage.status) as 'completed' | 'error' | 'pending' | 'stopped' | 'streaming',
-              type: 'finish' as const,
-            },
-          ];
+          return readSubagentConversationEvents(latestConversation, assistantMessageId);
         },
       );
       return;
@@ -263,9 +219,8 @@ export class ConversationController {
       if (message.role !== 'assistant') {
         throw new BadRequestException('Only assistant messages can be stopped');
       }
-      const activeAssistantMessageId = readActiveSubagentAssistantMessageId(conversation);
       if (
-        activeAssistantMessageId === messageId
+        isSubagentStopTargetInActiveContinuationChain(conversation, messageId)
         && (conversation.subagent.status === 'queued' || conversation.subagent.status === 'running')
       ) {
         return this.subagentRunner.interruptSubagent(conversation.subagent.pluginId, id, userId);
@@ -440,6 +395,98 @@ function readAssistantToolEvents(
   return events;
 }
 
+function readSubagentConversationEvents(
+  conversation: RuntimeConversationRecord,
+  startedAssistantMessageId: string,
+) {
+  const startedIndex = conversation.messages.findIndex((message) => message.id === startedAssistantMessageId);
+  if (startedIndex < 0) {
+    return [];
+  }
+  const events: object[] = [];
+  for (let index = startedIndex; index < conversation.messages.length; index += 1) {
+    const message = conversation.messages[index];
+    if (message.role !== 'assistant' || typeof message.id !== 'string') {
+      continue;
+    }
+    if (message.id !== startedAssistantMessageId) {
+      const userMessage = readPreviousSubagentUserMessage(conversation, index);
+      events.push({
+        assistantMessage: serializeConversationMessage(message as unknown as JsonObject),
+        type: 'message-start' as const,
+        ...(userMessage ? { userMessage: serializeConversationMessage(userMessage as unknown as JsonObject) } : {}),
+      });
+    }
+    const status = String(message.status) as 'completed' | 'error' | 'pending' | 'stopped' | 'streaming';
+    events.push(...readAssistantToolEvents(message.id, message));
+    events.push({
+      content: typeof message.content === 'string' ? message.content : '',
+      messageId: message.id,
+      type: 'message-patch' as const,
+    });
+    events.push({
+      ...(typeof message.error === 'string' ? { error: message.error } : {}),
+      messageId: message.id,
+      status,
+      type: 'status' as const,
+    });
+    events.push({
+      messageId: message.id,
+      status,
+      type: 'finish' as const,
+    });
+  }
+  return events;
+}
+
+function readPreviousSubagentUserMessage(
+  conversation: RuntimeConversationRecord,
+  assistantIndex: number,
+): RuntimeConversationRecord['messages'][number] | null {
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    const message = conversation.messages[index];
+    if (message.role === 'user') {
+      return message;
+    }
+  }
+  return null;
+}
+
+function isSubagentStopTargetInActiveContinuationChain(
+  conversation: RuntimeConversationRecord,
+  messageId: string,
+): boolean {
+  const activeAssistantMessageId = readActiveSubagentAssistantMessageId(conversation);
+  if (!activeAssistantMessageId) {
+    return false;
+  }
+  if (activeAssistantMessageId === messageId) {
+    return true;
+  }
+  const activeAssistantIndex = conversation.messages.findIndex((message) => message.id === activeAssistantMessageId);
+  if (activeAssistantIndex < 0) {
+    return false;
+  }
+  let cursor = activeAssistantIndex;
+  while (cursor > 1) {
+    const syntheticContinueUser = conversation.messages[cursor - 1];
+    const previousAssistant = conversation.messages[cursor - 2];
+    if (
+      syntheticContinueUser?.role !== 'user'
+      || !isAutoCompactionContinueMessage(syntheticContinueUser)
+      || previousAssistant?.role !== 'assistant'
+      || typeof previousAssistant.id !== 'string'
+    ) {
+      return false;
+    }
+    if (previousAssistant.id === messageId) {
+      return true;
+    }
+    cursor -= 2;
+  }
+  return false;
+}
+
 function readToolEntries(
   value: unknown,
   payloadKey: 'input' | 'output',
@@ -520,4 +567,36 @@ function readActiveSubagentAssistantMessageId(conversation: RuntimeConversationR
     }
   }
   return null;
+}
+
+function isAutoCompactionContinueMessage(message: RuntimeConversationRecord['messages'][number]): boolean {
+  return readMessageAnnotations(message).some((annotation) => (
+    annotation.owner === 'conversation.context-governance'
+    && annotation.type === 'context-compaction'
+    && isRecord(annotation.data)
+    && annotation.data.role === 'continue'
+    && annotation.data.synthetic === true
+    && annotation.data.trigger === 'after-response'
+  ));
+}
+
+function readMessageAnnotations(message: Record<string, unknown>): Array<Record<string, unknown>> {
+  if (isRecord(message.metadata) && Array.isArray(message.metadata.annotations)) {
+    return message.metadata.annotations.filter(isRecord);
+  }
+  if (typeof message.metadataJson !== 'string' || !message.metadataJson.trim()) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(message.metadataJson) as unknown;
+    return isRecord(parsed) && Array.isArray(parsed.annotations)
+      ? parsed.annotations.filter(isRecord)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -354,15 +354,30 @@ describe('ConversationController', () => {
     );
   });
 
-  it('does not interrupt the current subagent run when stop targets a stale or non-assistant message', () => {
+  it('interrupts the current subagent run even if the frontend still targets a stale assistant message id', () => {
     conversationStore.requireConversation.mockReturnValue({
       createdAt: '2026-04-11T00:00:00.000Z',
       id: conversationId,
       kind: 'subagent',
       messages: [
         { id: 'old-assistant', role: 'assistant', status: 'completed' },
-        { id: 'user-message', role: 'user', status: 'completed' },
+        {
+          id: 'synthetic-continue',
+          metadata: {
+            annotations: [
+              {
+                data: { role: 'continue', synthetic: true, trigger: 'after-response' },
+                owner: 'conversation.context-governance',
+                type: 'context-compaction',
+                version: '1',
+              },
+            ],
+          },
+          role: 'user',
+          status: 'completed',
+        },
         { id: 'active-assistant', role: 'assistant', status: 'streaming' },
+        { id: 'user-message', role: 'user', status: 'completed' },
       ],
       subagent: { activeAssistantMessageId: 'active-assistant', pluginId: 'plugin-a', status: 'running' },
       title: 'Subagent',
@@ -370,11 +385,183 @@ describe('ConversationController', () => {
     });
     subagentRunner.interruptSubagent.mockReturnValue({ message: 'stopped' });
 
-    expect(controller.stopMessage('user-1', conversationId, 'old-assistant')).toEqual({ message: 'Generation stopped' });
+    expect(controller.stopMessage('user-1', conversationId, 'old-assistant')).toEqual({ message: 'stopped' });
     expect(() => controller.stopMessage('user-1', conversationId, 'user-message')).toThrow('Only assistant messages can be stopped');
     expect(controller.stopMessage('user-1', conversationId, 'active-assistant')).toEqual({ message: 'stopped' });
-    expect(subagentRunner.interruptSubagent).toHaveBeenCalledTimes(1);
+    expect(subagentRunner.interruptSubagent).toHaveBeenCalledTimes(2);
     expect(subagentRunner.interruptSubagent).toHaveBeenCalledWith('plugin-a', conversationId, 'user-1');
+  });
+
+  it('does not interrupt the current subagent run when stop targets an older assistant outside the active auto-continue chain', () => {
+    conversationStore.requireConversation.mockReturnValue({
+      createdAt: '2026-04-11T00:00:00.000Z',
+      id: conversationId,
+      kind: 'subagent',
+      messages: [
+        { id: 'older-assistant', role: 'assistant', status: 'completed' },
+        { id: 'older-user', role: 'user', status: 'completed' },
+        { id: 'linked-assistant', role: 'assistant', status: 'completed' },
+        {
+          id: 'synthetic-continue',
+          metadata: {
+            annotations: [
+              {
+                data: { role: 'continue', synthetic: true, trigger: 'after-response' },
+                owner: 'conversation.context-governance',
+                type: 'context-compaction',
+                version: '1',
+              },
+            ],
+          },
+          role: 'user',
+          status: 'completed',
+        },
+        { id: 'active-assistant', role: 'assistant', status: 'streaming' },
+      ],
+      subagent: { activeAssistantMessageId: 'active-assistant', pluginId: 'plugin-a', status: 'running' },
+      title: 'Subagent',
+      updatedAt: '2026-04-11T00:00:00.000Z',
+    });
+
+    expect(controller.stopMessage('user-1', conversationId, 'older-assistant')).toEqual({ message: 'Generation stopped' });
+    expect(subagentRunner.interruptSubagent).not.toHaveBeenCalled();
+  });
+
+  it('streams subagent auto-compaction continuation messages in the same SSE response', async () => {
+    const response = createResponseStub();
+    const initialConversation = {
+      createdAt: '2026-04-11T00:00:00.000Z',
+      id: conversationId,
+      kind: 'subagent',
+      messages: [],
+      subagent: { pluginId: 'plugin-a', status: 'completed' },
+      title: 'Subagent',
+      updatedAt: '2026-04-11T00:00:00.000Z',
+    };
+    const afterSendConversation = {
+      createdAt: '2026-04-11T00:00:00.000Z',
+      id: conversationId,
+      kind: 'subagent',
+      messages: [
+        {
+          content: '先做第一轮',
+          createdAt: '2026-04-11T00:00:01.000Z',
+          id: 'user-1',
+          parts: [{ text: '先做第一轮', type: 'text' }],
+          role: 'user',
+          status: 'completed',
+          updatedAt: '2026-04-11T00:00:01.000Z',
+        },
+        {
+          content: '',
+          createdAt: '2026-04-11T00:00:01.500Z',
+          id: 'assistant-1',
+          model: 'gpt-5.4',
+          parts: [],
+          provider: 'openai',
+          role: 'assistant',
+          status: 'pending',
+          updatedAt: '2026-04-11T00:00:01.500Z',
+        },
+      ],
+      subagent: { activeAssistantMessageId: 'assistant-1', pluginId: 'plugin-a', status: 'running' },
+      title: 'Subagent',
+      updatedAt: '2026-04-11T00:00:01.500Z',
+    };
+    const finishedConversation = {
+      createdAt: '2026-04-11T00:00:00.000Z',
+      id: conversationId,
+      kind: 'subagent',
+      messages: [
+        {
+          content: '先做第一轮',
+          createdAt: '2026-04-11T00:00:01.000Z',
+          id: 'user-1',
+          parts: [{ text: '先做第一轮', type: 'text' }],
+          role: 'user',
+          status: 'completed',
+          updatedAt: '2026-04-11T00:00:01.000Z',
+        },
+        {
+          content: '第一轮工具完成',
+          createdAt: '2026-04-11T00:00:01.500Z',
+          id: 'assistant-1',
+          model: 'gpt-5.4',
+          parts: [{ text: '第一轮工具完成', type: 'text' }],
+          provider: 'openai',
+          role: 'assistant',
+          status: 'completed',
+          toolCalls: [{ input: { city: 'Hangzhou' }, toolCallId: 'tool-call-1', toolName: 'weather.search' }],
+          toolResults: [{ output: { kind: 'tool:text', value: '晴' }, toolCallId: 'tool-call-1', toolName: 'weather.search' }],
+          updatedAt: '2026-04-11T00:00:02.000Z',
+        },
+        {
+          content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+          createdAt: '2026-04-11T00:00:02.100Z',
+          id: 'user-2',
+          metadata: {
+            annotations: [
+              {
+                data: { role: 'continue', synthetic: true, trigger: 'after-response' },
+                owner: 'conversation.context-governance',
+                type: 'context-compaction',
+                version: '1',
+              },
+            ],
+          },
+          parts: [{ text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.', type: 'text' }],
+          role: 'user',
+          status: 'completed',
+          updatedAt: '2026-04-11T00:00:02.100Z',
+        },
+        {
+          content: '第二轮自动续跑完成',
+          createdAt: '2026-04-11T00:00:02.200Z',
+          id: 'assistant-2',
+          model: 'gpt-5.4',
+          parts: [{ text: '第二轮自动续跑完成', type: 'text' }],
+          provider: 'openai',
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-11T00:00:02.500Z',
+        },
+      ],
+      subagent: { activeAssistantMessageId: undefined, pluginId: 'plugin-a', status: 'completed' },
+      title: 'Subagent',
+      updatedAt: '2026-04-11T00:00:02.500Z',
+    };
+    conversationStore.requireConversation
+      .mockReturnValueOnce(initialConversation)
+      .mockReturnValueOnce(afterSendConversation)
+      .mockReturnValueOnce(finishedConversation);
+    subagentRunner.sendInputSubagent.mockResolvedValue(undefined);
+    subagentRunner.waitSubagent.mockResolvedValue({ conversationId, result: '第二轮自动续跑完成', status: 'completed' });
+
+    await controller.sendMessage(
+      'user-1',
+      conversationId,
+      { content: '先做第一轮' } as never,
+      response as never,
+    );
+
+    const writes = response.write.mock.calls.map(([payload]) => payload);
+    expect(writes.some((payload) => payload.includes('"type":"message-start"') && payload.includes('"id":"assistant-1"') && payload.includes('"id":"user-1"'))).toBe(true);
+    expect(writes.some((payload) => payload.includes('"type":"message-start"') && payload.includes('"id":"assistant-2"') && payload.includes('"id":"user-2"'))).toBe(true);
+    expect(writes).toContain(sse({
+      content: '第二轮自动续跑完成',
+      messageId: 'assistant-2',
+      type: 'message-patch',
+    }));
+    expect(writes).toContain(sse({
+      messageId: 'assistant-2',
+      status: 'completed',
+      type: 'finish',
+    }));
+    expect(
+      writes.findIndex((payload) => payload.includes('"messageId":"assistant-1"') && payload.includes('"type":"finish"')),
+    ).toBeLessThan(
+      writes.findIndex((payload) => payload.includes('"type":"message-start"') && payload.includes('"id":"assistant-2"')),
+    );
   });
 
   it('returns SSE error instead of retrying a subagent user message', async () => {
