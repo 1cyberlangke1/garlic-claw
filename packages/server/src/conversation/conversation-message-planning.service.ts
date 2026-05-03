@@ -34,10 +34,10 @@ export class ConversationMessagePlanningService {
     private readonly aiVisionService: AiVisionService,
     private readonly conversationAfterResponseCompactionService: ConversationAfterResponseCompactionService,
     private readonly contextGovernanceService: ContextGovernanceService,
-    private readonly runtimeHostConversationRecordService: ConversationStoreService,
+    private readonly conversationStore: ConversationStoreService,
     private readonly personaService: PersonaService,
     private readonly toolRegistryService: ToolRegistryService,
-    @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService,
+    @Inject(PluginDispatchService) private readonly pluginDispatch: PluginDispatchService,
   ) {}
 
   async applyMessageReceived(input: { activePersonaId?: string; content: string; conversationId: string; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string }): Promise<MessageReceivedPlanningResult> {
@@ -58,7 +58,7 @@ export class ConversationMessagePlanningService {
       applyResponse: readMessageReceivedHookResponse,
       hookName: 'message:received',
       initialState: input,
-      kernel: this.runtimeHostPluginDispatchService,
+      kernel: this.pluginDispatch,
       mapPayload: (payload, context) => asJsonValue({
         context,
         conversationId: payload.conversationId,
@@ -118,7 +118,7 @@ export class ConversationMessagePlanningService {
   }
 
   async finalizeTaskResult(result: CompletedConversationTaskResult, responseSource: ConversationResponseSource, shortCircuitParts: ChatMessagePart[] | null): Promise<CompletedConversationTaskResult> {
-    const conversation = this.runtimeHostConversationRecordService.requireConversation(result.conversationId);
+    const conversation = this.conversationStore.requireConversation(result.conversationId);
     const context = { activePersonaId: conversation.activePersonaId, conversationId: result.conversationId, userId: conversation.userId };
     const assistantResult = responseSource === 'short-circuit' ? { ...result, metadata: createDisplayMessageMetadata('result'), parts: shortCircuitParts ?? result.parts } : await this.applyAssistantMutation('chat:after-model', context, result);
     if (responseSource === 'model') {await this.contextGovernanceService.generateConversationTitleIfNeeded({ conversationId: result.conversationId, userId: conversation.userId });}
@@ -141,14 +141,14 @@ export class ConversationMessagePlanningService {
     }
     const context = createConversationHookContext({ ...contextInput, modelId: result.modelId, providerId: result.providerId });
     const payload = asJsonValue({ assistantContent: result.content, assistantMessageId: result.assistantMessageId, assistantParts: result.parts, context, conversationId: result.conversationId, modelId: result.modelId, providerId: result.providerId, responseSource, sentAt: new Date().toISOString(), toolCalls: result.toolCalls, toolResults: result.toolResults });
-    for (const pluginId of listDispatchableHookPluginIds({ context, hookName: 'response:after-send', kernel: this.runtimeHostPluginDispatchService })) {
-      await this.runtimeHostPluginDispatchService.invokeHook({ context, hookName: 'response:after-send', payload, pluginId });
+    for (const pluginId of listDispatchableHookPluginIds({ context, hookName: 'response:after-send', kernel: this.pluginDispatch })) {
+      await this.pluginDispatch.invokeHook({ context, hookName: 'response:after-send', payload, pluginId });
     }
     return { compactionTriggered };
   }
 
   private async buildModelMessages(conversationId: string, messageId: string): Promise<ModelMessage[]> {
-    const historyMessages = this.runtimeHostConversationRecordService
+    const historyMessages = this.conversationStore
       .requireConversation(conversationId)
       .messages
       .filter((message) => message.id !== messageId && (message.role === 'assistant' || message.role === 'user' || message.role === 'display'));
@@ -165,10 +165,10 @@ export class ConversationMessagePlanningService {
 
   private async runConversationHistoryRewrite(input: { activePersonaId?: string; conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<void> {
     const context = createConversationHookContext(input);
-    let history = this.runtimeHostConversationRecordService.readConversationHistory(input.conversationId, input.userId);
-    for (const pluginId of listDispatchableHookPluginIds({ context, hookName: 'conversation:history-rewrite', kernel: this.runtimeHostPluginDispatchService })) {
-      await this.runtimeHostPluginDispatchService.invokeHook({ context, hookName: 'conversation:history-rewrite', payload: asJsonValue({ context, conversationId: input.conversationId, history, trigger: 'prepare-model' }), pluginId });
-      history = this.runtimeHostConversationRecordService.readConversationHistory(input.conversationId, input.userId);
+    let history = this.conversationStore.readConversationHistory(input.conversationId, input.userId);
+    for (const pluginId of listDispatchableHookPluginIds({ context, hookName: 'conversation:history-rewrite', kernel: this.pluginDispatch })) {
+      await this.pluginDispatch.invokeHook({ context, hookName: 'conversation:history-rewrite', payload: asJsonValue({ context, conversationId: input.conversationId, history, trigger: 'prepare-model' }), pluginId });
+      history = this.conversationStore.readConversationHistory(input.conversationId, input.userId);
     }
   }
 
@@ -179,7 +179,7 @@ export class ConversationMessagePlanningService {
       applyResponse: readBeforeModelHookResponse,
       hookName: 'chat:before-model',
       initialState: input,
-      kernel: this.runtimeHostPluginDispatchService,
+      kernel: this.pluginDispatch,
       mapPayload: (payload) => asJsonValue({ context, request: { availableTools, messages: payload.messages, modelId: payload.modelId, providerId: payload.providerId, systemPrompt: payload.systemPrompt } }),
       readContext: () => context,
     });
@@ -191,7 +191,7 @@ export class ConversationMessagePlanningService {
     return applyMutatingDispatchableHooks({
       applyMutation: applyAssistantResultMutation,
       hookName,
-      kernel: this.runtimeHostPluginDispatchService,
+      kernel: this.pluginDispatch,
       mapPayload: (payload, nextContext) => Promise.resolve(asJsonValue({ assistantContent: payload.content, assistantMessageId: payload.assistantMessageId, assistantParts: payload.parts, ...(hookName === 'response:before-send' ? { context: nextContext } : { conversationId: payload.conversationId }), modelId: payload.modelId, providerId: payload.providerId, ...(responseSource ? { responseSource } : {}), toolCalls: payload.toolCalls, toolResults: payload.toolResults })),
       payload: result,
       readContext: () => context,

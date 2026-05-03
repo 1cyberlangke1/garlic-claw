@@ -30,26 +30,26 @@ export class ConversationController {
     private readonly conversationMessageLifecycleService: ConversationMessageLifecycleService,
     private readonly conversationTaskService: ConversationTaskService,
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
-    private readonly runtimeHostConversationMessageService: ConversationMessageService,
-    private readonly runtimeHostConversationRecordService: ConversationStoreService,
-    private readonly runtimeHostConversationTodoService: ConversationTodoService,
-    private readonly runtimeHostSubagentRunnerService: SubagentRunnerService,
+    private readonly conversationMessages: ConversationMessageService,
+    private readonly conversationStore: ConversationStoreService,
+    private readonly conversationTodos: ConversationTodoService,
+    private readonly subagentRunner: SubagentRunnerService,
   ) {}
 
   private requireOwnedConversation(userId: string, id: string) {
-    return this.runtimeHostConversationRecordService.requireConversation(id, userId);
+    return this.conversationStore.requireConversation(id, userId);
   }
 
   @Post('conversations')
   createConversation(@CurrentUser('id') userId: string, @Body() dto: CreateConversationDto) {
-    return this.runtimeHostConversationRecordService.createConversation({ ...dto, userId });
+    return this.conversationStore.createConversation({ ...dto, userId });
   }
 
   @Get('conversations')
-  listConversations(@CurrentUser('id') userId: string) { return this.runtimeHostConversationRecordService.listConversations(userId); }
+  listConversations(@CurrentUser('id') userId: string) { return this.conversationStore.listConversations(userId); }
 
   @Get('conversations/:id')
-  getConversation(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) { return this.runtimeHostConversationRecordService.getConversation(id, userId); }
+  getConversation(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) { return this.conversationStore.getConversation(id, userId); }
 
   @Get('conversations/:id/context-window')
   getConversationContextWindow(
@@ -63,23 +63,23 @@ export class ConversationController {
   }
 
   @Get('sessions/:id/todo')
-  getSessionTodo(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) { return this.runtimeHostConversationTodoService.readSessionTodo(id, userId); }
+  getSessionTodo(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) { return this.conversationTodos.readSessionTodo(id, userId); }
 
   @Delete('conversations/:id')
   async deleteConversation(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) {
     this.requireOwnedConversation(userId, id);
-    const conversationTree = this.runtimeHostConversationRecordService.listConversationTreeRecords(id, userId) as RuntimeConversationRecord[];
+    const conversationTree = this.conversationStore.listConversationTreeRecords(id, userId) as RuntimeConversationRecord[];
     await stopActiveConversationTreeWork(
       conversationTree,
       userId,
       this.conversationTaskService,
-      this.runtimeHostSubagentRunnerService,
+      this.subagentRunner,
     );
-    return await this.runtimeHostConversationRecordService.deleteConversation(id, userId);
+    return await this.conversationStore.deleteConversation(id, userId);
   }
 
   @Put('sessions/:id/todo')
-  updateSessionTodo(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Body() dto: UpdateConversationTodoDto) { return this.runtimeHostConversationTodoService.replaceSessionTodo(id, dto.todos as ConversationTodoItemDto[], userId); }
+  updateSessionTodo(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Body() dto: UpdateConversationTodoDto) { return this.conversationTodos.replaceSessionTodo(id, dto.todos as ConversationTodoItemDto[], userId); }
 
   @Get('conversations/:id/runtime-permissions/pending')
   listPendingRuntimePermissions(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) {
@@ -106,7 +106,7 @@ export class ConversationController {
       await streamSubagentEvents(
         res,
         async () => {
-          await this.runtimeHostSubagentRunnerService.sendInputSubagent(pluginId, {
+          await this.subagentRunner.sendInputSubagent(pluginId, {
             ...(conversation.activePersonaId ? { activePersonaId: conversation.activePersonaId } : {}),
             ...(dto.model ? { activeModelId: dto.model } : {}),
             ...(dto.provider ? { activeProviderId: dto.provider } : {}),
@@ -119,7 +119,7 @@ export class ConversationController {
             ...(typeof dto.provider === 'string' ? { providerId: dto.provider } : {}),
             messages: [toPluginLlmMessage(dto)],
           });
-          const nextConversation = this.runtimeHostConversationRecordService.requireConversation(id, userId);
+          const nextConversation = this.conversationStore.requireConversation(id, userId);
           const assistantMessageId = nextConversation.subagent?.activeAssistantMessageId;
           const assistantMessage = assistantMessageId ? nextConversation.messages.find((message) => message.id === assistantMessageId) : null;
           const userMessage = findLastConversationMessage(nextConversation, (message) => message.role === 'user');
@@ -136,8 +136,8 @@ export class ConversationController {
           };
         },
         async (assistantMessageId) => {
-          await this.runtimeHostSubagentRunnerService.waitSubagent(pluginId, { conversationId: id });
-          const latestConversation = this.runtimeHostConversationRecordService.requireConversation(id, userId);
+          await this.subagentRunner.waitSubagent(pluginId, { conversationId: id });
+          const latestConversation = this.conversationStore.requireConversation(id, userId);
           const assistantMessage = latestConversation.messages.find((message) => message.id === assistantMessageId);
           if (!assistantMessage) {
             return [];
@@ -187,7 +187,7 @@ export class ConversationController {
         res,
         async () => {
           const retriedInput = readRetrySubagentInput(requireConversationMessage(conversation, messageId), conversation, messageId);
-          await this.runtimeHostSubagentRunnerService.sendInputSubagent(pluginId, {
+          await this.subagentRunner.sendInputSubagent(pluginId, {
             ...(conversation.activePersonaId ? { activePersonaId: conversation.activePersonaId } : {}),
             ...(dto.model ? { activeModelId: dto.model } : {}),
             ...(dto.provider ? { activeProviderId: dto.provider } : {}),
@@ -200,7 +200,7 @@ export class ConversationController {
             ...(typeof dto.provider === 'string' ? { providerId: dto.provider } : {}),
             messages: [retriedInput],
           });
-          const nextConversation = this.runtimeHostConversationRecordService.requireConversation(id, userId);
+          const nextConversation = this.conversationStore.requireConversation(id, userId);
           const assistantMessageId = nextConversation.subagent?.activeAssistantMessageId;
           const assistantMessage = assistantMessageId ? nextConversation.messages.find((message) => message.id === assistantMessageId) : null;
           const userMessage = findLastConversationMessage(nextConversation, (message) => message.role === 'user');
@@ -217,8 +217,8 @@ export class ConversationController {
           };
         },
         async (assistantMessageId) => {
-          await this.runtimeHostSubagentRunnerService.waitSubagent(pluginId, { conversationId: id });
-          const latestConversation = this.runtimeHostConversationRecordService.requireConversation(id, userId);
+          await this.subagentRunner.waitSubagent(pluginId, { conversationId: id });
+          const latestConversation = this.conversationStore.requireConversation(id, userId);
           const assistantMessage = latestConversation.messages.find((message) => message.id === assistantMessageId);
           if (!assistantMessage) {
             return [];
@@ -268,7 +268,7 @@ export class ConversationController {
         activeAssistantMessageId === messageId
         && (conversation.subagent.status === 'queued' || conversation.subagent.status === 'running')
       ) {
-        return this.runtimeHostSubagentRunnerService.interruptSubagent(conversation.subagent.pluginId, id, userId);
+        return this.subagentRunner.interruptSubagent(conversation.subagent.pluginId, id, userId);
       }
       return { message: 'Generation stopped' };
     }
@@ -279,20 +279,20 @@ export class ConversationController {
   async updateMessage(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Param('messageId', routeUuidPipe) messageId: string, @Body() dto: UpdateMessageDto) {
     this.requireOwnedConversation(userId, id);
     await this.conversationTaskService.stopTask(messageId);
-    return this.runtimeHostConversationMessageService.updateMessage(id, messageId, toUpdateMessagePatch(dto), userId);
+    return this.conversationMessages.updateMessage(id, messageId, toUpdateMessagePatch(dto), userId);
   }
 
   @Get('conversations/:id/subagents')
   listConversationSubagents(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) {
     this.requireOwnedConversation(userId, id);
-    return this.runtimeHostConversationRecordService.listChildSubagentConversations(id, userId);
+    return this.conversationStore.listChildSubagentConversations(id, userId);
   }
 
   @Delete('conversations/:id/messages/:messageId')
   async deleteMessage(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Param('messageId', routeUuidPipe) messageId: string) {
     this.requireOwnedConversation(userId, id);
     await this.conversationTaskService.stopTask(messageId);
-    return this.runtimeHostConversationMessageService.deleteMessage(id, messageId, userId);
+    return this.conversationMessages.deleteMessage(id, messageId, userId);
   }
 }
 
@@ -467,7 +467,7 @@ async function stopActiveConversationTreeWork(
   conversations: RuntimeConversationRecord[],
   userId: string,
   conversationTaskService: ConversationTaskService,
-  runtimeHostSubagentRunnerService: SubagentRunnerService,
+  subagentRunner: SubagentRunnerService,
 ) {
   for (const conversation of conversations) {
     for (const messageId of readActiveConversationTaskMessageIds(conversation)) {
@@ -478,7 +478,7 @@ async function stopActiveConversationTreeWork(
       && conversation.subagent
       && (conversation.subagent.status === 'queued' || conversation.subagent.status === 'running')
     ) {
-      await runtimeHostSubagentRunnerService.interruptSubagent(conversation.subagent.pluginId, conversation.id, userId);
+      await subagentRunner.interruptSubagent(conversation.subagent.pluginId, conversation.id, userId);
     }
   }
 }

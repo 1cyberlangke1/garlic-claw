@@ -10,10 +10,10 @@ describe('ConversationController', () => {
   const conversationMessageLifecycleService = { retryMessageGeneration: jest.fn(), startMessageGeneration: jest.fn(), stopMessageGeneration: jest.fn() };
   const conversationTaskService = { stopTask: jest.fn(), subscribe: jest.fn(), waitForTask: jest.fn() };
   const runtimeToolPermissionService = { listPendingRequests: jest.fn(), reply: jest.fn() };
-  const runtimeHostConversationMessageService = { deleteMessage: jest.fn(), updateMessage: jest.fn() };
-  const runtimeHostConversationTodoService = { deleteSessionTodo: jest.fn(), readSessionTodo: jest.fn(), replaceSessionTodo: jest.fn() };
-  const runtimeHostSubagentRunnerService = { interruptSubagent: jest.fn(), sendInputSubagent: jest.fn(), waitSubagent: jest.fn() };
-  const runtimeHostConversationRecordService = {
+  const conversationMessages = { deleteMessage: jest.fn(), updateMessage: jest.fn() };
+  const conversationTodos = { deleteSessionTodo: jest.fn(), readSessionTodo: jest.fn(), replaceSessionTodo: jest.fn() };
+  const subagentRunner = { interruptSubagent: jest.fn(), sendInputSubagent: jest.fn(), waitSubagent: jest.fn() };
+  const conversationStore = {
     createConversation: jest.fn(),
     deleteConversation: jest.fn(),
     getConversation: jest.fn(),
@@ -26,7 +26,7 @@ describe('ConversationController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    runtimeHostConversationRecordService.requireConversation.mockReturnValue({
+    conversationStore.requireConversation.mockReturnValue({
       createdAt: '2026-04-11T00:00:00.000Z',
       id: conversationId,
       kind: 'main',
@@ -39,10 +39,10 @@ describe('ConversationController', () => {
       conversationMessageLifecycleService as never,
       conversationTaskService as never,
       runtimeToolPermissionService as never,
-      runtimeHostConversationMessageService as never,
-      runtimeHostConversationRecordService as never,
-      runtimeHostConversationTodoService as never,
-      runtimeHostSubagentRunnerService as never,
+      conversationMessages as never,
+      conversationStore as never,
+      conversationTodos as never,
+      subagentRunner as never,
     );
   });
 
@@ -66,10 +66,10 @@ describe('ConversationController', () => {
 
   it('creates, lists, reads and deletes conversations through user-owned conversation APIs', async () => {
     const overview = { _count: { messages: 0 }, createdAt: '2026-04-11T00:00:00.000Z', id: conversationId, title: '新的对话', updatedAt: '2026-04-11T00:00:00.000Z' };
-    runtimeHostConversationRecordService.createConversation.mockReturnValue(overview);
-    runtimeHostConversationRecordService.listConversations.mockReturnValue([overview]);
-    runtimeHostConversationRecordService.getConversation.mockReturnValue({ ...overview, messages: [] });
-    runtimeHostConversationRecordService.listConversationTreeRecords.mockReturnValue([
+    conversationStore.createConversation.mockReturnValue(overview);
+    conversationStore.listConversations.mockReturnValue([overview]);
+    conversationStore.getConversation.mockReturnValue({ ...overview, messages: [] });
+    conversationStore.listConversationTreeRecords.mockReturnValue([
       {
         id: conversationId,
         kind: 'main',
@@ -88,40 +88,40 @@ describe('ConversationController', () => {
         subagent: { pluginId: 'plugin-a', status: 'running' },
       },
     ]);
-    runtimeHostConversationRecordService.deleteConversation.mockResolvedValue({ message: 'Conversation deleted' });
+    conversationStore.deleteConversation.mockResolvedValue({ message: 'Conversation deleted' });
 
     expect(controller.createConversation('user-1', { title: '新的对话' } as never)).toEqual(overview);
-    expect(runtimeHostConversationRecordService.createConversation).toHaveBeenCalledWith({ title: '新的对话', userId: 'user-1' });
+    expect(conversationStore.createConversation).toHaveBeenCalledWith({ title: '新的对话', userId: 'user-1' });
     expect(controller.listConversations('user-1')).toEqual([overview]);
-    expect(runtimeHostConversationRecordService.listConversations).toHaveBeenCalledWith('user-1');
+    expect(conversationStore.listConversations).toHaveBeenCalledWith('user-1');
     expect(controller.getConversation('user-1', conversationId)).toEqual({ ...overview, messages: [] });
-    expect(runtimeHostConversationRecordService.getConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationStore.getConversation).toHaveBeenCalledWith(conversationId, 'user-1');
     await expect(controller.deleteConversation('user-1', conversationId)).resolves.toEqual({ message: 'Conversation deleted' });
-    expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
-    expect(runtimeHostConversationRecordService.listConversationTreeRecords).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationStore.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationStore.listConversationTreeRecords).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(conversationTaskService.stopTask).toHaveBeenCalledTimes(3);
     expect(conversationTaskService.stopTask).toHaveBeenNthCalledWith(1, assistantMessageId);
     expect(conversationTaskService.stopTask).toHaveBeenNthCalledWith(2, '55555555-5555-4555-8555-555555555555');
     expect(conversationTaskService.stopTask).toHaveBeenNthCalledWith(3, '44444444-4444-4444-8444-444444444444');
-    expect(runtimeHostSubagentRunnerService.interruptSubagent).toHaveBeenCalledWith('plugin-a', '33333333-3333-4333-8333-333333333333', 'user-1');
-    expect(runtimeHostConversationRecordService.deleteConversation).toHaveBeenCalledWith(conversationId, 'user-1');
-    expect(runtimeHostConversationRecordService.requireConversation.mock.invocationCallOrder[0]).toBeLessThan(
-      runtimeHostConversationRecordService.listConversationTreeRecords.mock.invocationCallOrder[0],
+    expect(subagentRunner.interruptSubagent).toHaveBeenCalledWith('plugin-a', '33333333-3333-4333-8333-333333333333', 'user-1');
+    expect(conversationStore.deleteConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationStore.requireConversation.mock.invocationCallOrder[0]).toBeLessThan(
+      conversationStore.listConversationTreeRecords.mock.invocationCallOrder[0],
     );
-    expect(runtimeHostConversationRecordService.listConversationTreeRecords.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(conversationStore.listConversationTreeRecords.mock.invocationCallOrder[0]).toBeLessThan(
       conversationTaskService.stopTask.mock.invocationCallOrder[0],
     );
     expect(conversationTaskService.stopTask.mock.invocationCallOrder[2]).toBeLessThan(
-      runtimeHostSubagentRunnerService.interruptSubagent.mock.invocationCallOrder[0],
+      subagentRunner.interruptSubagent.mock.invocationCallOrder[0],
     );
-    expect(runtimeHostSubagentRunnerService.interruptSubagent.mock.invocationCallOrder[0]).toBeLessThan(
-      runtimeHostConversationRecordService.deleteConversation.mock.invocationCallOrder[0],
+    expect(subagentRunner.interruptSubagent.mock.invocationCallOrder[0]).toBeLessThan(
+      conversationStore.deleteConversation.mock.invocationCallOrder[0],
     );
-    expect(runtimeHostConversationTodoService.deleteSessionTodo).not.toHaveBeenCalled();
+    expect(conversationTodos.deleteSessionTodo).not.toHaveBeenCalled();
   });
 
   it('interrupts queued subagent conversations before deleting the conversation tree', async () => {
-    runtimeHostConversationRecordService.listConversationTreeRecords.mockReturnValue([
+    conversationStore.listConversationTreeRecords.mockReturnValue([
       {
         id: conversationId,
         kind: 'main',
@@ -136,12 +136,12 @@ describe('ConversationController', () => {
         subagent: { pluginId: 'plugin-b', status: 'queued' },
       },
     ]);
-    runtimeHostConversationRecordService.deleteConversation.mockResolvedValue({ message: 'Conversation deleted' });
+    conversationStore.deleteConversation.mockResolvedValue({ message: 'Conversation deleted' });
 
     await expect(controller.deleteConversation('user-1', conversationId)).resolves.toEqual({ message: 'Conversation deleted' });
 
     expect(conversationTaskService.stopTask).toHaveBeenCalledWith('88888888-8888-4888-8888-888888888888');
-    expect(runtimeHostSubagentRunnerService.interruptSubagent).toHaveBeenCalledWith(
+    expect(subagentRunner.interruptSubagent).toHaveBeenCalledWith(
       'plugin-b',
       '77777777-7777-4777-8777-777777777777',
       'user-1',
@@ -164,7 +164,7 @@ describe('ConversationController', () => {
     conversationMessagePlanningService.getContextWindowPreview.mockResolvedValue(preview);
 
     await expect(controller.getConversationContextWindow('user-1', conversationId, 'openai', 'gpt-5.4')).resolves.toEqual(preview);
-    expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationStore.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(conversationMessagePlanningService.getContextWindowPreview).toHaveBeenCalledWith({
       conversationId,
       modelId: 'gpt-5.4',
@@ -175,24 +175,24 @@ describe('ConversationController', () => {
 
   it('reads and updates session todo through owned conversation APIs', () => {
     const todos = [{ content: '实现 todo 工具', priority: 'high', status: 'in_progress' }];
-    runtimeHostConversationTodoService.readSessionTodo.mockReturnValue(todos);
-    runtimeHostConversationTodoService.replaceSessionTodo.mockReturnValue(todos);
+    conversationTodos.readSessionTodo.mockReturnValue(todos);
+    conversationTodos.replaceSessionTodo.mockReturnValue(todos);
 
     expect(controller.getSessionTodo('user-1', conversationId)).toEqual(todos);
-    expect(runtimeHostConversationTodoService.readSessionTodo).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationTodos.readSessionTodo).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(controller.updateSessionTodo('user-1', conversationId, { todos } as never)).toEqual(todos);
-    expect(runtimeHostConversationTodoService.replaceSessionTodo).toHaveBeenCalledWith(conversationId, todos, 'user-1');
+    expect(conversationTodos.replaceSessionTodo).toHaveBeenCalledWith(conversationId, todos, 'user-1');
   });
 
   it('lists only subagent child conversations for the conversation tabs API', () => {
     const subagentChildren = [
       { id: '33333333-3333-4333-8333-333333333333', kind: 'subagent', title: 'Subagent Child' },
     ];
-    runtimeHostConversationRecordService.listChildSubagentConversations.mockReturnValue(subagentChildren);
+    conversationStore.listChildSubagentConversations.mockReturnValue(subagentChildren);
 
     expect(controller.listConversationSubagents('user-1', conversationId)).toEqual(subagentChildren);
-    expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
-    expect(runtimeHostConversationRecordService.listChildSubagentConversations).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationStore.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationStore.listChildSubagentConversations).toHaveBeenCalledWith(conversationId, 'user-1');
   });
 
   it('lists and replies runtime permission requests through owned conversation APIs', () => {
@@ -237,7 +237,7 @@ describe('ConversationController', () => {
 
     await controller.sendMessage('user-1', conversationId, sendDto as never, response as never);
 
-    expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationStore.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(conversationMessageLifecycleService.startMessageGeneration).toHaveBeenCalledWith(conversationId, sendDto, 'user-1');
     expect(response.write).toHaveBeenNthCalledWith(1, sse({ assistantMessage: started.assistantMessage, type: 'message-start', userMessage: started.userMessage }));
     expect(response.write).toHaveBeenCalledWith(sse({ messageId: assistantMessageId, text: '你好', type: 'text-delta' }));
@@ -314,14 +314,14 @@ describe('ConversationController', () => {
     conversationMessageLifecycleService.stopMessageGeneration.mockReturnValue({ message: 'Generation stopped' });
 
     await controller.retryMessage('user-1', conversationId, assistantMessageId, {} as never, response as never);
-    expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationStore.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(controller.stopMessage('user-1', conversationId, assistantMessageId)).toEqual({ message: 'Generation stopped' });
-    expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenLastCalledWith(conversationId, 'user-1');
+    expect(conversationStore.requireConversation).toHaveBeenLastCalledWith(conversationId, 'user-1');
   });
 
   it('forwards main-conversation display result stop requests to the lifecycle service', () => {
     conversationMessageLifecycleService.stopMessageGeneration.mockReturnValue({ message: 'Generation stopped' });
-    runtimeHostConversationRecordService.requireConversation.mockReturnValue({
+    conversationStore.requireConversation.mockReturnValue({
       createdAt: '2026-04-11T00:00:00.000Z',
       id: conversationId,
       kind: 'main',
@@ -355,7 +355,7 @@ describe('ConversationController', () => {
   });
 
   it('does not interrupt the current subagent run when stop targets a stale or non-assistant message', () => {
-    runtimeHostConversationRecordService.requireConversation.mockReturnValue({
+    conversationStore.requireConversation.mockReturnValue({
       createdAt: '2026-04-11T00:00:00.000Z',
       id: conversationId,
       kind: 'subagent',
@@ -368,18 +368,18 @@ describe('ConversationController', () => {
       title: 'Subagent',
       updatedAt: '2026-04-11T00:00:00.000Z',
     });
-    runtimeHostSubagentRunnerService.interruptSubagent.mockReturnValue({ message: 'stopped' });
+    subagentRunner.interruptSubagent.mockReturnValue({ message: 'stopped' });
 
     expect(controller.stopMessage('user-1', conversationId, 'old-assistant')).toEqual({ message: 'Generation stopped' });
     expect(() => controller.stopMessage('user-1', conversationId, 'user-message')).toThrow('Only assistant messages can be stopped');
     expect(controller.stopMessage('user-1', conversationId, 'active-assistant')).toEqual({ message: 'stopped' });
-    expect(runtimeHostSubagentRunnerService.interruptSubagent).toHaveBeenCalledTimes(1);
-    expect(runtimeHostSubagentRunnerService.interruptSubagent).toHaveBeenCalledWith('plugin-a', conversationId, 'user-1');
+    expect(subagentRunner.interruptSubagent).toHaveBeenCalledTimes(1);
+    expect(subagentRunner.interruptSubagent).toHaveBeenCalledWith('plugin-a', conversationId, 'user-1');
   });
 
   it('returns SSE error instead of retrying a subagent user message', async () => {
     const response = createResponseStub();
-    runtimeHostConversationRecordService.requireConversation.mockReturnValue({
+    conversationStore.requireConversation.mockReturnValue({
       createdAt: '2026-04-11T00:00:00.000Z',
       id: conversationId,
       kind: 'subagent',
@@ -393,22 +393,22 @@ describe('ConversationController', () => {
 
     await controller.retryMessage('user-1', conversationId, 'user-message', {} as never, response as never);
 
-    expect(runtimeHostSubagentRunnerService.sendInputSubagent).not.toHaveBeenCalled();
+    expect(subagentRunner.sendInputSubagent).not.toHaveBeenCalled();
     expect(response.write).toHaveBeenCalledWith(sse({ error: 'Only assistant messages can be retried', type: 'error' }));
     expect(response.write).toHaveBeenLastCalledWith('data: [DONE]\n\n');
   });
 
   it('updates and deletes messages through the runtime conversation owner', async () => {
     const message = { content: '更新后的内容', createdAt: '2026-04-11T00:00:00.000Z', error: null, id: assistantMessageId, metadataJson: null, model: null, partsJson: null, provider: null, role: 'assistant', status: 'completed', toolCalls: null, toolResults: null, updatedAt: '2026-04-11T00:01:00.000Z' };
-    runtimeHostConversationMessageService.updateMessage.mockReturnValue(message);
-    runtimeHostConversationMessageService.deleteMessage.mockReturnValue({ success: true });
+    conversationMessages.updateMessage.mockReturnValue(message);
+    conversationMessages.deleteMessage.mockReturnValue({ success: true });
 
     await expect(controller.updateMessage('user-1', conversationId, assistantMessageId, { content: '更新后的内容' } as never)).resolves.toEqual(message);
     expect(conversationTaskService.stopTask).toHaveBeenCalledWith(assistantMessageId);
-    expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationStore.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
     await expect(controller.deleteMessage('user-1', conversationId, assistantMessageId)).resolves.toEqual({ success: true });
     expect(conversationTaskService.stopTask).toHaveBeenLastCalledWith(assistantMessageId);
-    expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenLastCalledWith(conversationId, 'user-1');
+    expect(conversationStore.requireConversation).toHaveBeenLastCalledWith(conversationId, 'user-1');
   });
 
   it('returns conversation detail messages in shared Message contract shape', () => {
@@ -420,10 +420,10 @@ describe('ConversationController', () => {
       title: '新的对话',
       updatedAt: '2026-04-11T00:00:01.000Z',
     };
-    runtimeHostConversationRecordService.getConversation.mockReturnValue(detail);
+    conversationStore.getConversation.mockReturnValue(detail);
 
     expect(controller.getConversation('user-1', conversationId)).toEqual(detail);
-    expect(runtimeHostConversationRecordService.getConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationStore.getConversation).toHaveBeenCalledWith(conversationId, 'user-1');
   });
 });
 

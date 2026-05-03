@@ -76,10 +76,10 @@ export class ConversationTaskService {
   private readonly tasks = new Map<string, ConversationTaskHandle>();
 
   constructor(
-    private readonly runtimeHostConversationMessageService: ConversationMessageService,
-    private readonly runtimeHostConversationRecordService: ConversationStoreService,
+    private readonly conversationMessages: ConversationMessageService,
+    private readonly conversationStore: ConversationStoreService,
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
-    private readonly runtimeHostConversationTodoService: ConversationTodoService,
+    private readonly conversationTodos: ConversationTodoService,
   ) {}
 
   startTask(input: StartConversationTaskInput): void {
@@ -121,7 +121,7 @@ export class ConversationTaskService {
     const unsubscribePermission = this.runtimeToolPermissionService.subscribe(input.conversationId, (event) => {
       this.emit(task, toConversationTaskPermissionEvent(event, input.assistantMessageId));
     });
-    const unsubscribeTodo = this.runtimeHostConversationTodoService.subscribe(input.conversationId, (event) => {
+    const unsubscribeTodo = this.conversationTodos.subscribe(input.conversationId, (event) => {
       this.emit(task, { conversationId: event.sessionId, todos: cloneJsonValue(event.todos), type: 'todo-updated' });
     });
 
@@ -174,7 +174,7 @@ export class ConversationTaskService {
     let finalResult = patched ?? completed;
 
     if (patched && hasPatchedTaskResult(completed, patched)) {
-      await this.runtimeHostConversationMessageService.writeMessage(runtime.conversationId, runtime.assistantMessageId, readConversationTaskMessageBody(patched, 'completed'));
+      await this.conversationMessages.writeMessage(runtime.conversationId, runtime.assistantMessageId, readConversationTaskMessageBody(patched, 'completed'));
       this.emit(task, { content: patched.content, messageId: runtime.assistantMessageId, ...(patched.parts.length > 0 ? { parts: patched.parts } : {}), type: 'message-patch' });
     }
 
@@ -211,7 +211,7 @@ export class ConversationTaskService {
       toolCalls: runtime.state.toolCalls.map((entry) => ({ ...entry })),
       toolResults: runtime.state.toolResults.map((entry) => ({ ...entry })),
     };
-    await this.runtimeHostConversationMessageService.writeMessage(runtime.conversationId, runtime.assistantMessageId, readConversationTaskMessageBody(snapshot, status, error));
+    await this.conversationMessages.writeMessage(runtime.conversationId, runtime.assistantMessageId, readConversationTaskMessageBody(snapshot, status, error));
     return snapshot;
   }
 
@@ -229,7 +229,7 @@ export class ConversationTaskService {
     if (!usage) {
       return result;
     }
-    const history = this.runtimeHostConversationRecordService.readConversationHistory(
+    const history = this.conversationStore.readConversationHistory(
       runtime.conversationId,
     ) as { messages?: unknown };
     if (!Array.isArray(history.messages)) {
@@ -249,7 +249,7 @@ export class ConversationTaskService {
       return result;
     }
     const nextResult = { ...result, metadata };
-    await this.runtimeHostConversationMessageService.writeMessage(
+    await this.conversationMessages.writeMessage(
       runtime.conversationId,
       runtime.assistantMessageId,
       readConversationTaskMessageBody(nextResult, 'completed'),
