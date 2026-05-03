@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { BadRequestException } from '@nestjs/common';
 
-export function toRuntimeHostPath(sessionRoot: string, virtualRoot: string, virtualPath: string): string {
+export function toHostPath(sessionRoot: string, virtualRoot: string, virtualPath: string): string {
   const relativePath = readRelativeRuntimePath(virtualRoot, virtualPath);
   const hostPath = relativePath ? path.join(sessionRoot, ...relativePath.split('/')) : sessionRoot;
   const resolved = path.resolve(hostPath);
@@ -12,7 +12,7 @@ export function toRuntimeHostPath(sessionRoot: string, virtualRoot: string, virt
   return resolved;
 }
 
-export function fromRuntimeHostPath(sessionRoot: string, virtualRoot: string, hostPath: string): string {
+export function fromHostPath(sessionRoot: string, virtualRoot: string, hostPath: string): string {
   const normalizedSessionRoot = path.resolve(sessionRoot);
   const resolvedHostPath = path.resolve(hostPath);
   if (resolvedHostPath === normalizedSessionRoot) {

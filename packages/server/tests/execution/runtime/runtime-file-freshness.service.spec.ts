@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
+import { HostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
 import { RuntimeFileFreshnessService } from '../../../src/execution/runtime/runtime-file-freshness.service';
 import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
 import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
@@ -144,11 +144,11 @@ describe('RuntimeFileFreshnessService', () => {
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
+    const hostFilesystemBackend = new HostFilesystemBackendService(
       runtimeSessionEnvironmentService,
     );
     const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService([
-      runtimeHostFilesystemBackendService,
+      hostFilesystemBackend,
     ]);
     const service = new RuntimeFileFreshnessService(runtimeFilesystemBackendService);
     const steps: string[] = [];
@@ -411,11 +411,11 @@ async function createFixture(input?: {
   process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
 
   const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-  const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
+  const hostFilesystemBackend = new HostFilesystemBackendService(
     runtimeSessionEnvironmentService,
   );
   const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService([
-    runtimeHostFilesystemBackendService,
+    hostFilesystemBackend,
   ]);
   const service = new RuntimeFileFreshnessService(runtimeFilesystemBackendService);
   const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-1');
@@ -431,3 +431,4 @@ async function createFixture(input?: {
     sessionRoot: sessionEnvironment.sessionRoot,
   };
 }
+

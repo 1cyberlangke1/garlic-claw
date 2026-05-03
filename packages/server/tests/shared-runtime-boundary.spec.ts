@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 describe('Shared runtime boundary', () => {
   const sharedRoot = resolve(__dirname, '../../shared/src');
 
-  it('keeps runtime helpers out of shared exports', () => {
+  it('keeps runtime internals out of shared exports', () => {
     const indexSource = readFileSync(resolve(sharedRoot, 'index.ts'), 'utf8');
 
     expect(indexSource).not.toContain("export * from '../src/uuid'");

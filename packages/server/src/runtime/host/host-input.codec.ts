@@ -10,7 +10,7 @@ export const SCOPED_STORE_PREFIX = '__gc_scope__:';
 const KNOWN_ASSISTANT_DELTA_KEYS = new Set(['audio', 'content', 'function_call', 'refusal', 'role', 'tool_calls']);
 const PLUGIN_LLM_MESSAGE_ROLES = new Set(['assistant', 'system', 'tool', 'user']);
 
-export type RuntimeHostScope = 'conversation' | 'plugin' | 'user';
+export type HostScope = 'conversation' | 'plugin' | 'user';
 export type AssistantCustomBlockEntry = { key: string; kind: 'json'; value: JsonValue } | { key: string; kind: 'text'; value: string };
 
 export function cloneJsonValue<T>(value: T): T { return structuredClone(value); }
@@ -108,7 +108,7 @@ export function readRequiredString(params: JsonObject, key: string): string {
   throw new BadRequestException(`${key} 不能为空`);
 }
 
-export function readScope(params: JsonObject): RuntimeHostScope {
+export function readScope(params: JsonObject): HostScope {
   const scope = readOptionalString(params, 'scope') ?? 'plugin';
   if (scope === 'conversation' || scope === 'plugin' || scope === 'user') { return scope; }
   throw new BadRequestException('scope 只能是 plugin、conversation 或 user');

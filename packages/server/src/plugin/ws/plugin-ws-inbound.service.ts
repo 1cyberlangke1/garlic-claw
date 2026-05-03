@@ -20,7 +20,7 @@ export class PluginWsInboundService {
   constructor(
     private readonly runtimeGatewayConnectionLifecycleService: RuntimeGatewayConnectionLifecycleService,
     private readonly runtimeGatewayRemoteTransportService: RuntimeGatewayRemoteTransportService,
-    private readonly runtimeHostService: PluginHostService,
+    private readonly pluginHost: PluginHostService,
   ) {}
   async handleMessage({ connectionId, message }: {
     connectionId: string;
@@ -79,7 +79,7 @@ export class PluginWsInboundService {
       return { reply: createWsReply(WS_TYPE.PLUGIN, WS_ACTION.HOST_ERROR, { error: error instanceof Error ? error.message : '无效的 Host API 调用负载' }, requestId) };
     }
     try {
-      const data = await this.runtimeHostService.call({
+      const data = await this.pluginHost.call({
         context: this.runtimeGatewayRemoteTransportService.resolveHostCallContext({
           connectionId,
           context: hostPayload.context,

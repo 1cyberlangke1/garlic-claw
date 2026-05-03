@@ -268,7 +268,7 @@ describe('PluginWsModule inbound handling', () => {
     });
 
     expect(fixture.runtimeGatewayRemoteTransportService.resolveHostCallContext).not.toHaveBeenCalled();
-    expect(fixture.runtimeHostService.call).not.toHaveBeenCalled();
+    expect(fixture.pluginHost.call).not.toHaveBeenCalled();
     expect(result).toEqual({
       reply: {
         action: WS_ACTION.HOST_ERROR,
@@ -297,7 +297,7 @@ describe('PluginWsModule inbound handling', () => {
       source: 'chat-tool',
       userId: 'user-1',
     });
-    fixture.runtimeHostService.call.mockRejectedValue(new Error('host failed'));
+    fixture.pluginHost.call.mockRejectedValue(new Error('host failed'));
 
     const result = await fixture.service.handleMessage({
       connectionId: 'conn-1',
@@ -597,20 +597,20 @@ function createFixture(input?: {
     resolveHostCallContext: jest.fn(),
     settlePendingRequest: jest.fn(),
   };
-  const runtimeHostService = {
+  const pluginHost = {
     call: jest.fn(),
   };
   const pluginWsInboundService = new PluginWsInboundService(
     runtimeGatewayConnectionLifecycleService as never,
     runtimeGatewayRemoteTransportService as never,
-    runtimeHostService as never,
+    pluginHost as never,
   );
 
   return {
     pluginWsInboundService,
     runtimeGatewayConnectionLifecycleService,
     runtimeGatewayRemoteTransportService,
-    runtimeHostService,
+    pluginHost,
     service: new PluginWsModule(
       configService as never,
       runtimeGatewayConnectionLifecycleService as never,
@@ -643,3 +643,4 @@ function createSocketMock() {
     send: jest.fn(),
   };
 }
+

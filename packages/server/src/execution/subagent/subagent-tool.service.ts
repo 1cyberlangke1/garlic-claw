@@ -10,7 +10,7 @@ const SUBAGENT_TOOL_NAMES = new Set(['spawn_subagent', 'wait_subagent', 'send_in
 @Injectable()
 export class SubagentToolService {
   constructor(
-    @Inject(forwardRef(() => SubagentRunnerService)) private readonly runtimeHostSubagentRunnerService: SubagentRunnerService,
+    @Inject(forwardRef(() => SubagentRunnerService)) private readonly subagentRunner: SubagentRunnerService,
     private readonly subagentSettingsService: SubagentSettingsService,
   ) {}
 
@@ -26,7 +26,7 @@ export class SubagentToolService {
     const sourceId = this.getSourceId();
     const sourceLabel = this.getSourceLabel();
     const tools: ToolInfo[] = buildSubagentToolDefinitions({
-      subagentTypes: this.runtimeHostSubagentRunnerService.listTypes(),
+      subagentTypes: this.subagentRunner.listTypes(),
     }).map((tool) => ({
       callName: tool.name,
       description: tool.description,
@@ -47,21 +47,21 @@ export class SubagentToolService {
     }
     const config = this.subagentSettingsService.readSubagentConfig();
     if (toolName === 'wait_subagent') {
-      return this.runtimeHostSubagentRunnerService.waitSubagent(this.getSourceId(), buildSubagentWaitParams({
+      return this.subagentRunner.waitSubagent(this.getSourceId(), buildSubagentWaitParams({
         conversationId: readRequiredText(args.conversationId, toolName),
         ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
       }));
     }
     if (toolName === 'interrupt_subagent') {
-      return this.runtimeHostSubagentRunnerService.interruptSubagent(this.getSourceId(), readRequiredText(args.conversationId, toolName), context.userId);
+      return this.subagentRunner.interruptSubagent(this.getSourceId(), readRequiredText(args.conversationId, toolName), context.userId);
     }
     if (toolName === 'close_subagent') {
-      return this.runtimeHostSubagentRunnerService.closeSubagent(this.getSourceId(), buildSubagentCloseParams({
+      return this.subagentRunner.closeSubagent(this.getSourceId(), buildSubagentCloseParams({
         conversationId: readRequiredText(args.conversationId, toolName),
       }), context.userId);
     }
     if (toolName === 'send_input_subagent') {
-      return this.runtimeHostSubagentRunnerService.sendInputSubagent(this.getSourceId(), context, buildSubagentSendInputParams({
+      return this.subagentRunner.sendInputSubagent(this.getSourceId(), context, buildSubagentSendInputParams({
         config,
         conversationId: readRequiredText(args.conversationId, toolName),
         description: readOptionalText(args.description) ?? null,
@@ -71,7 +71,7 @@ export class SubagentToolService {
         providerId: readOptionalText(args.providerId) ?? null,
       }));
     }
-    return this.runtimeHostSubagentRunnerService.spawnSubagent(
+    return this.subagentRunner.spawnSubagent(
       this.getSourceId(),
       this.getSourceLabel(),
       context,

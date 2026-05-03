@@ -1,7 +1,7 @@
 import { SubagentController } from '../../src/execution/subagent/subagent.controller';
 
 describe('SubagentController', () => {
-  const runtimeHostSubagentRunnerService = {
+  const subagentRunner = {
     closeSubagent: jest.fn(),
     getSubagentOrThrow: jest.fn(),
     listOverview: jest.fn(),
@@ -12,11 +12,11 @@ describe('SubagentController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    controller = new SubagentController(runtimeHostSubagentRunnerService as never);
+    controller = new SubagentController(subagentRunner as never);
   });
 
   it('returns the subagent overview', () => {
-    runtimeHostSubagentRunnerService.listOverview.mockReturnValue({
+    subagentRunner.listOverview.mockReturnValue({
       subagents: [
         {
           conversationId: 'subagent-conversation-1',
@@ -50,7 +50,7 @@ describe('SubagentController', () => {
   });
 
   it('returns one persisted subagent conversation projection', () => {
-    runtimeHostSubagentRunnerService.getSubagentOrThrow.mockReturnValue({
+    subagentRunner.getSubagentOrThrow.mockReturnValue({
       conversationId: 'subagent-conversation-1',
       title: '总结当前对话',
       messageCount: 2,
@@ -115,7 +115,7 @@ describe('SubagentController', () => {
   });
 
   it('returns available subagent types for config selectors', () => {
-    runtimeHostSubagentRunnerService.listTypes.mockReturnValue([
+    subagentRunner.listTypes.mockReturnValue([
       {
         id: 'general',
         name: '通用',
@@ -141,7 +141,7 @@ describe('SubagentController', () => {
   });
 
   it('closes one persisted subagent conversation projection', async () => {
-    runtimeHostSubagentRunnerService.getSubagentOrThrow
+    subagentRunner.getSubagentOrThrow
       .mockReturnValueOnce({
         conversationId: 'subagent-conversation-1',
         pluginId: 'subagent',
@@ -151,7 +151,7 @@ describe('SubagentController', () => {
         pluginId: 'subagent',
         status: 'closed',
       });
-    runtimeHostSubagentRunnerService.closeSubagent.mockResolvedValue({
+    subagentRunner.closeSubagent.mockResolvedValue({
       conversationId: 'subagent-conversation-1',
       pluginId: 'subagent',
       status: 'closed',
@@ -162,8 +162,9 @@ describe('SubagentController', () => {
       pluginId: 'subagent',
       status: 'closed',
     });
-    expect(runtimeHostSubagentRunnerService.closeSubagent).toHaveBeenCalledWith('subagent', {
+    expect(subagentRunner.closeSubagent).toHaveBeenCalledWith('subagent', {
       conversationId: 'subagent-conversation-1',
     });
   });
 });
+

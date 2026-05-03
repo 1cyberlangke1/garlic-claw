@@ -9,7 +9,7 @@ import { AutomationExecutionService } from '../../../src/execution/automation/au
 import { AutomationService } from '../../../src/execution/automation/automation.service';
 import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
 import { EditToolService } from '../../../src/execution/edit/edit-tool.service';
-import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
+import { HostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
 import { GlobToolService } from '../../../src/execution/glob/glob-tool.service';
 import { GrepToolService } from '../../../src/execution/grep/grep-tool.service';
 import { InvalidToolService } from '../../../src/execution/invalid/invalid-tool.service';
@@ -276,8 +276,8 @@ describe('ToolRegistryService', () => {
   it('cleans current plugin source state when local reload finds that the directory was removed', async () => {
     const {
       pluginBootstrapService,
-      runtimeHostConversationRecordService,
-      runtimeHostPluginRuntimeService,
+      conversationStore,
+      pluginRuntime,
       runtimePluginGovernanceService,
       service,
       toolManagementSettingsService,
@@ -309,8 +309,8 @@ describe('ToolRegistryService', () => {
       pluginId: 'builtin.memory',
       removed: true,
     });
-    const deletePluginRuntimeStateSpy = jest.spyOn(runtimeHostPluginRuntimeService, 'deletePluginRuntimeState');
-    const deletePluginConversationSessionsSpy = jest.spyOn(runtimeHostConversationRecordService, 'deletePluginConversationSessions');
+    const deletePluginRuntimeStateSpy = jest.spyOn(pluginRuntime, 'deletePluginRuntimeState');
+    const deletePluginConversationSessionsSpy = jest.spyOn(conversationStore, 'deletePluginConversationSessions');
     const deleteGovernanceRuntimeStateSpy = jest.spyOn(runtimePluginGovernanceService, 'deletePluginRuntimeState');
     toolManagementSettingsService.writeSourceEnabledOverride('plugin:builtin.memory', false);
     toolManagementSettingsService.writeToolEnabledOverride('plugin:builtin.memory:save_memory', false);
@@ -745,8 +745,8 @@ describe('ToolRegistryService', () => {
   });
 
   it('blocks direct plugin execution when the plugin is disabled for the current conversation scope', async () => {
-    const { pluginBootstrapService, runtimeHostPluginDispatchService, service } = createFixture();
-    const executeToolSpy = jest.spyOn(runtimeHostPluginDispatchService, 'executeTool');
+    const { pluginBootstrapService, pluginDispatch, service } = createFixture();
+    const executeToolSpy = jest.spyOn(pluginDispatch, 'executeTool');
     const persisted = (pluginBootstrapService as unknown as {
       pluginPersistenceService: PluginPersistenceService;
     }).pluginPersistenceService;
@@ -775,8 +775,8 @@ describe('ToolRegistryService', () => {
   });
 
   it('blocks direct plugin execution when the source is disabled', async () => {
-    const { runtimeHostPluginDispatchService, service } = createFixture();
-    const executeToolSpy = jest.spyOn(runtimeHostPluginDispatchService, 'executeTool');
+    const { pluginDispatch, service } = createFixture();
+    const executeToolSpy = jest.spyOn(pluginDispatch, 'executeTool');
 
     await service.setSourceEnabled('plugin', 'builtin.memory', false);
 
@@ -1241,8 +1241,8 @@ describe('ToolRegistryService', () => {
   });
 
   it('routes internal subagent tools through the internal subagent owner', async () => {
-    const { runtimeHostSubagentRunnerService, service } = createFixture();
-    jest.spyOn(runtimeHostSubagentRunnerService, 'spawnSubagent').mockResolvedValue({
+    const { subagentRunner, service } = createFixture();
+    jest.spyOn(subagentRunner, 'spawnSubagent').mockResolvedValue({
       pluginId: 'subagent',
       pluginDisplayName: 'Subagent',
       requestPreview: '继续处理当前仓库',
@@ -1258,14 +1258,14 @@ describe('ToolRegistryService', () => {
       finishedAt: null,
       closedAt: null,
     } as never);
-    jest.spyOn(runtimeHostSubagentRunnerService, 'waitSubagent').mockResolvedValue({
+    jest.spyOn(subagentRunner, 'waitSubagent').mockResolvedValue({
       conversationId: 'subagent-conversation-2',
       result: '已完成',
       title: '浏览器烟测分身',
       name: '浏览器烟测分身',
       status: 'completed',
     } as never);
-    jest.spyOn(runtimeHostSubagentRunnerService, 'getSubagent').mockReturnValue({
+    jest.spyOn(subagentRunner, 'getSubagent').mockReturnValue({
       pluginId: 'subagent',
       pluginDisplayName: 'Subagent',
       requestPreview: '继续处理当前仓库',
@@ -1340,7 +1340,7 @@ describe('ToolRegistryService', () => {
         status: 'completed',
       }),
     }));
-    expect(runtimeHostSubagentRunnerService.spawnSubagent).toHaveBeenCalledWith(
+    expect(subagentRunner.spawnSubagent).toHaveBeenCalledWith(
       'subagent',
       'Subagent',
       expect.objectContaining({ conversationId: 'conversation-1' }),
@@ -1355,15 +1355,15 @@ describe('ToolRegistryService', () => {
         ],
       }),
     );
-    expect(runtimeHostSubagentRunnerService.waitSubagent).toHaveBeenCalledWith('subagent', {
+    expect(subagentRunner.waitSubagent).toHaveBeenCalledWith('subagent', {
       conversationId: 'subagent-conversation-2',
       timeoutMs: 1000,
     });
   });
 
   it('passes name through send_input_subagent to the subagent owner', async () => {
-    const { runtimeHostSubagentRunnerService, service } = createFixture();
-    jest.spyOn(runtimeHostSubagentRunnerService, 'sendInputSubagent').mockResolvedValue({
+    const { subagentRunner, service } = createFixture();
+    jest.spyOn(subagentRunner, 'sendInputSubagent').mockResolvedValue({
       pluginId: 'subagent',
       pluginDisplayName: 'Subagent',
       requestPreview: '补一条新的输入',
@@ -1408,7 +1408,7 @@ describe('ToolRegistryService', () => {
         title: '跟进分身',
       }),
     }));
-    expect(runtimeHostSubagentRunnerService.sendInputSubagent).toHaveBeenCalledWith(
+    expect(subagentRunner.sendInputSubagent).toHaveBeenCalledWith(
       'subagent',
       expect.objectContaining({ conversationId: 'conversation-1' }),
       expect.objectContaining({
@@ -8161,7 +8161,7 @@ describe('ToolRegistryService', () => {
   });
 
   it('dispatches native todowrite tool execution through the session todo owner', async () => {
-    const { conversationId, runtimeHostConversationTodoService, service } = createFixture();
+    const { conversationId, conversationTodoService, service } = createFixture();
 
     const toolSet = await service.buildToolSet({
       context: {
@@ -8197,12 +8197,12 @@ describe('ToolRegistryService', () => {
       type: 'text',
       value: expect.stringContaining('<todo_result>'),
     }));
-    expect(runtimeHostConversationTodoService.readSessionTodo(conversationId)).toEqual(todos);
+    expect(conversationTodoService.readSessionTodo(conversationId)).toEqual(todos);
   });
 
   it('wraps plugin tool execution results before they enter the model context', async () => {
-    const { runtimeHostPluginDispatchService, service } = createFixture();
-    jest.spyOn(runtimeHostPluginDispatchService, 'executeTool').mockResolvedValue({
+    const { pluginDispatch, service } = createFixture();
+    jest.spyOn(pluginDispatch, 'executeTool').mockResolvedValue({
       saved: true,
       summary: '已保存 2 条记忆',
       vectors: Array.from({ length: 30 }, (_, index) => index),
@@ -8238,7 +8238,7 @@ describe('ToolRegistryService', () => {
       },
     });
     expect((result as { value: { vectors: unknown[] } }).value.vectors.at(-1)).toEqual(expect.stringMatching(/more item\(s\)$/));
-    expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenCalledWith({
+    expect(pluginDispatch.executeTool).toHaveBeenCalledWith({
       context: expect.objectContaining({
         conversationId: 'conversation-1',
         source: 'plugin',
@@ -8251,9 +8251,9 @@ describe('ToolRegistryService', () => {
   });
 
   it('re-compacts pre-wrapped plugin tool outputs before they enter the model context', async () => {
-    const { runtimeHostPluginDispatchService, service } = createFixture();
+    const { pluginDispatch, service } = createFixture();
     const oversizedText = 'x'.repeat(2_400);
-    jest.spyOn(runtimeHostPluginDispatchService, 'executeTool').mockResolvedValue({
+    jest.spyOn(pluginDispatch, 'executeTool').mockResolvedValue({
       data: {
         raw: oversizedText,
       },
@@ -8294,7 +8294,7 @@ describe('ToolRegistryService', () => {
   });
 
   it('captures oversized plugin text output to a session file while only returning compact text to the model', async () => {
-    const { runtimeHostPluginDispatchService, runtimeToolsSettingsService, runtimeWorkspaceRoot, service } = createFixture();
+    const { pluginDispatch, runtimeToolsSettingsService, runtimeWorkspaceRoot, service } = createFixture();
     runtimeToolsSettingsService.updateConfig({
       toolOutputCapture: {
         enabled: true,
@@ -8303,7 +8303,7 @@ describe('ToolRegistryService', () => {
       },
     });
     const oversizedText = 'tool-output-'.repeat(900);
-    jest.spyOn(runtimeHostPluginDispatchService, 'executeTool').mockResolvedValue({
+    jest.spyOn(pluginDispatch, 'executeTool').mockResolvedValue({
       message: oversizedText,
       summary: '已保存大文本输出',
     } as never);
@@ -8346,7 +8346,7 @@ describe('ToolRegistryService', () => {
   });
 
   it('captures oversized plugin json output to a session file while keeping model json compact', async () => {
-    const { runtimeHostPluginDispatchService, runtimeToolsSettingsService, runtimeWorkspaceRoot, service } = createFixture();
+    const { pluginDispatch, runtimeToolsSettingsService, runtimeWorkspaceRoot, service } = createFixture();
     runtimeToolsSettingsService.updateConfig({
       toolOutputCapture: {
         enabled: true,
@@ -8354,7 +8354,7 @@ describe('ToolRegistryService', () => {
         maxFilesPerSession: 5,
       },
     });
-    jest.spyOn(runtimeHostPluginDispatchService, 'executeTool').mockResolvedValue({
+    jest.spyOn(pluginDispatch, 'executeTool').mockResolvedValue({
       items: Array.from({ length: 40 }, (_, index) => index),
       nested: {
         text: 'json-output-'.repeat(600),
@@ -8476,20 +8476,20 @@ function createFixture(options: {
   const runtimeGatewayRemoteTransportService = new RuntimeGatewayRemoteTransportService(
     runtimeGatewayConnectionLifecycleService,
   );
-  const runtimeHostConversationRecordService = new ConversationStoreService();
-  const runtimeHostConversationTodoService = new ConversationTodoService(runtimeHostConversationRecordService);
-  const conversationId = (runtimeHostConversationRecordService.createConversation({
+  const conversationStore = new ConversationStoreService();
+  const conversationTodoService = new ConversationTodoService(conversationStore);
+  const conversationId = (conversationStore.createConversation({
     title: 'Tool Registry Todo',
     userId: 'user-1',
   }) as { id: string }).id;
-  const runtimeHostConversationMessageService = new ConversationMessageService(
-    runtimeHostConversationRecordService,
+  const conversationMessages = new ConversationMessageService(
+    conversationStore,
   );
   const aiModelExecutionService = new AiModelExecutionService();
   const projectWorktreeRootService = new ProjectWorktreeRootService();
-  const runtimeHostSubagentRunnerService = new SubagentRunnerService(
+  const subagentRunner = new SubagentRunnerService(
     aiModelExecutionService,
-    runtimeHostConversationMessageService,
+    conversationMessages,
     {
       buildToolSet: jest.fn().mockResolvedValue(undefined),
     } as never,
@@ -8501,9 +8501,9 @@ function createFixture(options: {
     {
       get: jest.fn().mockReturnValue(undefined),
     } as never,
-    runtimeHostConversationRecordService,
+    conversationStore,
   );
-  const runtimeHostAutomationService = new AutomationService(
+  const automationService = new AutomationService(
     new AutomationExecutionService(
       {
         executeTool: jest.fn(),
@@ -8564,7 +8564,7 @@ function createFixture(options: {
   runtimeOneShotShellServices.push(runtimeOneShotShellService);
   const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
   const runtimeToolsSettingsService = new RuntimeToolsSettingsService();
-  const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
+  const hostFilesystemBackend = new HostFilesystemBackendService(
     runtimeSessionEnvironmentService,
   );
   const projectWorktreeSearchOverlayService = new ProjectWorktreeSearchOverlayService(
@@ -8588,9 +8588,9 @@ function createFixture(options: {
     new RuntimeCommandCaptureService(runtimeSessionEnvironmentService, runtimeToolsSettingsService),
   );
   const resolvedFilesystemBackends = options.runtimeFilesystemBackends ?? [
-    runtimeHostFilesystemBackendService,
+    hostFilesystemBackend,
     ...(options.aliasHostFilesystemKinds ?? []).map((kind) => (
-      createKindAliasedFilesystemBackend(kind, runtimeHostFilesystemBackendService)
+      createKindAliasedFilesystemBackend(kind, hostFilesystemBackend)
     )),
   ];
   const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService(
@@ -8632,7 +8632,7 @@ function createFixture(options: {
     withFileLock: jest.fn().mockImplementation(async (_sessionId, _filePath, run) => run()),
     withWriteFreshnessGuard: jest.fn().mockImplementation(async (_sessionId, _filePath, run) => run()),
   } as never;
-  const runtimeToolPermissionService = new RuntimeToolPermissionService(runtimeHostConversationRecordService);
+  const runtimeToolPermissionService = new RuntimeToolPermissionService(conversationStore);
   const bashToolService = new BashToolService(
     runtimeCommandService,
     runtimeSessionEnvironmentService,
@@ -8670,15 +8670,15 @@ function createFixture(options: {
   );
   const subagentSettingsService = new SubagentSettingsService();
   const subagentToolService = new SubagentToolService(
-    runtimeHostSubagentRunnerService,
+    subagentRunner,
     subagentSettingsService,
   );
-  const runtimeHostPluginDispatchService = new PluginDispatchService(
+  const pluginDispatch = new PluginDispatchService(
     builtinPluginRegistryService,
     pluginBootstrapService,
     runtimeGatewayRemoteTransportService,
   );
-  const runtimeHostRuntimeToolService = new ToolGatewayService(
+  const toolGateway = new ToolGatewayService(
     bashToolService,
     editToolService,
     globToolService,
@@ -8693,29 +8693,29 @@ function createFixture(options: {
     writeToolService,
     projectWorktreeSearchOverlayService,
   );
-  const runtimeHostPluginRuntimeService = new PluginRuntimeService();
+  const pluginRuntime = new PluginRuntimeService();
   const runtimePluginGovernanceService = new RuntimePluginGovernanceService(
     pluginBootstrapService,
     runtimeGatewayConnectionLifecycleService,
   );
-  const runtimeHostService = new PluginHostService(
+  const pluginHost = new PluginHostService(
     pluginBootstrapService,
-    runtimeHostAutomationService,
-    runtimeHostConversationMessageService,
-    runtimeHostConversationRecordService,
+    automationService,
+    conversationMessages,
+    conversationStore,
     aiModelExecutionService as never,
     aiManagementService,
     new KnowledgeReaderService(),
-    runtimeHostPluginDispatchService,
-    runtimeHostPluginRuntimeService,
-    runtimeHostRuntimeToolService,
-    runtimeHostSubagentRunnerService,
+    pluginDispatch,
+    pluginRuntime,
+    toolGateway,
+    subagentRunner,
     new UserContextService(),
-    new PersonaService(new PersonaStoreService(projectWorktreeRootService), runtimeHostConversationRecordService),
+    new PersonaService(new PersonaStoreService(projectWorktreeRootService), conversationStore),
   );
-  runtimeHostService.onModuleInit();
+  pluginHost.onModuleInit();
   const invalidToolService = new InvalidToolService();
-  const todoToolService = new TodoToolService(runtimeHostConversationTodoService);
+  const todoToolService = new TodoToolService(conversationTodoService);
   const webFetchService = {
     fetch: jest.fn().mockResolvedValue({
       contentType: 'text/html',
@@ -8731,12 +8731,12 @@ function createFixture(options: {
     conversationId,
     mcpService,
     pluginBootstrapService,
-    runtimeHostConversationRecordService,
-    runtimeHostPluginRuntimeService,
-    runtimeHostConversationTodoService,
-    runtimeHostPluginDispatchService,
+    conversationStore,
+    pluginRuntime,
+    conversationTodoService,
+    pluginDispatch,
     runtimePluginGovernanceService,
-    runtimeHostSubagentRunnerService,
+    subagentRunner,
     skillRegistryService,
     runtimeToolPermissionService,
     runtimeToolsSettingsService,
@@ -8756,15 +8756,15 @@ function createFixture(options: {
       runtimeToolsSettingsService,
       toolManagementSettingsService,
       pluginBootstrapService,
-      runtimeHostConversationRecordService,
-      runtimeHostPluginRuntimeService,
+      conversationStore,
+      pluginRuntime,
       subagentToolService,
       todoToolService,
       webFetchToolService,
       writeToolService,
       skillToolService,
       toolOutputCaptureService,
-      runtimeHostPluginDispatchService as never,
+      pluginDispatch as never,
       runtimePluginGovernanceService as never,
     ),
   };
@@ -9248,3 +9248,5 @@ function buildMcpToolSources(snapshot: {
     };
   });
 }
+
+

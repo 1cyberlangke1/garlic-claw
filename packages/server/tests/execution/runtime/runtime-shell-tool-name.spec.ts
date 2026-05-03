@@ -1,5 +1,5 @@
 import {
-  isRuntimeHostAbsoluteShellWorkdir,
+  isAbsoluteShellWorkdir,
   readRuntimeShellToolAliases,
   readRuntimeShellToolName,
 } from '../../../src/execution/runtime/runtime-shell-tool-name';
@@ -22,13 +22,13 @@ describe('runtime-shell-tool-name', () => {
   });
 
   it('recognizes host absolute workdir only for host-backed shell runtimes', () => {
-    expect(isRuntimeHostAbsoluteShellWorkdir('native-shell', 'D:\\repo')).toBe(
+    expect(isAbsoluteShellWorkdir('native-shell', 'D:\\repo')).toBe(
       process.platform === 'win32',
     );
-    expect(isRuntimeHostAbsoluteShellWorkdir('wsl-shell', 'D:\\repo')).toBe(
+    expect(isAbsoluteShellWorkdir('wsl-shell', 'D:\\repo')).toBe(
       process.platform === 'win32',
     );
-    expect(isRuntimeHostAbsoluteShellWorkdir('just-bash', 'D:\\repo')).toBe(false);
-    expect(isRuntimeHostAbsoluteShellWorkdir('wsl-shell', '/mnt/d/repo')).toBe(true);
+    expect(isAbsoluteShellWorkdir('just-bash', 'D:\\repo')).toBe(false);
+    expect(isAbsoluteShellWorkdir('wsl-shell', '/mnt/d/repo')).toBe(true);
   });
 });
