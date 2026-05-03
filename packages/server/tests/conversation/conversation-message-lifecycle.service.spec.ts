@@ -113,6 +113,7 @@ describe('ConversationMessageLifecycleService', () => {
       aiVisionService as never,
       new ConversationAfterResponseCompactionService(
         contextGovernanceService,
+        conversationStore,
       ),
       contextGovernanceService,
       conversationStore,
@@ -181,7 +182,7 @@ describe('ConversationMessageLifecycleService', () => {
       status: 'pending',
     });
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: '你好', role: 'user' }],
       modelId: 'gpt-5.4',
       providerId: 'openai',
@@ -286,7 +287,7 @@ describe('ConversationMessageLifecycleService', () => {
       { image: 'data:image/png;base64,AAAA', mimeType: 'image/png', type: 'image' },
     ]);
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{
         content: [
           { text: '帮我看图', type: 'text' },
@@ -398,7 +399,7 @@ describe('ConversationMessageLifecycleService', () => {
       status: 'completed',
     });
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: 'hook 改写后的用户消息', role: 'user' }],
       modelId: 'gpt-5.4',
       providerId: 'openai',
@@ -419,7 +420,7 @@ describe('ConversationMessageLifecycleService', () => {
 
     expect(readConversation(conversationStore).messages[0]).toMatchObject({ content: 'hook 改写后的入站消息', role: 'user' });
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: 'hook 改写后的入站消息', role: 'user' }],
       modelId: 'claude-3-7-sonnet',
       providerId: 'anthropic',
@@ -624,7 +625,7 @@ describe('ConversationMessageLifecycleService', () => {
 
     expect(pluginDispatch.invokeHook).toHaveBeenCalledWith(expect.objectContaining({ hookName: 'chat:before-model', pluginId: 'builtin.before-model-recorder' }));
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: 'hook 改写后的模型输入', role: 'user' }],
       modelId: 'claude-3-7-sonnet',
       providerId: 'anthropic',
@@ -712,7 +713,7 @@ describe('ConversationMessageLifecycleService', () => {
       pluginId: 'builtin.before-model-recorder',
     }));
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [
         {
           content: [
@@ -867,11 +868,20 @@ describe('ConversationMessageLifecycleService', () => {
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
   })
 
-  it('does not auto-continue after after-response compaction when the completed reply has no tool activity', async () => {
+  it('auto-continues after after-response compaction even when the completed reply has no tool activity', async () => {
     jest.spyOn(conversationMessagePlanningService, 'broadcastAfterSend')
-      .mockResolvedValueOnce({ compactionTriggered: true })
-      .mockResolvedValue({ compactionTriggered: false })
-    aiModelExecutionService.streamText.mockReturnValueOnce(streamed('gpt-5.4', 'openai', '第一轮先完成这里，再继续后续步骤。'))
+      .mockResolvedValueOnce({
+        compactionTriggered: true,
+        continuation: {
+          content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+          metadata: { annotations: [{ data: { role: 'continue', synthetic: true, trigger: 'after-response' }, owner: 'conversation.context-governance', type: 'context-compaction', version: '1' }] },
+          parts: [{ text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.', type: 'text' }],
+        },
+      })
+      .mockResolvedValue({ compactionTriggered: false, continuation: null })
+    aiModelExecutionService.streamText
+      .mockReturnValueOnce(streamed('gpt-5.4', 'openai', '第一轮先完成这里，再继续后续步骤。'))
+      .mockReturnValueOnce(streamed('gpt-5.4', 'openai', '压缩后已自动继续执行。'))
 
     const started = await startAndWait(service, conversationTaskService, {
       content: '请先完成第一步，然后继续后续步骤。',
@@ -885,25 +895,37 @@ describe('ConversationMessageLifecycleService', () => {
     const syntheticContinueMessage = messages.find(hasContextCompactionContinueAnnotation)
 
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
-    expect(conversationMessagePlanningService.broadcastAfterSend).toHaveBeenCalledTimes(1)
-    expect(aiModelExecutionService.streamText).toHaveBeenCalledTimes(1)
-    expect(syntheticContinueMessage).toBeUndefined()
+    expect(conversationMessagePlanningService.broadcastAfterSend).toHaveBeenCalledTimes(2)
+    expect(aiModelExecutionService.streamText).toHaveBeenCalledTimes(2)
+    expect(syntheticContinueMessage).toBeTruthy()
     expect(messages).toEqual(expect.arrayContaining([
       expect.objectContaining({
         content: '第一轮先完成这里，再继续后续步骤。',
         role: 'assistant',
         status: 'completed',
       }),
+      expect.objectContaining({
+        content: '压缩后已自动继续执行。',
+        role: 'assistant',
+        status: 'completed',
+      }),
     ]))
   })
 
-  it('does not auto-continue after after-response compaction when the completed reply already includes final assistant text', async () => {
+  it('auto-continues after after-response compaction even when the completed reply already includes final assistant text', async () => {
     jest.spyOn(conversationMessagePlanningService, 'broadcastAfterSend')
-      .mockResolvedValueOnce({ compactionTriggered: true })
-      .mockResolvedValue({ compactionTriggered: false })
-    aiModelExecutionService.streamText.mockReturnValueOnce(
-      streamedWithToolActivity('gpt-5.4', 'openai', '第一轮先调用工具，再继续后续步骤。'),
-    )
+      .mockResolvedValueOnce({
+        compactionTriggered: true,
+        continuation: {
+          content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+          metadata: { annotations: [{ data: { role: 'continue', synthetic: true, trigger: 'after-response' }, owner: 'conversation.context-governance', type: 'context-compaction', version: '1' }] },
+          parts: [{ text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.', type: 'text' }],
+        },
+      })
+      .mockResolvedValue({ compactionTriggered: false, continuation: null })
+    aiModelExecutionService.streamText
+      .mockReturnValueOnce(streamedWithToolActivity('gpt-5.4', 'openai', '第一轮先调用工具，再继续后续步骤。'))
+      .mockReturnValueOnce(streamed('gpt-5.4', 'openai', '压缩后继续执行补充步骤。'))
 
     const started = await startAndWait(service, conversationTaskService, {
       content: '请先调用工具，再继续后续步骤。',
@@ -921,22 +943,34 @@ describe('ConversationMessageLifecycleService', () => {
     ))
 
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
-    expect(conversationMessagePlanningService.broadcastAfterSend).toHaveBeenCalledTimes(1)
-    expect(aiModelExecutionService.streamText).toHaveBeenCalledTimes(1)
-    expect(syntheticContinueMessage).toBeUndefined()
+    expect(conversationMessagePlanningService.broadcastAfterSend).toHaveBeenCalledTimes(2)
+    expect(aiModelExecutionService.streamText).toHaveBeenCalledTimes(2)
+    expect(syntheticContinueMessage).toBeTruthy()
     expect(messages).toEqual(expect.arrayContaining([
       expect.objectContaining({
         content: '第一轮先调用工具，再继续后续步骤。',
         role: 'assistant',
         status: 'completed',
       }),
+      expect.objectContaining({
+        content: '压缩后继续执行补充步骤。',
+        role: 'assistant',
+        status: 'completed',
+      }),
     ]))
   })
 
-  it('auto-continues after after-response compaction only when the completed reply has tool activity and no final assistant text', async () => {
+  it('auto-continues after after-response compaction when the completed reply only has tool activity and no final assistant text', async () => {
     jest.spyOn(conversationMessagePlanningService, 'broadcastAfterSend')
-      .mockResolvedValueOnce({ compactionTriggered: true })
-      .mockResolvedValue({ compactionTriggered: false })
+      .mockResolvedValueOnce({
+        compactionTriggered: true,
+        continuation: {
+          content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+          metadata: { annotations: [{ data: { role: 'continue', synthetic: true, trigger: 'after-response' }, owner: 'conversation.context-governance', type: 'context-compaction', version: '1' }] },
+          parts: [{ text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.', type: 'text' }],
+        },
+      })
+      .mockResolvedValue({ compactionTriggered: false, continuation: null })
     aiModelExecutionService.streamText
       .mockReturnValueOnce(streamedWithToolActivity('gpt-5.4', 'openai', ''))
       .mockReturnValueOnce(streamed('gpt-5.4', 'openai', '压缩后已自动继续执行，下面是后续步骤。'))
@@ -973,7 +1007,7 @@ describe('ConversationMessageLifecycleService', () => {
       }),
     ]))
     expect(aiModelExecutionService.streamText).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: expect.arrayContaining([
         {
           content: [
@@ -1220,7 +1254,7 @@ describe('ConversationMessageLifecycleService', () => {
     expect(started.userMessage).toMatchObject({ role: 'user' });
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' });
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: '/unknown test', role: 'user' }],
       modelId: 'gpt-5.4',
       providerId: 'openai',

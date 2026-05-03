@@ -44,8 +44,11 @@
                 >
                   {{ readContextVisibilityLabel(row.message) }}
                 </span>
-                <span class="message-status" :class="row.message.status">
-                  {{ statusLabelMap[row.message.status] }}
+                <span
+                  class="message-status"
+                  :class="messageStatusClass(row.message)"
+                >
+                  {{ readStatusLabel(row.message) }}
                 </span>
                 <span
                   v-if="row.message.provider && row.message.model"
@@ -93,40 +96,13 @@
               </div>
 
               <template v-else>
-                <details
-                  v-if="contextCompactionSummary(row.message)"
-                  class="message-annotation message-annotation-context-compaction"
-                  @toggle="handleRenderedContentChange"
-                >
-                  <summary class="message-annotation-summary">
-                    {{
-                      `上下文压缩 · 覆盖 ${contextCompactionSummary(row.message)?.coveredCount ?? 0} 条消息`
-                    }}
-                  </summary>
-                  <div class="message-annotation-body">
-                    <span class="message-annotation-chip">
-                      {{ contextCompactionTriggerLabel(contextCompactionSummary(row.message)?.trigger) }}
-                    </span>
-                    <span class="message-annotation-chip">
-                      {{
-                        `Token 估算 ${contextCompactionSummary(row.message)?.beforePreview.estimatedTokens ?? 0} -> ${contextCompactionSummary(row.message)?.afterPreview.estimatedTokens ?? 0}`
-                      }}
-                    </span>
-                    <span
-                      v-if="contextCompactionSummary(row.message)?.providerId && contextCompactionSummary(row.message)?.modelId"
-                      class="message-annotation-chip"
-                    >
-                      {{
-                        `${contextCompactionSummary(row.message)?.providerId}/${contextCompactionSummary(row.message)?.modelId}`
-                      }}
-                    </span>
-                  </div>
-                </details>
                 <div
-                  v-if="contextCompactionCoveredMarker(row.message)"
-                  class="message-covered-marker"
+                  v-if="contextCompactionSummary(row.message)"
+                  class="message-compaction-divider"
                 >
-                  已纳入压缩摘要
+                  <span class="message-compaction-line"></span>
+                  <span class="message-compaction-label">会话已压缩</span>
+                  <span class="message-compaction-line"></span>
                 </div>
                 <div
                   v-if="assistantCustomBlocks(row.message).length"
@@ -159,7 +135,12 @@
                     </div>
                   </details>
                 </div>
-                <template v-if="shouldRenderMessageContentBeforeTools(row.message)">
+                <template
+                  v-if="
+                    !contextCompactionSummary(row.message) &&
+                      shouldRenderMessageContentBeforeTools(row.message)
+                  "
+                >
                   <div v-if="row.message.parts?.length" class="message-parts">
                     <template
                       v-for="(part, partIndex) in row.message.parts"
@@ -247,7 +228,12 @@
                   </details>
                 </div>
 
-                <template v-if="shouldRenderMessageContentAfterTools(row.message)">
+                <template
+                  v-if="
+                    !contextCompactionSummary(row.message) &&
+                      shouldRenderMessageContentAfterTools(row.message)
+                  "
+                >
                   <div v-if="row.message.parts?.length" class="message-parts">
                     <template
                       v-for="(part, partIndex) in row.message.parts"
@@ -277,12 +263,28 @@
                 <div v-if="row.message.error" class="message-error">
                   错误: {{ row.message.error }}
                 </div>
+
+                <div
+                  v-if="row.message.retryState"
+                  class="message-retry-card"
+                >
+                  <div class="message-retry-title">自动重试</div>
+                  <div class="message-retry-message">
+                    {{ row.message.retryState.message }}
+                  </div>
+                  <div class="message-retry-meta">
+                    <span>{{ readRetryDelayLabel(row.message) }}</span>
+                    <span>{{ `第 ${row.message.retryState.attempt} 次` }}</span>
+                  </div>
+                </div>
               </template>
 
               <span
                 v-if="
-                  row.message.status === 'pending' ||
-                  row.message.status === 'streaming'
+                  !row.message.retryState && (
+                    row.message.status === 'pending' ||
+                    row.message.status === 'streaming'
+                  )
                 "
                 class="cursor"
               >
@@ -672,8 +674,7 @@ function estimateMessageSize(message: ChatMessage | undefined) {
       toolCallCount * 80 +
       toolResultCount * 80 +
       assistantCustomBlocks(message).length * 96 +
-      (contextCompactionSummary(message) ? 104 : 0) +
-      (contextCompactionCoveredMarker(message) ? 32 : 0) +
+      (contextCompactionSummary(message) ? 44 : 0) +
       (message.error ? 72 : 0) +
       (shouldShowVisionFallbackDetails(message) ? 120 : 0),
   );
@@ -695,7 +696,7 @@ function getRoleLabel(message: ChatMessage): string {
     if (readDisplayMessageVariant(message) === "command") {
       return "命令";
     }
-    return contextCompactionSummary(message) ? "摘要" : "展示";
+    return "展示";
   }
 
   const assistantName = props.assistantPersona?.name?.trim();
@@ -711,6 +712,23 @@ function readRoleTitle(message: ChatMessage): string {
   }
 
   return props.assistantPersona?.name?.trim() || "AI";
+}
+
+function readStatusLabel(message: ChatMessage): string {
+  return message.retryState ? "自动重试" : statusLabelMap[message.status];
+}
+
+function messageStatusClass(message: ChatMessage): string {
+  return message.retryState ? "retrying" : message.status;
+}
+
+function readRetryDelayLabel(message: ChatMessage): string {
+  const next = message.retryState?.next;
+  if (typeof next !== "number") {
+    return "即将重试";
+  }
+  const remainingSeconds = Math.max(0, Math.ceil((next - Date.now()) / 1000));
+  return remainingSeconds <= 0 ? "立即重试" : `${remainingSeconds} 秒后`;
 }
 
 function shouldRenderAssistantAvatar(message: ChatMessage): boolean {
@@ -737,6 +755,9 @@ function contextVisibilityClass(message: ChatMessage): string | null {
 }
 
 function readContextVisibilityLabel(message: ChatMessage): string | null {
+  if (contextCompactionSummary(message)) {
+    return null;
+  }
   if (isNonContextMessage(message)) {
     return "仅展示，不进入 LLM 上下文";
   }
@@ -746,6 +767,9 @@ function readContextVisibilityLabel(message: ChatMessage): string | null {
 }
 
 function readContextVisibilityTitle(message: ChatMessage): string {
+  if (contextCompactionSummary(message)) {
+    return "";
+  }
   return isNonContextMessage(message)
     ? "这条消息仅用于前端展示，不会进入默认 LLM 上下文"
     : "这条消息仍保留在聊天记录中，但当前不会进入模型上下文";
@@ -1029,14 +1053,6 @@ function contextCompactionSummary(message: ChatMessage) {
     : null;
 }
 
-function contextCompactionCoveredMarker(message: ChatMessage): boolean {
-  return readContextCompactionAnnotations(message).some(
-    (annotation) =>
-      isContextCompactionCoveredData(annotation.data) &&
-      annotation.data.markerVisible,
-  );
-}
-
 function readContextCompactionAnnotations(
   message: ChatMessage,
 ): ChatMessageAnnotation[] {
@@ -1064,44 +1080,15 @@ function isContextCompactionSummaryData(
   value: unknown,
 ): value is {
   role: "summary";
-  trigger: "after-response" | "manual" | "prepare-model";
-  coveredCount: number;
-  providerId: string;
-  modelId: string;
-  beforePreview: { estimatedTokens: number };
-  afterPreview: { estimatedTokens: number };
+  trigger?: "after-response" | "manual" | "prepare-model";
+  coveredCount?: number;
+  providerId?: string;
+  modelId?: string;
+  beforePreview?: { estimatedTokens: number };
+  afterPreview?: { estimatedTokens: number };
 } {
   return isRecord(value) &&
-    value.role === "summary" &&
-    typeof value.coveredCount === "number" &&
-    typeof value.providerId === "string" &&
-    typeof value.modelId === "string" &&
-    isPreviewSummary(value.beforePreview) &&
-    isPreviewSummary(value.afterPreview) &&
-    (value.trigger === "manual" || value.trigger === "prepare-model" || value.trigger === "after-response");
-}
-
-function isContextCompactionCoveredData(
-  value: unknown,
-): value is {
-  role: "covered";
-  markerVisible: boolean;
-} {
-  return isRecord(value) &&
-    value.role === "covered" &&
-    typeof value.markerVisible === "boolean";
-}
-
-function isPreviewSummary(
-  value: unknown,
-): value is { estimatedTokens: number } {
-  return isRecord(value) && typeof value.estimatedTokens === "number";
-}
-
-function contextCompactionTriggerLabel(
-  trigger: "after-response" | "manual" | "prepare-model" | undefined,
-): string {
-  return trigger === "manual" ? "手动触发" : "自动触发";
+    value.role === "summary";
 }
 
 function isMessageModelUsageSummary(

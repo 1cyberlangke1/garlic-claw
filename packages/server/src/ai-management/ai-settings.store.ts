@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AiHostModelRoutingConfig, AiModelRouteTarget, ProviderProtocolDriver, VisionFallbackConfig } from '@garlic-claw/shared';
+import { DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG } from '@garlic-claw/shared';
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service';
 import { createServerTestArtifactPath } from '../core/runtime/server-workspace-paths';
 import type { AiProviderStorageFile, AiSettingsFile, StoredAiModelConfig, StoredAiProviderConfig } from './ai-management.types';
@@ -76,6 +77,7 @@ export function saveAiSettings(settingsPath: string, settings: AiSettingsFile): 
 export function cloneRoutingConfig(config: AiHostModelRoutingConfig): AiHostModelRoutingConfig {
   return {
     fallbackChatModels: config.fallbackChatModels.map((entry) => ({ ...entry })),
+    ...(config.chatAutoRetry ? { chatAutoRetry: { ...config.chatAutoRetry } } : {}),
     ...(config.compressionModel ? { compressionModel: { ...config.compressionModel } } : {}),
     utilityModelRoles: Object.fromEntries(Object.entries(config.utilityModelRoles).map(([role, target]) => [role, target ? { ...target } : target])) as AiHostModelRoutingConfig['utilityModelRoles'],
   };
@@ -435,7 +437,17 @@ function compareStoredModels(left: StoredAiModelConfig, right: StoredAiModelConf
 }
 
 function createEmptySettings(): AiSettingsFile {
-  return { defaultSelection: null, hostModelRouting: { fallbackChatModels: [], utilityModelRoles: {} }, models: [], providers: [], visionFallback: { enabled: false } };
+  return {
+    defaultSelection: null,
+    hostModelRouting: {
+      chatAutoRetry: { ...DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG },
+      fallbackChatModels: [],
+      utilityModelRoles: {},
+    },
+    models: [],
+    providers: [],
+    visionFallback: { enabled: false },
+  };
 }
 
 function normalizeOptionalText(value: unknown): string | undefined {
@@ -445,7 +457,9 @@ function normalizeOptionalText(value: unknown): string | undefined {
 function isEmptyRoutingConfig(config: AiHostModelRoutingConfig): boolean {
   return config.fallbackChatModels.length === 0
     && Object.keys(config.utilityModelRoles).length === 0
-    && !config.compressionModel;
+    && !config.compressionModel
+    && (!config.chatAutoRetry
+      || JSON.stringify(config.chatAutoRetry) === JSON.stringify(DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG));
 }
 
 function isDefaultVisionFallback(config: AiSettingsFile['visionFallback']): boolean {

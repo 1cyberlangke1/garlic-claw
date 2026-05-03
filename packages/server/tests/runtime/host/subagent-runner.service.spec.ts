@@ -122,6 +122,10 @@ describe('SubagentRunnerService', () => {
     });
     expect(fixture.afterResponseCompactionService.run).toHaveBeenCalledWith({
       conversationId: summary.conversationId,
+      continuationState: {
+        hasAssistantTextOutput: true,
+        hasToolActivity: false,
+      },
       modelId: 'gpt-5.4',
       providerId: 'openai',
       userId: 'user-1',
@@ -158,6 +162,10 @@ describe('SubagentRunnerService', () => {
 
     expect(fixture.afterResponseCompactionService.run).toHaveBeenCalledWith({
       conversationId: summary.conversationId,
+      continuationState: {
+        hasAssistantTextOutput: true,
+        hasToolActivity: false,
+      },
       modelId: 'gpt-5.4',
       providerId: 'openai',
       userId: 'user-1',
@@ -175,8 +183,15 @@ describe('SubagentRunnerService', () => {
   it('auto-continues the same subagent conversation after post-response compaction only when the previous round had tool activity and no final text', async () => {
     const fixture = createFixture();
     fixture.afterResponseCompactionService.run
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false);
+      .mockResolvedValueOnce({
+        compactionTriggered: true,
+        continuation: {
+          content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+          metadata: { annotations: [{ data: { role: 'continue', synthetic: true, trigger: 'after-response' }, owner: 'conversation.context-governance', type: 'context-compaction', version: '1' }] },
+          parts: [{ text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.', type: 'text' }],
+        },
+      })
+      .mockResolvedValueOnce({ compactionTriggered: false, continuation: null });
     Reflect.set(fixture.runner as object, 'executeSubagent', jest.fn()
       .mockResolvedValueOnce({
         finishReason: 'stop',
@@ -467,7 +482,7 @@ function createFixture() {
     rewriteHistoryAfterCompletedResponse: jest.fn().mockResolvedValue(undefined),
   };
   const afterResponseCompactionService = {
-    run: jest.fn().mockResolvedValue(false),
+    run: jest.fn().mockResolvedValue({ compactionTriggered: false, continuation: null }),
   };
   const parentConversationId = (recordService.createConversation({
     title: 'Parent Chat',

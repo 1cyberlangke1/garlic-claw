@@ -1,8 +1,12 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import ChatMessageList from '@/modules/chat/components/ChatMessageList.vue'
 
 describe('ChatMessageList', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('renders vision fallback chips and collapsible transcription details only when present', () => {
     const wrapper = mount(ChatMessageList, {
       props: {
@@ -143,7 +147,7 @@ describe('ChatMessageList', () => {
     expect(content.text()).toContain('正式回复')
   })
 
-  it('renders display-only context compaction summary with dedicated styling', () => {
+  it('renders a lightweight divider for display-only context compaction summaries', () => {
     const wrapper = mount(ChatMessageList, {
       props: {
         assistantPersona: {
@@ -188,23 +192,17 @@ describe('ChatMessageList', () => {
     })
 
     const displayMessage = wrapper.find('[data-message-id="display-summary"]')
-    const details = displayMessage.find('details.message-annotation-context-compaction')
-    const summary = displayMessage.find('.message-annotation-summary')
+    const divider = displayMessage.find('.message-compaction-divider')
 
-    expect(details.exists()).toBe(true)
-    expect((details.element as HTMLDetailsElement).open).toBe(false)
-    expect(summary.text()).toContain('上下文压缩')
-    expect(summary.text()).toContain('覆盖 3 条消息')
-    expect(displayMessage.text()).toContain('摘要')
-    expect(displayMessage.text()).toContain('仅展示，不进入 LLM 上下文')
-    expect(displayMessage.text()).toContain('压缩后的历史摘要')
+    expect(divider.exists()).toBe(true)
+    expect(divider.text()).toContain('会话已压缩')
+    expect(displayMessage.text()).not.toContain('覆盖 3 条消息')
+    expect(displayMessage.text()).not.toContain('Token 估算')
+    expect(displayMessage.text()).not.toContain('仅展示，不进入 LLM 上下文')
+    expect(displayMessage.text()).not.toContain('压缩后的历史摘要')
     expect(displayMessage.classes()).toContain('display')
-    expect(displayMessage.find('.message-context-visibility.excluded').exists()).toBe(true)
     expect(displayMessage.find('.message-role-avatar-image').exists()).toBe(false)
     expect(displayMessage.find('.retry-text').exists()).toBe(false)
-    expect(displayMessage.html().indexOf('message-annotation-context-compaction')).toBeLessThan(
-      displayMessage.html().indexOf('message-content'),
-    )
   })
 
   it('renders persisted display command and result messages with distinct variants', () => {
@@ -267,6 +265,45 @@ describe('ChatMessageList', () => {
     expect(resultMessage.text()).toContain('展示')
     expect(resultMessage.classes()).toContain('display-result')
     expect(resultMessage.text()).toContain('已压缩上下文，覆盖 2 条历史消息。')
+  })
+
+  it('renders an auto-retry card for assistant messages that are waiting for the next retry attempt', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_777_000_000_000)
+
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'assistant-retry',
+            role: 'assistant',
+            content: '',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'pending',
+            error: null,
+            retryState: {
+              attempt: 1,
+              message: 'Provider is overloaded',
+              next: 1_777_000_003_000,
+            },
+          } as never,
+        ],
+      },
+    })
+
+    const assistant = wrapper.find('[data-message-id="assistant-retry"]')
+
+    expect(assistant.text()).toContain('自动重试')
+    expect(assistant.text()).toContain('Provider is overloaded')
+    expect(assistant.text()).toContain('3 秒后')
+    expect(assistant.text()).toContain('第 1 次')
+    expect(assistant.find('.cursor').exists()).toBe(false)
+    expect(assistant.find('.message-error').exists()).toBe(false)
   })
 
   it('grays out messages excluded from the current LLM context window without deleting them', () => {
@@ -419,10 +456,12 @@ describe('ChatMessageList', () => {
     })
 
     const summaryMessage = wrapper.find('[data-message-id="summary-after-response"]')
-    expect(summaryMessage.text()).toContain('上下文压缩')
-    expect(summaryMessage.text()).toContain('自动触发')
-    expect(summaryMessage.text()).toContain('openai/gpt-5.4')
-    expect(summaryMessage.text()).toContain('Token 估算 980 -> 420')
+    expect(summaryMessage.find('.message-compaction-divider').exists()).toBe(true)
+    expect(summaryMessage.text()).toContain('会话已压缩')
+    expect(summaryMessage.text()).not.toContain('自动触发')
+    expect(summaryMessage.text()).not.toContain('openai/gpt-5.4')
+    expect(summaryMessage.text()).not.toContain('Token 估算 980 -> 420')
+    expect(summaryMessage.text()).not.toContain('压缩摘要：最近任务与约束。')
   })
 
   it('renders tool calls and tool results as collapsed timeline blocks before the assistant reply', () => {

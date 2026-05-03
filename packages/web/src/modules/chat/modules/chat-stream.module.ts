@@ -227,6 +227,29 @@ export function scheduleChatRecoveryWithState(
   });
 }
 
+function recoverStreamingConversationImmediately(
+  state: ChatStreamState,
+  conversationId: string,
+  loadConversationDetail: (conversationId: string) => Promise<void>,
+) {
+  if (state.currentConversationId.value !== conversationId) {
+    return;
+  }
+
+  if (!state.streaming.value) {
+    scheduleChatRecoveryWithState(state, loadConversationDetail);
+    return;
+  }
+
+  void loadConversationDetail(conversationId)
+    .catch(() => undefined)
+    .finally(() => {
+      if (state.currentConversationId.value === conversationId) {
+        scheduleChatRecoveryWithState(state, loadConversationDetail);
+      }
+    });
+}
+
 export async function dispatchSendMessage(
   state: ChatStreamState,
   input: ChatSendInput,
@@ -345,8 +368,9 @@ export async function dispatchSendMessage(
       summaryRefreshed: didRefreshConversationStateDuringStream,
     }).catch(() => undefined);
     if (state.currentConversationId.value === requestConversationId) {
-      scheduleChatRecoveryWithState(
+      recoverStreamingConversationImmediately(
         state,
+        requestConversationId,
         params?.loadConversationDetail ?? (async () => undefined),
       );
     }
@@ -460,8 +484,9 @@ export async function dispatchRetryMessage(
       summaryRefreshed: didRefreshConversationStateDuringStream,
     }).catch(() => undefined);
     if (state.currentConversationId.value === requestConversationId) {
-      scheduleChatRecoveryWithState(
+      recoverStreamingConversationImmediately(
         state,
+        requestConversationId,
         params?.loadConversationDetail ?? (async () => undefined),
       );
     }
