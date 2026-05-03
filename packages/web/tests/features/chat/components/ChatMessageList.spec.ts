@@ -1,8 +1,12 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import ChatMessageList from '@/modules/chat/components/ChatMessageList.vue'
 
 describe('ChatMessageList', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('renders vision fallback chips and collapsible transcription details only when present', () => {
     const wrapper = mount(ChatMessageList, {
       props: {
@@ -267,6 +271,45 @@ describe('ChatMessageList', () => {
     expect(resultMessage.text()).toContain('展示')
     expect(resultMessage.classes()).toContain('display-result')
     expect(resultMessage.text()).toContain('已压缩上下文，覆盖 2 条历史消息。')
+  })
+
+  it('renders an auto-retry card for assistant messages that are waiting for the next retry attempt', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_777_000_000_000)
+
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'assistant-retry',
+            role: 'assistant',
+            content: '',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'pending',
+            error: null,
+            retryState: {
+              attempt: 1,
+              message: 'Provider is overloaded',
+              next: 1_777_000_003_000,
+            },
+          } as never,
+        ],
+      },
+    })
+
+    const assistant = wrapper.find('[data-message-id="assistant-retry"]')
+
+    expect(assistant.text()).toContain('自动重试')
+    expect(assistant.text()).toContain('Provider is overloaded')
+    expect(assistant.text()).toContain('3 秒后')
+    expect(assistant.text()).toContain('第 1 次')
+    expect(assistant.find('.cursor').exists()).toBe(false)
+    expect(assistant.find('.message-error').exists()).toBe(false)
   })
 
   it('grays out messages excluded from the current LLM context window without deleting them', () => {

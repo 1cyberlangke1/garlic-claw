@@ -95,7 +95,9 @@ export class ConversationMessagePlanningService {
     const context = createConversationHookContext({ activePersonaId: persona.personaId, conversationId: input.conversationId, modelId: beforeModel.modelId, providerId: beforeModel.providerId, userId: input.userId });
     const tools = await this.toolRegistryService.buildToolSet({ abortSignal: input.abortSignal, allowedToolNames: persona.toolNames ?? undefined, assistantMessageId: input.messageId, context });
     const stream = this.aiModelExecutionService.streamText({
-      allowFallbackChatModels: true,
+      // 主会话流的失败恢复统一收口到 ConversationTaskService 自动重试链，
+      // 不让 ai-model-execution 在这里提前吃掉错误并切到 fallback。
+      allowFallbackChatModels: false,
       abortSignal: input.abortSignal,
       ...(beforeModel.modelId !== DEFAULT_PROVIDER_MODEL_ID ? { modelId: beforeModel.modelId } : {}),
       messages: beforeModel.messages,

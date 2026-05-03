@@ -322,6 +322,18 @@ export interface Message {
 }
 
 /**
+ * 一次自动重试中的运行态信息。
+ */
+export interface ChatRetryState {
+  /** 当前是第几次自动重试。 */
+  attempt: number;
+  /** 当前可见的重试原因摘要。 */
+  message: string;
+  /** 下一次自动重试的时间戳（毫秒）。 */
+  next: number;
+}
+
+/**
  * 对话详情。
  */
 export interface ConversationDetail extends Conversation {
@@ -343,6 +355,13 @@ export type SSEEvent =
       messageId: string;
       status: ChatMessageStatus;
       error?: string;
+    }
+  | {
+      type: 'retry';
+      messageId: string;
+      attempt: number;
+      message: string;
+      next: number;
     }
   | {
       type: 'text-delta';

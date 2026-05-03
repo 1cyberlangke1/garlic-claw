@@ -281,6 +281,11 @@
   background: rgba(226, 74, 74, 0.16);
 }
 
+.message-status.retrying {
+  color: #9fe9ff;
+  background: rgba(92, 203, 255, 0.16);
+}
+
 .message-content {
   color: var(--text);
   min-width: 0;
@@ -562,6 +567,45 @@
 .message-error {
   color: #ffaaaa;
   background: rgba(226, 74, 74, 0.14);
+}
+
+.message-retry-card {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(92, 203, 255, 0.18);
+  background: rgba(92, 203, 255, 0.08);
+}
+
+.message-retry-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #9fe9ff;
+}
+
+.message-retry-message,
+.message-retry-meta {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.message-retry-message {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.message-retry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .message-usage-inline {
