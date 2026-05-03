@@ -179,3 +179,5 @@ function assetKindLabel(kind: SkillAssetKind): string {
   }
 }
 </script>
+
+<style src="../../../shared/styles/markdown.css"></style>

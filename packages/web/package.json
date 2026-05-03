@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "prebuild": "cd ../.. && npm run build -w packages/shared",
     "dev": "vite",
     "lint": "cd ../.. && eslint --cache --cache-strategy content --cache-location .cache/eslint \"packages/web/src/**/*.ts\"",
     "typecheck": "vue-tsc --noEmit",
