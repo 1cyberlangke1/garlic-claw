@@ -37,24 +37,6 @@
       </aside>
 
       <main class="commands-main">
-        <div class="overview-grid">
-          <article class="overview-card accent">
-            <span class="overview-label">命令概览</span>
-            <strong>{{ heroHeadline }}</strong>
-            <p>冲突在这里查看，到对应插件页处理。</p>
-          </article>
-          <article
-            v-for="card in overviewCards"
-            :key="card.label"
-            class="overview-card"
-            :class="card.tone"
-          >
-            <span class="overview-label">{{ card.label }}</span>
-            <strong>{{ card.value }}</strong>
-            <p>{{ card.note }}</p>
-          </article>
-        </div>
-
         <p v-if="error" class="page-banner error">{{ error }}</p>
 
         <div class="commands-content">
@@ -63,14 +45,13 @@
               <div>
                 <h2>命令目录</h2>
                 <p>按插件查看 slash 命令、别名、保护状态和冲突提示。</p>
+                <div class="panel-summary" aria-label="命令目录统计">
+                  <span class="summary-chip">命令总数 {{ commandCount }}</span>
+                  <span class="summary-chip" :class="{ warning: conflictCount > 0 }">
+                    冲突触发词 {{ conflictCount }}
+                  </span>
+                </div>
               </div>
-              <ElButton
-                class="ghost-button icon-only"
-                title="刷新"
-                @click="refreshAll()"
-              >
-                <Icon :icon="refreshBold" class="ghost-button-icon" aria-hidden="true" />
-              </ElButton>
             </div>
 
             <div class="panel-controls">
@@ -201,7 +182,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import listCheckBold from '@iconify-icons/solar/list-check-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
@@ -233,7 +214,6 @@ const {
   commandCount,
   filteredCommandCount,
   conflictCount,
-  attentionCommandCount,
   refreshAll,
 } = usePluginCommandManagement()
 
@@ -242,37 +222,6 @@ const viewOptions: ReadonlyArray<{ label: string; value: CommandsPageView; icon:
   { label: '命令目录', value: 'directory', icon: keyboardBold },
   { label: '冲突触发词', value: 'conflicts', icon: listCheckBold },
 ]
-
-const heroHeadline = computed(() => {
-  if (commandCount.value === 0) {
-    return '等待首条命令接入'
-  }
-  if (conflictCount.value === 0) {
-    return `${commandCount.value} 条命令，当前无冲突`
-  }
-
-  return `${commandCount.value} 条命令，${conflictCount.value} 个冲突触发词`
-})
-const overviewCards = computed(() => [
-  {
-    label: '命令总数',
-    value: String(commandCount.value),
-    note: '来自 manifest 或 hook filter',
-    tone: 'accent',
-  },
-  {
-    label: '冲突触发词',
-    value: String(conflictCount.value),
-    note: conflictCount.value > 0 ? '同一触发词命中了多个插件' : '无重叠触发词',
-    tone: conflictCount.value > 0 ? 'warning' : 'neutral',
-  },
-  {
-    label: '需关注命令',
-    value: String(attentionCommandCount.value),
-    note: '冲突、受保护或离线',
-    tone: attentionCommandCount.value > 0 ? 'warning' : 'neutral',
-  },
-])
 
 const filterOptions = [
   { value: 'all', label: '全部' },
@@ -419,30 +368,17 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   gap: 0.75rem;
 }
 
-.overview-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
-
-.overview-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.85rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.overview-card.warning {
-  border-color: rgba(214, 162, 36, 0.4);
-}
-
 .panel-controls {
   flex-wrap: wrap;
   align-items: center;
   margin: 1rem 0 0.75rem;
+}
+
+.panel-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
 }
 
 .panel-controls :deep(.el-input),
@@ -457,7 +393,8 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
 
 .filter-chip,
 .owner-chip,
-.meta-chip {
+.meta-chip,
+.summary-chip {
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 0.3rem 0.65rem;
@@ -472,6 +409,11 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
 .link-button:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.summary-chip.warning {
+  border-color: rgba(214, 162, 36, 0.4);
+  color: #b77c15;
 }
 
 .command-card,
