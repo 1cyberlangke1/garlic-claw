@@ -1,0 +1,71 @@
+/* 登录页只服务入口鉴权，不再和全局壳样式混放。 */
+.auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: transparent;
+}
+
+.auth-card {
+  background: var(--surface-card-gradient);
+  padding: 2.5rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow), 0 0 20px rgba(103, 199, 207, 0.12);
+  backdrop-filter: blur(var(--glass-blur));
+  width: 380px;
+  max-width: 90vw;
+}
+
+.auth-card h1 {
+  font-size: 1.6rem;
+  margin-bottom: 0.2rem;
+  text-align: center;
+}
+
+.auth-card h2 {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+  text-align: center;
+  font-weight: 400;
+}
+
+.auth-card .field {
+  margin-bottom: 1rem;
+}
+
+.auth-card label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+
+.auth-card button[type="submit"] {
+  width: 100%;
+  padding: 0.7em;
+  margin-top: 0.5rem;
+  font-size: 1rem;
+}
+
+.auth-card .dev-login {
+  width: 100%;
+  padding: 0.7em;
+  margin-top: 0.6rem;
+  font-size: 1rem;
+}
+
+.auth-card .error {
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.auth-card .link {
+  text-align: center;
+  margin-top: 1.2rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}

@@ -67,7 +67,7 @@ export class ContextGovernanceService {
     private readonly aiManagementService: AiManagementService,
     private readonly aiModelExecutionService: AiModelExecutionService,
     private readonly contextGovernanceSettingsService: ContextGovernanceSettingsService,
-    private readonly runtimeHostConversationRecordService: ConversationStoreService,
+    private readonly conversationStore: ConversationStoreService,
   ) {}
 
   getConfigSnapshot() {
@@ -170,7 +170,7 @@ export class ContextGovernanceService {
   async generateConversationTitleIfNeeded(input: { conversationId: string; userId?: string }): Promise<void> {
     const runtimeConfig = this.contextGovernanceSettingsService.readRuntimeConfig().conversationTitle;
     if (!runtimeConfig.enabled) {return;}
-    const conversation = this.runtimeHostConversationRecordService.requireConversation(input.conversationId, input.userId);
+    const conversation = this.conversationStore.requireConversation(input.conversationId, input.userId);
     if (!shouldGenerateConversationTitle(conversation.title, runtimeConfig.defaultTitle)) {return;}
     const prompt = buildConversationTitlePrompt(
       conversation.messages.map((message) => ({
@@ -187,12 +187,12 @@ export class ContextGovernanceService {
     });
     const nextTitle = sanitizeConversationTitle(generated.text);
     if (!nextTitle || nextTitle === conversation.title) {return;}
-    this.runtimeHostConversationRecordService.writeConversationTitle(input.conversationId, nextTitle, input.userId);
+    this.conversationStore.writeConversationTitle(input.conversationId, nextTitle, input.userId);
   }
 
   async getContextWindowPreview(input: { conversationId: string; modelId?: string; providerId?: string; userId?: string }): Promise<ConversationContextWindowPreview> {
-    this.runtimeHostConversationRecordService.requireConversation(input.conversationId, input.userId);
-    const history = readConversationHistorySnapshot(this.runtimeHostConversationRecordService.readConversationHistory(input.conversationId, input.userId));
+    this.conversationStore.requireConversation(input.conversationId, input.userId);
+    const history = readConversationHistorySnapshot(this.conversationStore.readConversationHistory(input.conversationId, input.userId));
     const runtimeConfig = this.contextGovernanceSettingsService.readRuntimeConfig().contextCompaction;
     const windowTarget = this.readContextWindowTarget(input.providerId, input.modelId);
     const contextLength = windowTarget.contextLength;
@@ -218,7 +218,7 @@ export class ContextGovernanceService {
   }): Promise<ModelMessage[]> {
     const runtimeConfig = this.contextGovernanceSettingsService.readRuntimeConfig().contextCompaction;
     if (!runtimeConfig.enabled) {return input.messages;}
-    const history = readConversationHistorySnapshot(this.runtimeHostConversationRecordService.readConversationHistory(input.conversationId, input.userId));
+    const history = readConversationHistorySnapshot(this.conversationStore.readConversationHistory(input.conversationId, input.userId));
     if (runtimeConfig.strategy === 'sliding') {
       const nextMessages = this.readSlidingBeforeModelMessages({ conversationId: input.conversationId, history, modelId: input.modelId, providerId: input.providerId, requestMessages: input.messages, runtimeConfig, userId: input.userId });
       return nextMessages ?? input.messages;
@@ -243,7 +243,7 @@ export class ContextGovernanceService {
   }): Promise<ContextCompactionRunResult> {
     const runtimeConfig = this.contextGovernanceSettingsService.readRuntimeConfig().contextCompaction;
     if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary') {return { compacted: false, reason: 'disabled' };}
-    const history = readConversationHistorySnapshot(this.runtimeHostConversationRecordService.readConversationHistory(input.conversationId, input.userId));
+    const history = readConversationHistorySnapshot(this.conversationStore.readConversationHistory(input.conversationId, input.userId));
     const omitTrailingPendingAssistant = input.trigger === 'prepare-model';
     const beforeState = readContextCompactionHistoryState(history.messages, omitTrailingPendingAssistant);
     const windowTarget = this.readContextWindowTarget(input.providerId, input.modelId);
@@ -293,7 +293,7 @@ export class ContextGovernanceService {
         continue;
       }
       const nextMessages = finalizeContextCompactionMessages({ afterPreview, beforePreview, compactionId, coveredCount: coveredMessageIds.size, createdAt, messages: predictedMessages, modelId: compactionModelTarget.modelId, providerId: compactionModelTarget.providerId, showCoveredMarker: runtimeConfig.showCoveredMarker, summaryMessageId, trigger: input.trigger });
-      const replaced = this.runtimeHostConversationRecordService.replaceConversationHistory(input.conversationId, asJsonObject({ expectedRevision: history.revision, messages: nextMessages }), input.userId) as { changed?: boolean; revision?: string };
+      const replaced = this.conversationStore.replaceConversationHistory(input.conversationId, asJsonObject({ expectedRevision: history.revision, messages: nextMessages }), input.userId) as { changed?: boolean; revision?: string };
       return { afterPreview, beforePreview, compacted: true, coveredMessageCount: coveredMessageIds.size, revision: typeof replaced.revision === 'string' ? replaced.revision : undefined, summaryMessageId };
     }
     return {
@@ -313,7 +313,7 @@ export class ContextGovernanceService {
     userId?: string,
     usagePreference: 'exact' | 'latest-provider' = 'exact',
   ): PluginConversationHistoryPreviewResult {
-    return this.runtimeHostConversationRecordService.previewConversationHistory(conversationId, asJsonObject({
+    return this.conversationStore.previewConversationHistory(conversationId, asJsonObject({
       messages: sanitizeContextWindowPreviewMessages(messages),
       modelId,
       providerId,

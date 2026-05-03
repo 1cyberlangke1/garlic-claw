@@ -21,7 +21,7 @@ describe('ConversationMessagePlanningService', () => {
   };
   const aiVisionService = { resolveMessageParts: jest.fn() };
   const personaService = { readCurrentPersona: jest.fn() };
-  const runtimeHostPluginDispatchService = { invokeHook: jest.fn(), listPlugins: jest.fn().mockReturnValue([]) };
+  const pluginDispatch = { invokeHook: jest.fn(), listPlugins: jest.fn().mockReturnValue([]) };
   const toolRegistryService = { buildToolSet: jest.fn(), listAvailableTools: jest.fn() };
 
   let settingsConfigPath: string;
@@ -29,7 +29,7 @@ describe('ConversationMessagePlanningService', () => {
   let conversationId: string;
   let contextGovernanceService: ContextGovernanceService;
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
-  let runtimeHostConversationRecordService: ConversationStoreService;
+  let conversationStore: ConversationStoreService;
   let service: ConversationMessagePlanningService;
 
   beforeEach(() => {
@@ -65,24 +65,24 @@ describe('ConversationMessagePlanningService', () => {
       providerId: 'openai',
       text: '压缩后的历史摘要',
     });
-    runtimeHostConversationRecordService = new ConversationStoreService();
+    conversationStore = new ConversationStoreService();
     contextGovernanceSettingsService = new ContextGovernanceSettingsService();
     contextGovernanceService = new ContextGovernanceService(
       aiManagementService as never,
       aiModelExecutionService as never,
       contextGovernanceSettingsService,
-      runtimeHostConversationRecordService,
+      conversationStore,
     );
-    conversationId = (runtimeHostConversationRecordService.createConversation({ title: '窗口预览', userId: 'user-1' }) as { id: string }).id;
+    conversationId = (conversationStore.createConversation({ title: '窗口预览', userId: 'user-1' }) as { id: string }).id;
     service = new ConversationMessagePlanningService(
       aiModelExecutionService as never,
       aiVisionService as never,
       new ConversationAfterResponseCompactionService(contextGovernanceService),
       contextGovernanceService,
-      runtimeHostConversationRecordService,
+      conversationStore,
       personaService as never,
       toolRegistryService as never,
-      runtimeHostPluginDispatchService as never,
+      pluginDispatch as never,
     );
   });
 
@@ -109,7 +109,7 @@ describe('ConversationMessagePlanningService', () => {
         strategy: 'sliding',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', 'a'.repeat(220)),
       createMessage('history-2', 'assistant', 'b'.repeat(220)),
       createMessage('history-3', 'user', 'c'.repeat(220)),
@@ -135,7 +135,7 @@ describe('ConversationMessagePlanningService', () => {
         strategy: 'summary',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条历史消息', {
         annotations: [{
           data: {
@@ -204,7 +204,7 @@ describe('ConversationMessagePlanningService', () => {
         strategy: 'sliding',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条消息'),
       createMessage('summary-1', 'display', '摘要展示壳'),
       createMessage('history-2', 'assistant', '第二条消息'),
@@ -225,7 +225,7 @@ describe('ConversationMessagePlanningService', () => {
   });
 
   it('sanitizes preview messages before estimating tokens', async () => {
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       {
         content: '第一条消息',
         createdAt: '2026-04-25T00:00:00.000Z',
@@ -273,7 +273,7 @@ describe('ConversationMessagePlanningService', () => {
         updatedAt: '2026-04-25T00:00:00.000Z',
       },
     ]);
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条消息'),
       createMessage('history-2', 'assistant', '第二条消息', {
         annotations: [{
@@ -317,7 +317,7 @@ describe('ConversationMessagePlanningService', () => {
         updatedAt: '2026-04-24T00:00:00.000Z',
       },
     ]);
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '现在的第一条消息'),
       createMessage('history-2', 'assistant', '现在的第二条消息', {
         annotations: [{
@@ -350,7 +350,7 @@ describe('ConversationMessagePlanningService', () => {
   });
 
   it('keeps the model message chain unchanged when session todo changes', async () => {
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'assistant', '先前回复'),
       createMessage('history-2', 'user', '当前问题'),
     ]);
@@ -389,7 +389,7 @@ describe('ConversationMessagePlanningService', () => {
   });
 
   it('includes compact tool and subagent facts in the next model request history', async () => {
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '请先创建子代理，再总结执行结果。'),
       {
         content: '子代理已经完成。',
@@ -533,7 +533,7 @@ describe('ConversationMessagePlanningService', () => {
         summaryPrompt: '请整理下面的对话摘要',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条较长的历史消息，用于触发回复后压缩检查。'.repeat(4)),
       createMessage('history-2', 'assistant', '第二条较长的历史回复，用于确保压缩候选存在。'.repeat(4)),
       createMessage('history-3', 'user', '第三条消息，表示本轮提问。'.repeat(4)),
@@ -559,7 +559,7 @@ describe('ConversationMessagePlanningService', () => {
       'model',
     )).resolves.toEqual({ compactionTriggered: true });
 
-    const history = runtimeHostConversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+    const history = conversationStore.readConversationHistory(conversationId, 'user-1') as {
       messages: Array<{ content?: string; metadata?: { annotations?: Array<{ data?: Record<string, unknown>; owner?: string; type?: string }> }; role: string }>;
     };
     const summaryMessage = history.messages.find((message) => message.content === '压缩后的历史摘要');
@@ -581,7 +581,7 @@ describe('ConversationMessagePlanningService', () => {
         summaryPrompt: '请整理下面的对话摘要',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条较长的历史消息，用于触发回复后压缩检查。'.repeat(10)),
       createMessage('history-2', 'assistant', '第二条较长的历史回复，用于确保压缩候选存在。'.repeat(10)),
       createMessage('history-3', 'user', '第三条消息，表示本轮提问。'.repeat(10)),
@@ -608,7 +608,7 @@ describe('ConversationMessagePlanningService', () => {
       'model',
     )).resolves.toEqual({ compactionTriggered: false });
 
-    const history = runtimeHostConversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+    const history = conversationStore.readConversationHistory(conversationId, 'user-1') as {
       messages: Array<{ content?: string }>;
     };
     expect(history.messages.find((message) => message.content === '压缩后的历史摘要')).toBeUndefined();
@@ -654,7 +654,7 @@ describe('ConversationMessagePlanningService', () => {
         summaryPrompt: '请整理下面的对话摘要',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '请直接写一篇超长文章。'),
       createMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300)),
     ]);
@@ -715,7 +715,7 @@ describe('ConversationMessagePlanningService', () => {
         summaryPrompt: '请整理下面的对话摘要',
       },
     });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+    conversationStore.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条较长的历史消息，用于触发送模前压缩。'.repeat(10)),
       createMessage('history-2', 'assistant', '第二条较长的历史回复，用于确保压缩候选存在。'.repeat(10)),
       createMessage('history-3', 'user', '第三条消息，表示最近一次用户提问。'.repeat(10)),
