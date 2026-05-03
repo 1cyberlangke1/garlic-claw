@@ -538,6 +538,7 @@ type CheckboxValueType = string | number | boolean
 .config-node-wrapper {
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .root-object,
@@ -545,12 +546,14 @@ type CheckboxValueType = string | number | boolean
 .collapsed-items {
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .config-section-card {
   display: grid;
   gap: 12px;
   padding: 1rem;
+  min-width: 0;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -574,9 +577,36 @@ type CheckboxValueType = string | number | boolean
   display: grid;
   gap: 6px;
   padding: 0.9rem;
+  width: 100%;
+  min-width: 0;
+  justify-items: stretch;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
+}
+
+.config-input,
+.config-textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.config-field :deep(.el-input),
+.config-field :deep(.el-select),
+.config-field :deep(.el-textarea),
+.config-field :deep(.el-input-number) {
+  width: 100%;
+  min-width: 0;
+}
+
+.config-field :deep(.el-input__wrapper),
+.config-field :deep(.el-select__wrapper),
+.config-field :deep(.el-textarea__inner),
+.config-field :deep(.el-input-number),
+.config-field :deep(.el-input-number .el-input__wrapper) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .field-label {

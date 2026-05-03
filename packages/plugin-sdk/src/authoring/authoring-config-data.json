@@ -14,8 +14,7 @@
     "contextCompactionReservedTokens": 12000,
     "contextCompactionSlidingWindowUsagePercent": 50,
     "contextCompactionSummaryPrompt": "请把下面这段历史对话整理成可供后续继续回答的上下文摘要。\n要求：\n- 保留事实、约束、用户偏好、未完成事项与关键决定\n- 如果有 TODO、待确认项、失败尝试，也要保留\n- 单独整理“最近用户目标 / 限制 / 待办 / 下一步事项”，尤其是最近几条用户明确提出的目标、禁止项、待完成项与后续关注点\n- 如果最近出现 slash 命令、工具操作、验证要求或其他待执行事项，要提炼成简短行动清单\n- 使用简洁 Markdown\n- 不要编造未出现的信息",
-    "contextCompactionShowCoveredMarker": true,
-    "contextCompactionAllowAutoContinue": true
+    "contextCompactionShowCoveredMarker": true
   },
   "memoryContextConfigSchema": {
     "type": "object",
@@ -128,14 +127,6 @@
       "showCoveredMarker": {
         "type": "bool",
         "description": "是否在已纳入压缩的原始消息上显示标记",
-        "condition": {
-          "strategy": "summary"
-        },
-        "defaultValue": true
-      },
-      "allowAutoContinue": {
-        "type": "bool",
-        "description": "自动压缩完成后是否继续当前主回复。关闭后本轮只整理历史，不继续回复。",
         "condition": {
           "strategy": "summary"
         },

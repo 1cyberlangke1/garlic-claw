@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { RuntimeToolPermissionService } from '../../../src/execution/runtime/runtime-tool-permission.service';
+import { RuntimeToolsSettingsService } from '../../../src/execution/runtime/runtime-tools-settings.service';
 import { ConversationStoreService } from '../../../src/runtime/host/conversation-store.service';
 
 describe('RuntimeToolPermissionService', () => {
@@ -305,7 +306,10 @@ describe('RuntimeToolPermissionService', () => {
       },
     }, null, 2), 'utf-8');
     process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = settingsPath;
-    const configuredService = new RuntimeToolPermissionService(new ConversationStoreService());
+    const configuredService = new RuntimeToolPermissionService(
+      new ConversationStoreService(),
+      new RuntimeToolsSettingsService(),
+    );
 
     try {
       await expect(configuredService.review({
@@ -353,7 +357,10 @@ describe('RuntimeToolPermissionService', () => {
     }, null, 2), 'utf-8');
     process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = settingsPath;
     process.env.GARLIC_CLAW_RUNTIME_APPROVAL_MODE = 'review';
-    const configuredService = new RuntimeToolPermissionService(new ConversationStoreService());
+    const configuredService = new RuntimeToolPermissionService(
+      new ConversationStoreService(),
+      new RuntimeToolsSettingsService(),
+    );
 
     try {
       const reviewPromise = configuredService.review({
@@ -390,5 +397,43 @@ describe('RuntimeToolPermissionService', () => {
       delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
       fs.rmSync(settingsPath, { force: true });
     }
+  });
+
+  it('bypasses ask approvals for subagent conversations while keeping the same backend policy checks', async () => {
+    const conversationRecordService = new ConversationStoreService();
+    const subagentConversationId = (conversationRecordService.createConversation({
+      kind: 'subagent',
+      title: 'Subagent Runtime Permission',
+      userId: 'user-1',
+    }) as { id: string }).id;
+    const configuredService = new RuntimeToolPermissionService(conversationRecordService);
+
+    await expect(configuredService.review({
+      backend: {
+        capabilities: {
+          networkAccess: true,
+          persistentFilesystem: true,
+          persistentShellState: false,
+          shellExecution: true,
+          workspaceRead: true,
+          workspaceWrite: true,
+        },
+        kind: 'native-shell',
+        permissionPolicy: {
+          networkAccess: 'ask',
+          persistentFilesystem: 'allow',
+          persistentShellState: 'deny',
+          shellExecution: 'ask',
+          workspaceRead: 'allow',
+          workspaceWrite: 'allow',
+        },
+      },
+      conversationId: subagentConversationId,
+      requiredOperations: ['command.execute', 'network.access'],
+      summary: '子代理执行联网命令',
+      toolName: 'powershell',
+    })).resolves.toBeUndefined();
+
+    expect(configuredService.listPendingRequests(subagentConversationId)).toEqual([]);
   });
 });

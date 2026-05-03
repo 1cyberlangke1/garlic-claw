@@ -703,6 +703,8 @@ defineExpose({
 .mcp-field-span {
   display: grid;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
 }
 
 .mcp-field-span {
@@ -712,6 +714,21 @@ defineExpose({
 .mcp-field :deep(.el-input__wrapper),
 .mcp-env-inputs :deep(.el-input__wrapper) {
   min-height: 44px;
+}
+
+.mcp-field :deep(.el-input),
+.mcp-field :deep(.el-textarea),
+.mcp-field :deep(.el-select) {
+  width: 100%;
+  min-width: 0;
+}
+
+.mcp-field :deep(.el-select__wrapper),
+.mcp-field :deep(.el-input__wrapper),
+.mcp-field :deep(.el-textarea__inner) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .mcp-field :deep(.el-textarea__inner) {

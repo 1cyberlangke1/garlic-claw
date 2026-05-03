@@ -180,7 +180,7 @@ describe('ConversationMessageLifecycleService', () => {
       modelId: 'gpt-5.4',
       providerId: 'openai',
     });
-    expect(readConversation(runtimeHostConversationRecordService).messages).toMatchObject([
+    expect(readConversation(runtimeHostConversationRecordService).messages.filter((message) => message.role !== 'display')).toMatchObject([
       { content: '你好', role: 'user', status: 'completed' },
       { content: '真正的模型回复', model: 'gpt-5.4', provider: 'openai', role: 'assistant', status: 'completed' },
     ]);
@@ -203,10 +203,10 @@ describe('ConversationMessageLifecycleService', () => {
     });
 
     const assistantMessage = readConversation(runtimeHostConversationRecordService).messages[1];
-    expect(JSON.parse(String(assistantMessage.metadataJson))).toMatchObject({
-      annotations: [
-        {
-          data: {
+    expect(JSON.parse(String(assistantMessage.metadataJson))).toEqual(expect.objectContaining({
+      annotations: expect.arrayContaining([
+        expect.objectContaining({
+          data: expect.objectContaining({
             cachedInputTokens: 19,
             inputTokens: 321,
             modelId: 'deepseek-v4-flash',
@@ -215,13 +215,13 @@ describe('ConversationMessageLifecycleService', () => {
             responseHistorySignature: expect.any(String),
             source: 'provider',
             totalTokens: 408,
-          },
+          }),
           owner: 'conversation.model-usage',
           type: 'model-usage',
           version: '1',
-        },
-      ],
-    });
+        }),
+      ]),
+    }));
   });
 
   it('can read context window preview after a real message lifecycle round', async () => {
@@ -350,7 +350,6 @@ describe('ConversationMessageLifecycleService', () => {
 
     expect(readConversation(runtimeHostConversationRecordService).messages[1]).toMatchObject({
       content: '模型回复',
-      error: null,
       role: 'assistant',
       status: 'completed',
     });
@@ -862,6 +861,62 @@ describe('ConversationMessageLifecycleService', () => {
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
   })
 
+  it('marks the assistant message as error when pre-model auto compaction still cannot fit the context', async () => {
+    aiManagementService.getProviderModel.mockReturnValue({
+      contextLength: 256,
+      id: 'gpt-5.4',
+      providerId: 'openai',
+    })
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 1,
+        enabled: true,
+        keepRecentMessages: 6,
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    })
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('history-1', 'user', '请直接写一篇超长文章。'),
+      createHistoryMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300)),
+    ])
+    aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '不应触发的模型回复'))
+
+    await conversationMessagePlanningService.broadcastAfterSend(
+      { conversationId, userId: 'user-1' },
+      {
+        assistantMessageId: 'assistant-final',
+        content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300),
+        conversationId,
+        modelId: 'gpt-5.4',
+        parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300), type: 'text' }],
+        providerId: 'openai',
+        toolCalls: [],
+        toolResults: [],
+      },
+      'model',
+    )
+
+    await startAndWait(service, conversationTaskService, {
+      content: '继续',
+      model: 'gpt-5.4',
+      provider: 'openai',
+    }, 'user-1')
+
+    const messages = readConversation(runtimeHostConversationRecordService).messages
+    const latestAssistant = messages.at(-1)
+
+    expect(aiModelExecutionService.streamText).not.toHaveBeenCalled()
+    expect(messages.filter((message) => message.role === 'display')).toHaveLength(0)
+    expect(latestAssistant).toMatchObject({
+      content: '',
+      error: expect.stringContaining('压缩后的上下文仍超过预算'),
+      role: 'assistant',
+      status: 'error',
+    })
+  })
+
   it('short-circuits the conversation mainline for internal context governance commands', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
@@ -1017,7 +1072,7 @@ describe('ConversationMessageLifecycleService', () => {
       provider: 'openai',
     }, 'user-1');
 
-    expect(readConversation(runtimeHostConversationRecordService).messages).toMatchObject([
+    expect(readConversation(runtimeHostConversationRecordService).messages.filter((message) => message.role !== 'display')).toMatchObject([
       {
         content: '/unknown test',
         role: 'user',

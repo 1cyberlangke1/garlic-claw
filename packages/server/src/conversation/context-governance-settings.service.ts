@@ -78,7 +78,6 @@ function sanitizeContextGovernanceSection(sectionName: ContextGovernanceSectionN
     writeOptionalInteger(next, values.keepRecentMessages, 'contextCompaction.keepRecentMessages', 0);
     writeOptionalText(next, values.summaryPrompt, 'contextCompaction.summaryPrompt');
     writeOptionalBoolean(next, values.showCoveredMarker, 'contextCompaction.showCoveredMarker');
-    writeOptionalBoolean(next, values.allowAutoContinue, 'contextCompaction.allowAutoContinue');
     writeOptionalRouteTarget(next, values.compressionModel, 'contextCompaction.compressionModel');
   }
   return Object.keys(next).length > 0 ? next : null;

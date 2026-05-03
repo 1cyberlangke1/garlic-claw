@@ -301,7 +301,7 @@ describe('ConversationMessagePlanningService', () => {
     }));
   });
 
-  it('falls back to current history estimation when provider usage belongs to an old history snapshot', async () => {
+  it('falls back to the last matching provider usage when provider usage belongs to an old history snapshot', async () => {
     const staleSignature = createConversationHistorySignatureFromHistoryMessages([
       {
         content: '旧消息',
@@ -333,16 +333,15 @@ describe('ConversationMessagePlanningService', () => {
       }),
     ]);
 
-    const expectedTextBytes = Buffer.byteLength('user\n现在的第一条消息\nassistant\n现在的第二条消息', 'utf8');
     await expect(service.getContextWindowPreview({
       conversationId,
       modelId: 'gpt-5.4',
       providerId: 'openai',
       userId: 'user-1',
     })).resolves.toEqual(expect.objectContaining({
-      estimatedTokens: Math.ceil(expectedTextBytes / 4),
+      estimatedTokens: 100,
       includedMessageIds: ['history-1', 'history-2'],
-      source: 'estimated',
+      source: 'provider',
     }));
   });
 
@@ -563,7 +562,7 @@ describe('ConversationMessagePlanningService', () => {
       && annotation.data?.role === 'summary')).toBe(true);
   });
 
-  it('keeps the completed reply successful when post-response compaction fails and stops the next reply', async () => {
+  it('keeps the completed reply successful and continues the next reply when post-response compaction fails', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
         compressionThreshold: 1,
@@ -627,14 +626,9 @@ describe('ConversationMessagePlanningService', () => {
       userId: 'user-1',
     });
 
-    expect(planAfterFailedAutoCompaction).toEqual(expect.objectContaining({
-      responseSource: 'short-circuit',
-      shortCircuitParts: [{ text: expect.stringContaining('自动压缩失败'), type: 'text' }],
-    }));
-    const autoFailureText = planAfterFailedAutoCompaction.shortCircuitParts?.find((part) => part.type === 'text')?.text ?? '';
-    expect(autoFailureText).not.toContain('/compact');
-
-    expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
+    expect(planAfterFailedAutoCompaction.responseSource).toBe('model');
+    expect(planAfterFailedAutoCompaction.shortCircuitParts).toBeNull();
+    expect(aiModelExecutionService.streamText).toHaveBeenCalled();
   });
 
   it('stops the next reply with a clear overflow message when the first completed turn already exceeds context and cannot be compacted', async () => {
@@ -683,25 +677,18 @@ describe('ConversationMessagePlanningService', () => {
       'model',
     )).resolves.toBeUndefined();
 
-    const blockedPlan = await service.createStreamPlan({
+    await expect(service.createStreamPlan({
       abortSignal: new AbortController().signal,
       conversationId,
       messageId: 'assistant-next',
       modelId: 'gpt-5.4',
       providerId: 'openai',
       userId: 'user-1',
-    });
-
-    expect(blockedPlan.responseSource).toBe('short-circuit');
-    expect(blockedPlan.shortCircuitParts?.[0]).toEqual({
-      text: expect.stringContaining('压缩后的上下文仍超过预算'),
-      type: 'text',
-    });
-
+    })).rejects.toThrow('压缩后的上下文仍超过预算');
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
   });
 
-  it('stops the current reply when summary compaction fails before model execution', async () => {
+  it('continues the current reply when summary compaction fails before model execution', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
         compressionThreshold: 1,
@@ -743,16 +730,11 @@ describe('ConversationMessagePlanningService', () => {
       userId: 'user-1',
     });
 
-    expect(pendingPlanAfterFailedAutoCompaction).toEqual(expect.objectContaining({
-      modelId: 'gpt-5.4',
-      providerId: 'openai',
-      responseSource: 'short-circuit',
-      shortCircuitParts: [{ text: expect.stringContaining('自动压缩失败'), type: 'text' }],
-    }));
-    const pendingAutoFailureText = pendingPlanAfterFailedAutoCompaction.shortCircuitParts?.find((part) => part.type === 'text')?.text ?? '';
-    expect(pendingAutoFailureText).not.toContain('/compact');
-
-    expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
+    expect(pendingPlanAfterFailedAutoCompaction.modelId).toBe('gpt-5.4');
+    expect(pendingPlanAfterFailedAutoCompaction.providerId).toBe('openai');
+    expect(pendingPlanAfterFailedAutoCompaction.responseSource).toBe('model');
+    expect(pendingPlanAfterFailedAutoCompaction.shortCircuitParts).toBeNull();
+    expect(aiModelExecutionService.streamText).toHaveBeenCalled();
   });
 });
 

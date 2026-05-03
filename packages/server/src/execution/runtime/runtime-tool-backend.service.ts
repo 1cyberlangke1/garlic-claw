@@ -1,9 +1,10 @@
 import type { RuntimeToolBackendRole } from './runtime-tool-access';
 import type { RuntimeBackendDescriptor } from './runtime-command.types';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { RuntimeBackendRoutingService } from './runtime-backend-routing.service';
 import { RuntimeCommandService } from './runtime-command.service';
 import { RuntimeFilesystemBackendService } from './runtime-filesystem-backend.service';
+import { RuntimeToolsSettingsService } from './runtime-tools-settings.service';
 
 @Injectable()
 export class RuntimeToolBackendService {
@@ -11,6 +12,7 @@ export class RuntimeToolBackendService {
     private readonly runtimeBackendRoutingService: RuntimeBackendRoutingService,
     private readonly runtimeCommandService: RuntimeCommandService,
     private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
+    @Optional() private readonly runtimeToolsSettingsService?: RuntimeToolsSettingsService,
   ) {}
 
   getBackendDescriptor(
@@ -31,7 +33,9 @@ export class RuntimeToolBackendService {
 
   getShellBackendDescriptor(backendKind?: RuntimeBackendDescriptor['kind']): RuntimeBackendDescriptor {
     return this.readConfiguredBackendDescriptor(
-      backendKind ?? this.runtimeBackendRoutingService.getConfiguredShellBackendKind(),
+      backendKind
+      ?? this.runtimeToolsSettingsService?.readConfiguredShellBackend()
+      ?? this.runtimeBackendRoutingService.getConfiguredShellBackendKind(),
       'shell',
     );
   }

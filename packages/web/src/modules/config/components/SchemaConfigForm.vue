@@ -352,6 +352,8 @@ function schemaUsesSpecialType(
   display: grid;
   gap: 14px;
   padding: 1rem;
+  width: 100%;
+  min-width: 0;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -411,5 +413,8 @@ function schemaUsesSpecialType(
 .config-layout {
   display: grid;
   gap: 14px;
+  width: 100%;
+  min-width: 0;
+  justify-items: stretch;
 }
 </style>
