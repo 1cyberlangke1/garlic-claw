@@ -29,16 +29,13 @@ const CONTEXT_COMPACTION_OWNER = 'conversation.context-governance';
 const CONTEXT_COMPACTION_VERSION = '1';
 const CONTEXT_COMPACTION_COMMAND_MODEL = 'context-compaction-command';
 const CONTEXT_COMPACTION_COMMAND_PROVIDER = 'system';
-const AUTO_STOP_REPLY = '已完成上下文压缩，本轮不继续生成主回复。';
 const MANUAL_COMPACTION_FAILED_REPLY = '当前上下文压缩失败，本次未替换历史。可稍后重试 /compact，或先清理部分历史后再继续。';
-const AUTO_COMPACTION_FAILED_REPLY = '当前上下文已接近上限，但自动压缩失败，本轮已停止继续生成。请新开会话，或先删减最近请求后再继续。';
-const AUTO_COMPACTION_OVERFLOW_REPLY = '当前可发送上下文本身已超预算，自动压缩后仍无法压回预算范围。本轮已停止继续生成。请新开会话，或先删减最近长回复后再继续。';
 const CONTEXT_COMPACTION_COMMANDS = ['/compact', '/compress'] as const;
-const CONTEXT_COMPACTION_REASON_LABELS: Readonly<Record<string, string>> = { disabled: '当前上下文治理已关闭压缩。', 'empty-summary': '压缩模型没有返回有效摘要。', 'invalid-history': '当前历史结构异常，暂时无法压缩。', 'not-enough-history': '当前历史还不足以生成稳定摘要。', 'overflow-without-compaction': '当前可发送上下文本身已超预算，现有历史没有可压缩正文。本轮已停止继续生成。请新开会话，或先删减最近长回复后再继续。', 'still-over-budget': '压缩后的上下文仍超过预算，本次未替换历史。', 'threshold-not-reached': '当前上下文还未达到自动压缩阈值。' };
+const CONTEXT_COMPACTION_REASON_LABELS: Readonly<Record<string, string>> = { disabled: '当前上下文治理已关闭压缩。', 'empty-summary': '压缩模型没有返回有效摘要。', 'invalid-history': '当前历史结构异常，暂时无法压缩。', 'not-enough-history': '当前可压缩历史为空，本次未执行压缩。', 'overflow-without-compaction': '当前可发送上下文本身已超预算，现有历史没有可压缩正文。', 'still-over-budget': '压缩后的上下文仍超过预算，本次未替换历史。', 'threshold-not-reached': '当前上下文还未达到自动压缩阈值。' };
 const CONTEXT_COMPACTION_ROLE_LABELS: Partial<Record<PluginConversationHistoryMessage['role'], string>> = { assistant: '助手', system: '系统' };
 
 type ModelMessage = { content: string | ChatMessagePart[]; role: 'assistant' | 'system' | 'user' };
-type ContextCompactionTrigger = 'manual' | 'prepare-model';
+type ContextCompactionTrigger = 'after-response' | 'manual' | 'prepare-model';
 type ContextWindowEntry = { candidate: boolean; hidden: boolean; id: string; modelMessage: PluginConversationHistoryMessage | null };
 type ContextWindowCandidateMessage = ContextWindowEntry & { modelMessage: PluginConversationHistoryMessage };
 type ContextCompactionSummaryMarker = { compactionId: string; role: 'summary' };
@@ -63,8 +60,7 @@ type ContextGovernanceBeforeModelResult =
 
 @Injectable()
 export class ContextGovernanceService {
-  private readonly autoStopConversationIds = new Set<string>();
-  private readonly blockedConversationReplies = new Map<string, string>();
+  private readonly pendingPreModelStops = new Map<string, string>();
   private readonly logger = createServerLogger(ContextGovernanceService.name);
 
   constructor(
@@ -109,17 +105,18 @@ export class ContextGovernanceService {
     try {
       const result = await this.runContextCompaction({ conversationId: input.conversationId, modelId: input.modelId, providerId: input.providerId, trigger: 'prepare-model', userId: input.userId });
       if (result.compacted) {
-        this.clearBlockedConversationReply(input.conversationId);
-        if (!runtimeConfig.allowAutoContinue) {this.autoStopConversationIds.add(input.conversationId);}
+        this.clearPendingPreModelStop(input.conversationId);
         return;
       }
       if (result.reason && result.reason !== 'threshold-not-reached') {
-        this.blockConversationAfterCompactionFailure(input.conversationId, result.reason);
+        this.updatePendingPreModelStop(input.conversationId, result.reason);
+        this.logCompactionFailure(input.conversationId, result.reason);
       } else {
-        this.clearBlockedConversationReply(input.conversationId);
+        this.clearPendingPreModelStop(input.conversationId);
       }
     } catch (error) {
-      this.blockConversationAfterCompactionFailure(input.conversationId, error);
+      this.clearPendingPreModelStop(input.conversationId);
+      this.logCompactionFailure(input.conversationId, error);
     }
   }
 
@@ -131,30 +128,32 @@ export class ContextGovernanceService {
         conversationId: input.conversationId,
         modelId: input.modelId,
         providerId: input.providerId,
-        trigger: 'prepare-model',
+        trigger: 'after-response',
         userId: input.userId,
       });
       if (result.compacted) {
-        this.clearBlockedConversationReply(input.conversationId);
+        this.clearPendingPreModelStop(input.conversationId);
         return;
       }
       if (result.reason && result.reason !== 'threshold-not-reached') {
-        this.blockConversationAfterCompactionFailure(input.conversationId, result.reason);
+        this.updatePendingPreModelStop(input.conversationId, result.reason);
+        this.logCompactionFailure(input.conversationId, result.reason);
       }
     } catch (error) {
-      this.blockConversationAfterCompactionFailure(input.conversationId, error);
+      this.clearPendingPreModelStop(input.conversationId);
+      this.logCompactionFailure(input.conversationId, error);
     }
   }
 
+  consumePendingPreModelStop(conversationId: string): string | null {
+    const message = this.pendingPreModelStops.get(conversationId) ?? null;
+    if (message !== null) {
+      this.pendingPreModelStops.delete(conversationId);
+    }
+    return message;
+  }
+
   async applyBeforeModel(input: ContextGovernanceBeforeModelInput): Promise<ContextGovernanceBeforeModelResult> {
-    const blockedReply = this.blockedConversationReplies.get(input.conversationId);
-    if (blockedReply) {
-      this.blockedConversationReplies.delete(input.conversationId);
-      return { action: 'short-circuit', assistantContent: blockedReply, assistantParts: [{ text: blockedReply, type: 'text' }], modelId: input.modelId, providerId: input.providerId, reason: 'context-compaction:failed' };
-    }
-    if (this.autoStopConversationIds.delete(input.conversationId)) {
-      return { action: 'short-circuit', assistantContent: AUTO_STOP_REPLY, assistantParts: [{ text: AUTO_STOP_REPLY, type: 'text' }], modelId: input.modelId, providerId: input.providerId, reason: 'context-compaction:auto-stop' };
-    }
     return {
       action: 'continue',
       messages: await this.applyContextWindowStrategy({ conversationId: input.conversationId, messages: input.messages, modelId: input.modelId, providerId: input.providerId, userId: input.userId }),
@@ -196,7 +195,7 @@ export class ContextGovernanceService {
     const windowBudgetTokens = readContextWindowBudget(windowTarget, runtimeConfig.reservedTokens, runtimeConfig.strategy === 'sliding' ? runtimeConfig.slidingWindowUsagePercent : 100);
     if (!runtimeConfig.enabled) {
       const includedMessages = omitTrailingPendingAssistant(history.messages).filter(isConversationHistoryModelMessage);
-      const preview = this.previewHistoryMessages(input.conversationId, includedMessages, windowTarget.modelId, windowTarget.providerId, input.userId);
+      const preview = this.previewHistoryMessages(input.conversationId, includedMessages, windowTarget.modelId, windowTarget.providerId, input.userId, 'latest-provider');
       return createContextWindowPreview(runtimeConfig, { contextLength, enabled: false, estimatedTokens: preview.estimatedTokens, includedMessageIds: includedMessages.map((message) => message.id), source: preview.source, strategy: runtimeConfig.strategy });
     }
     return runtimeConfig.strategy === 'sliding' ? this.readSlidingContextWindowPreview(input.conversationId, history.messages, runtimeConfig, windowBudgetTokens, contextLength, windowTarget.modelId, windowTarget.providerId, input.userId) : this.readSummaryContextWindowPreview(input.conversationId, history.messages, runtimeConfig, contextLength, windowTarget.modelId, windowTarget.providerId, input.userId);
@@ -246,7 +245,14 @@ export class ContextGovernanceService {
     const windowTarget = this.readContextWindowTarget(input.providerId, input.modelId);
     const compactionModelTarget = this.readContextCompactionModelTarget(windowTarget.providerId, windowTarget.modelId, runtimeConfig);
     const thresholdTokens = readContextWindowBudget(windowTarget, runtimeConfig.reservedTokens, runtimeConfig.compressionThreshold);
-    const beforePreview = this.previewHistoryMessages(input.conversationId, beforeState.modelMessages, windowTarget.modelId, windowTarget.providerId, input.userId);
+    const beforePreview = this.previewHistoryMessages(
+      input.conversationId,
+      beforeState.modelMessages,
+      windowTarget.modelId,
+      windowTarget.providerId,
+      input.userId,
+      input.trigger === 'after-response' ? 'latest-provider' : 'exact',
+    );
     if (input.trigger === 'prepare-model' && beforePreview.estimatedTokens < thresholdTokens) {return { beforePreview, compacted: false, reason: 'threshold-not-reached', thresholdTokens };}
     let lastAfterPreview: PluginConversationHistoryPreviewResult | undefined;
     let lastReason: string = beforePreview.estimatedTokens >= thresholdTokens
@@ -293,11 +299,19 @@ export class ContextGovernanceService {
     };
   }
 
-  private previewHistoryMessages(conversationId: string, messages: PluginConversationHistoryMessage[], modelId: string, providerId: string, userId?: string): PluginConversationHistoryPreviewResult {
+  private previewHistoryMessages(
+    conversationId: string,
+    messages: PluginConversationHistoryMessage[],
+    modelId: string,
+    providerId: string,
+    userId?: string,
+    usagePreference: 'exact' | 'latest-provider' = 'exact',
+  ): PluginConversationHistoryPreviewResult {
     return this.runtimeHostConversationRecordService.previewConversationHistory(conversationId, asJsonObject({
       messages: sanitizeContextWindowPreviewMessages(messages),
       modelId,
       providerId,
+      usagePreference,
     }), userId) as unknown as PluginConversationHistoryPreviewResult;
   }
 
@@ -386,7 +400,7 @@ export class ContextGovernanceService {
     const entries = readContextWindowCompactedHistory(historyMessages);
     const includedEntries = entries.filter((entry): entry is ContextWindowCandidateMessage => !entry.hidden && entry.modelMessage !== null);
     const includedMessageIds = includedEntries.map((entry) => entry.id);
-    const preview = this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId);
+    const preview = this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId, 'latest-provider');
     return createContextWindowPreview(runtimeConfig, { contextLength, enabled: true, estimatedTokens: preview.estimatedTokens, excludedMessageIds: entries.filter((entry) => entry.candidate).map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, source: preview.source, strategy: runtimeConfig.strategy });
   }
 
@@ -408,9 +422,6 @@ export class ContextGovernanceService {
           trigger: 'manual',
           userId: input.userId,
         });
-        if (result.compacted) {
-          this.clearBlockedConversationReply(input.conversationId);
-        }
       } catch (error) {
         failureReason = this.readCompactionFailureDetail(error);
       }
@@ -430,20 +441,22 @@ export class ContextGovernanceService {
     };
   }
 
-  private blockConversationAfterCompactionFailure(conversationId: string, failure: string | unknown): void {
-    if (failure === 'overflow-without-compaction') {
-      this.blockedConversationReplies.set(conversationId, AUTO_COMPACTION_OVERFLOW_REPLY);
-      this.logger.warn(`会话 ${conversationId} 自动压缩失败，已停止后续继续生成: ${CONTEXT_COMPACTION_REASON_LABELS['overflow-without-compaction']}`);
-      return;
-    }
+  private logCompactionFailure(conversationId: string, failure: string | unknown): void {
     const detail = this.readCompactionFailureDetail(failure);
-    const reply = detail ? `${AUTO_COMPACTION_FAILED_REPLY}\n原因：${detail}` : AUTO_COMPACTION_FAILED_REPLY;
-    this.blockedConversationReplies.set(conversationId, reply);
-    this.logger.warn(`会话 ${conversationId} 自动压缩失败，已停止后续继续生成: ${detail || 'unknown'}`);
+    this.logger.warn(`会话 ${conversationId} 自动压缩失败，继续保留当前历史: ${detail || 'unknown'}`);
   }
 
-  private clearBlockedConversationReply(conversationId: string): void {
-    this.blockedConversationReplies.delete(conversationId);
+  private updatePendingPreModelStop(conversationId: string, failure: string): void {
+    const stopMessage = readPendingPreModelStopMessage(failure);
+    if (stopMessage) {
+      this.pendingPreModelStops.set(conversationId, stopMessage);
+      return;
+    }
+    this.pendingPreModelStops.delete(conversationId);
+  }
+
+  private clearPendingPreModelStop(conversationId: string): void {
+    this.pendingPreModelStops.delete(conversationId);
   }
 
   private readCompactionFailureDetail(failure: string | unknown): string {
@@ -504,6 +517,16 @@ function readContextWindowBudget(target: ContextWindowTarget, reservedTokens: nu
 function readDescendingKeepRecentCounts(preferredKeepRecentMessages: number, messageCount: number): number[] {
   const maxKeepRecentMessages = Math.min(Math.max(0, preferredKeepRecentMessages), messageCount);
   return Array.from({ length: maxKeepRecentMessages + 1 }, (_, index) => maxKeepRecentMessages - index);
+}
+
+function readPendingPreModelStopMessage(reason: string): string | null {
+  if (reason === 'overflow-without-compaction') {
+    return '当前可发送上下文本身已超预算，现有历史没有可压缩正文。请新开会话，或先删减最近长回复后再继续。';
+  }
+  if (reason === 'still-over-budget') {
+    return '压缩后的上下文仍超过预算，无法继续当前请求。请新开会话，或先删减最近长回复后再继续。';
+  }
+  return null;
 }
 
 function readContextCompactionCommandInput(content: string, parts: ChatMessagePart[]): { hasUnexpectedArgs: boolean } | null {

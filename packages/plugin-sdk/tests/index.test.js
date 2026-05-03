@@ -937,7 +937,6 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
     },
   );
   const contextCompactionRuntimeConfig = resolveContextCompactionRuntimeConfig({});
-  assert.equal(contextCompactionRuntimeConfig.allowAutoContinue, true);
   assert.equal(contextCompactionRuntimeConfig.compressionThreshold, CONTEXT_COMPACTION_DEFAULT_THRESHOLD);
   assert.equal(contextCompactionRuntimeConfig.enabled, true);
   assert.equal(contextCompactionRuntimeConfig.keepRecentMessages, CONTEXT_COMPACTION_DEFAULT_KEEP_RECENT);

@@ -2,7 +2,7 @@ import type { AiModelUsage, JsonObject, PluginLlmMessage, PluginLlmTransportMode
 import { Injectable } from '@nestjs/common';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
-import { generateText, isLoopFinished, streamText, type LanguageModel, type LanguageModelUsage, type ModelMessage, type Tool } from 'ai';
+import { generateText, isLoopFinished, streamText, type LanguageModel, type ModelMessage, type Tool } from 'ai';
 import { createRequire } from 'node:module';
 import { uuidv7 } from 'uuidv7';
 import { AiProviderSettingsService } from '../ai-management/ai-provider-settings.service';
@@ -252,35 +252,57 @@ function readModelUsage(value: unknown, input: AiModelExecutionRequest, text: st
 function readExecutionError(error: unknown, fallback: string): Error { return error instanceof Error ? error : new Error(fallback); }
 
 function normalizeSdkUsage(value: unknown): AiModelUsage | null {
-  if (!isRecord(value)) {return null;}
-  const usage = value as Partial<LanguageModelUsage>;
-  const cachedInputTokens = readTokenNumber(
-    usage.cachedInputTokens
-      ?? usage.inputTokenDetails?.cacheReadTokens,
-  );
-  const totalTokens = readTokenNumber(usage.totalTokens);
-  let inputTokens = readTokenNumber(usage.inputTokens);
-  let outputTokens = readTokenNumber(usage.outputTokens);
+  const usage = readSdkUsageRecord(value);
+  if (!usage) {return null;}
+  const cachedInputTokens = readTokenPath(usage, [
+    ['cachedInputTokens'],
+    ['cacheReadInputTokens'],
+    ['cache_read_input_tokens'],
+    ['inputTokenDetails', 'cacheReadTokens'],
+    ['inputTokenDetails', 'cachedTokens'],
+    ['promptTokenDetails', 'cachedTokens'],
+    ['prompt_tokens_details', 'cached_tokens'],
+  ]);
+  const totalTokens = readTokenPath(usage, [
+    ['totalTokens'],
+    ['total_tokens'],
+    ['total'],
+  ]);
+  let inputTokens = readTokenPath(usage, [
+    ['inputTokens'],
+    ['input_tokens'],
+    ['promptTokens'],
+    ['prompt_tokens'],
+  ]);
+  let outputTokens = readTokenPath(usage, [
+    ['outputTokens'],
+    ['output_tokens'],
+    ['completionTokens'],
+    ['completion_tokens'],
+  ]);
   if (totalTokens !== null && inputTokens !== null && outputTokens === null) {outputTokens = Math.max(totalTokens - inputTokens, 0);}
   if (totalTokens !== null && outputTokens !== null && inputTokens === null) {inputTokens = Math.max(totalTokens - outputTokens, 0);}
   if (inputTokens === null || outputTokens === null) {
     return null;
   }
+  const resolvedTotalTokens = totalTokens ?? inputTokens + outputTokens;
   return {
     ...(cachedInputTokens === null ? {} : { cachedInputTokens }),
     inputTokens,
     outputTokens,
     source: 'provider',
-    totalTokens: totalTokens ?? inputTokens + outputTokens,
+    totalTokens: resolvedTotalTokens,
   };
 }
 
 function readSdkUsagePromise(value: unknown): Promise<AiModelUsage | undefined> | undefined { return value === undefined ? undefined : Promise.resolve(value).then((usage) => normalizeSdkUsage(usage) ?? undefined).catch(() => undefined); }
 function normalizeStreamResult(result: AiSdkStreamTextResult): NormalizedAiSdkStreamTextResult {
+  const finishReason = readOptionalStreamResultValue(result, 'finishReason');
+  const totalUsage = readOptionalStreamResultValue(result, 'totalUsage');
   return {
     fullStream: result.fullStream,
-    ...(Object.prototype.hasOwnProperty.call(result, 'finishReason') ? { finishReason: readSafeAsyncValue(result.finishReason) } : {}),
-    ...(Object.prototype.hasOwnProperty.call(result, 'totalUsage') ? { totalUsage: readSafeAsyncValue((result as unknown as { totalUsage?: unknown }).totalUsage) } : {}),
+    ...(finishReason === undefined ? {} : { finishReason: readSafeAsyncValue(finishReason) }),
+    ...(totalUsage === undefined ? {} : { totalUsage: readSafeAsyncValue(totalUsage) }),
   };
 }
 
@@ -392,3 +414,69 @@ function sanitizeOpenAiCompatibleIdFragment(value: string): string { return valu
 function readRepairToolErrorMessage(error: { message?: string } | null | undefined): string { return typeof error?.message === 'string' && error.message.trim().length > 0 ? error.message.trim() : '工具调用不合法'; }
 
 function readRepairToolPhase(error: { name?: string } | null | undefined): 'resolve' | 'validate' { return error?.name === 'AI_NoSuchToolError' ? 'resolve' : 'validate'; }
+
+function readSdkUsageRecord(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) {return null;}
+  const candidates: Record<string, unknown>[] = [value];
+  for (const key of ['usage', 'tokenUsage', 'totalUsage']) {
+    const nested = value[key];
+    if (isRecord(nested)) {
+      candidates.push(nested);
+    }
+  }
+  for (const candidate of candidates) {
+    if (readTokenPath(candidate, [
+      ['totalTokens'],
+      ['total_tokens'],
+      ['inputTokens'],
+      ['input_tokens'],
+      ['promptTokens'],
+      ['prompt_tokens'],
+      ['outputTokens'],
+      ['output_tokens'],
+      ['completionTokens'],
+      ['completion_tokens'],
+    ]) !== null) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function readTokenPath(
+  record: Record<string, unknown>,
+  paths: string[][],
+): number | null {
+  for (const path of paths) {
+    let current: unknown = record;
+    let resolved = true;
+    for (const segment of path) {
+      if (!isRecord(current) || !Object.prototype.hasOwnProperty.call(current, segment)) {
+        resolved = false;
+        break;
+      }
+      current = current[segment];
+    }
+    if (!resolved) {
+      continue;
+    }
+    const token = readTokenNumber(current);
+    if (token !== null) {
+      return token;
+    }
+  }
+  return null;
+}
+
+function readOptionalStreamResultValue<
+  TKey extends 'finishReason' | 'totalUsage',
+>(
+  result: AiSdkStreamTextResult,
+  key: TKey,
+): unknown {
+  try {
+    return (result as unknown as Record<TKey, unknown>)[key];
+  } catch {
+    return undefined;
+  }
+}

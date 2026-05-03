@@ -28,7 +28,7 @@ export class RuntimeToolPermissionService {
 
   constructor(
     @Optional() private readonly runtimeHostConversationRecordService?: ConversationStoreService,
-    @Optional() private readonly runtimeToolsSettingsService: RuntimeToolsSettingsService = new RuntimeToolsSettingsService(),
+    @Optional() private readonly runtimeToolsSettingsService?: RuntimeToolsSettingsService,
   ) {}
 
   async review(input: RuntimePermissionReviewInput): Promise<void> {
@@ -37,7 +37,7 @@ export class RuntimeToolPermissionService {
     if (unsupported.length > 0) {throw new ForbiddenException(`当前 runtime 后端 ${input.backend.kind} 不支持能力: ${unsupported.join(', ')}`);}
     const denied = requiredCapabilities.filter((capability) => input.backend.permissionPolicy[capability] === 'deny');
     if (denied.length > 0) {throw new ForbiddenException(`当前 runtime 权限策略拒绝能力: ${denied.join(', ')}`);}
-    if (this.readRuntimeApprovalMode() === 'yolo') {return;}
+    if (this.readRuntimeApprovalMode() === 'yolo' || this.shouldBypassApprovalForConversation(input.conversationId)) {return;}
 
     const operations = input.requiredOperations.filter((operation) => {
       const asksCapability = expandRuntimeOperationsToCapabilities([operation]).some((capability) => input.backend.permissionPolicy[capability] === 'ask');
@@ -121,10 +121,21 @@ export class RuntimeToolPermissionService {
     return approvals;
   }
 
+  private shouldBypassApprovalForConversation(conversationId?: string): boolean {
+    if (!conversationId) {
+      return false;
+    }
+    try {
+      return this.runtimeHostConversationRecordService?.requireConversation(conversationId).kind === 'subagent';
+    } catch {
+      return false;
+    }
+  }
+
   private readRuntimeApprovalMode(): RuntimeApprovalMode {
     const configuredMode = process.env.GARLIC_CLAW_RUNTIME_APPROVAL_MODE?.trim().toLowerCase();
     if (!configuredMode) {
-      return this.runtimeToolsSettingsService.readApprovalMode();
+      return this.runtimeToolsSettingsService?.readApprovalMode() ?? 'review';
     }
     if (configuredMode === 'review' || configuredMode === 'yolo') {
       return configuredMode;

@@ -277,26 +277,6 @@
                 <div v-if="row.message.error" class="message-error">
                   错误: {{ row.message.error }}
                 </div>
-                <div
-                  v-if="readAssistantUsage(row.message)"
-                  class="message-usage-inline"
-                >
-                  <span class="message-usage-inline-item">
-                    输入 {{ formatUsageTokenCount(readAssistantUsage(row.message), readAssistantUsage(row.message)?.inputTokens) }}
-                  </span>
-                  <span class="message-usage-inline-item">
-                    输出 {{ formatUsageTokenCount(readAssistantUsage(row.message), readAssistantUsage(row.message)?.outputTokens) }}
-                  </span>
-                  <span
-                    v-if="readAssistantUsage(row.message)?.cachedInputTokens !== undefined"
-                    class="message-usage-inline-item"
-                  >
-                    缓存 {{ formatUsageTokenCount(readAssistantUsage(row.message), readAssistantUsage(row.message)?.cachedInputTokens) }}
-                  </span>
-                  <span class="message-usage-inline-item">
-                    总计 {{ formatUsageTokenCount(readAssistantUsage(row.message), readAssistantUsage(row.message)?.totalTokens) }}
-                  </span>
-                </div>
               </template>
 
               <span
@@ -748,15 +728,19 @@ function isExcludedFromCurrentContext(message: ChatMessage): boolean {
   );
 }
 
+function isSlidingWindowExcluded(message: ChatMessage): boolean {
+  return props.contextWindowPreview?.strategy === "sliding" && isExcludedFromCurrentContext(message);
+}
+
 function contextVisibilityClass(message: ChatMessage): string | null {
-  return isExcludedFromCurrentContext(message) ? "excluded-from-context" : null;
+  return isSlidingWindowExcluded(message) ? "excluded-from-context" : null;
 }
 
 function readContextVisibilityLabel(message: ChatMessage): string | null {
   if (isNonContextMessage(message)) {
     return "仅展示，不进入 LLM 上下文";
   }
-  return isExcludedFromCurrentContext(message)
+  return isSlidingWindowExcluded(message)
     ? "已脱离当前 LLM 上下文"
     : null;
 }
@@ -1080,7 +1064,7 @@ function isContextCompactionSummaryData(
   value: unknown,
 ): value is {
   role: "summary";
-  trigger: "manual" | "prepare-model";
+  trigger: "after-response" | "manual" | "prepare-model";
   coveredCount: number;
   providerId: string;
   modelId: string;
@@ -1094,7 +1078,7 @@ function isContextCompactionSummaryData(
     typeof value.modelId === "string" &&
     isPreviewSummary(value.beforePreview) &&
     isPreviewSummary(value.afterPreview) &&
-    (value.trigger === "manual" || value.trigger === "prepare-model");
+    (value.trigger === "manual" || value.trigger === "prepare-model" || value.trigger === "after-response");
 }
 
 function isContextCompactionCoveredData(
@@ -1115,7 +1099,7 @@ function isPreviewSummary(
 }
 
 function contextCompactionTriggerLabel(
-  trigger: "manual" | "prepare-model" | undefined,
+  trigger: "after-response" | "manual" | "prepare-model" | undefined,
 ): string {
   return trigger === "manual" ? "手动触发" : "自动触发";
 }

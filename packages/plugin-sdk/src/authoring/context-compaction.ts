@@ -19,7 +19,6 @@ export interface PluginContextCompactionConfig {
   slidingWindowUsagePercent?: number;
   summaryPrompt?: string;
   showCoveredMarker?: boolean;
-  allowAutoContinue?: boolean;
 }
 
 export const CONTEXT_COMPACTION_DEFAULT_STRATEGY =
@@ -39,8 +38,6 @@ export const CONTEXT_COMPACTION_DEFAULT_SUMMARY_PROMPT =
   authoringConfigData.defaults.contextCompactionSummaryPrompt;
 export const CONTEXT_COMPACTION_DEFAULT_SHOW_COVERED_MARKER =
   authoringConfigData.defaults.contextCompactionShowCoveredMarker;
-export const CONTEXT_COMPACTION_DEFAULT_ALLOW_AUTO_CONTINUE =
-  authoringConfigData.defaults.contextCompactionAllowAutoContinue;
 export const CONTEXT_COMPACTION_CONFIG_SCHEMA =
   authoringConfigData.contextCompactionConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
 
@@ -66,9 +63,6 @@ export function readContextCompactionConfig(
     ...(typeof object?.showCoveredMarker === "boolean"
       ? { showCoveredMarker: object.showCoveredMarker }
       : {}),
-    ...(typeof object?.allowAutoContinue === "boolean"
-      ? { allowAutoContinue: object.allowAutoContinue }
-      : {}),
   };
 }
 
@@ -84,13 +78,8 @@ export function resolveContextCompactionRuntimeConfig(
   slidingWindowUsagePercent: number;
   summaryPrompt: string;
   showCoveredMarker: boolean;
-  allowAutoContinue: boolean;
 } {
   return {
-    allowAutoContinue:
-      typeof config.allowAutoContinue === "boolean"
-        ? config.allowAutoContinue
-        : CONTEXT_COMPACTION_DEFAULT_ALLOW_AUTO_CONTINUE,
     compressionThreshold: normalizeIntegerInRange(
       config.compressionThreshold,
       CONTEXT_COMPACTION_DEFAULT_THRESHOLD,

@@ -1217,13 +1217,25 @@ describe('ToolRegistryService', () => {
         sourceKind: 'internal',
         sourceId: 'subagent',
         callName: 'spawn_subagent',
+        description: expect.stringContaining('wait_subagent'),
         toolId: 'internal:subagent:spawn_subagent',
       }),
       expect.objectContaining({
         sourceKind: 'internal',
         sourceId: 'subagent',
         callName: 'wait_subagent',
+        description: expect.stringContaining('result'),
         toolId: 'internal:subagent:wait_subagent',
+      }),
+      expect.objectContaining({
+        sourceKind: 'internal',
+        sourceId: 'subagent',
+        callName: 'spawn_subagent',
+        parameters: expect.objectContaining({
+          subagentType: expect.objectContaining({
+            description: expect.stringContaining('general'),
+          }),
+        }),
       }),
     ]));
   });

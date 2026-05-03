@@ -795,6 +795,7 @@ function readPersonaAvatarAlt(name?: string | null) {
 
 .detail-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
 }
 
 .field-block,
@@ -803,6 +804,8 @@ function readPersonaAvatarAlt(name?: string | null) {
 .setting-row-copy {
   display: grid;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
 }
 
 .field-block-full {
@@ -813,10 +816,19 @@ function readPersonaAvatarAlt(name?: string | null) {
 .field-select,
 .field-textarea {
   width: 100%;
+  min-width: 0;
+}
+
+.field-input :deep(.el-input),
+.field-select :deep(.el-select),
+.field-textarea :deep(.el-textarea) {
+  width: 100%;
+  min-width: 0;
 }
 
 .field-input :deep(.el-input__wrapper),
 .field-select :deep(.el-select__wrapper) {
+  width: 100%;
   min-height: 46px;
   border-radius: 14px;
   background: var(--surface-panel-soft-strong);
@@ -824,6 +836,8 @@ function readPersonaAvatarAlt(name?: string | null) {
 }
 
 .field-textarea :deep(.el-textarea__inner) {
+  width: 100%;
+  box-sizing: border-box;
   min-height: 120px;
   resize: vertical;
   border-radius: 14px;

@@ -418,7 +418,10 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     content?: string
     parts?: ChatMessagePart[]
   }) {
-    await chat.updateMessage(payload.messageId, payload)
+    await chat.updateMessage(payload.messageId, {
+      ...(payload.content !== undefined ? { content: payload.content } : {}),
+      ...(payload.parts !== undefined ? { parts: payload.parts } : {}),
+    })
   }
 
   /**

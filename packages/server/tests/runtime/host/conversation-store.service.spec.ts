@@ -534,6 +534,77 @@ describe('ConversationStoreService', () => {
     });
   });
 
+  it('reuses the latest provider total tokens for preview display when explicitly requested', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new ConversationStoreService();
+    const conversationId = (service.createConversation({ title: 'Latest Provider Usage Preview Chat' }) as { id: string }).id;
+    const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
+    const staleSignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '旧历史',
+        createdAt: '2026-04-19T09:59:00.000Z',
+        id: 'stale-message',
+        parts: [{ text: '旧历史', type: 'text' }],
+        role: 'assistant',
+        status: 'completed',
+        updatedAt: '2026-04-19T09:59:00.000Z',
+      },
+    ]);
+
+    service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [
+        {
+          content: '现在的第一条消息',
+          createdAt: '2026-04-19T10:00:00.000Z',
+          id: 'user-message',
+          parts: [{ text: '现在的第一条消息', type: 'text' }],
+          role: 'user',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:00:00.000Z',
+        },
+        {
+          content: '现在的第二条消息',
+          createdAt: '2026-04-19T10:01:00.000Z',
+          id: 'assistant-message',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  inputTokens: 77,
+                  modelId: 'gpt-5.4',
+                  outputTokens: 13,
+                  providerId: 'openai',
+                  responseHistorySignature: staleSignature,
+                  source: 'provider',
+                  totalTokens: 90,
+                },
+                owner: 'conversation.model-usage',
+                type: 'model-usage',
+                version: '1',
+              },
+            ],
+          },
+          parts: [{ text: '现在的第二条消息', type: 'text' }],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:01:00.000Z',
+        },
+      ],
+    });
+
+    expect(service.previewConversationHistory(conversationId, {
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      usagePreference: 'latest-provider',
+    })).toEqual({
+      estimatedTokens: 90,
+      messageCount: 2,
+      source: 'provider',
+      textBytes: Buffer.byteLength('user\n现在的第一条消息\nassistant\n现在的第二条消息', 'utf8'),
+    });
+  });
+
   it('falls back to estimated history tokens when the preview model changes', () => {
     process.env[conversationsEnvKey] = storagePath;
     const service = new ConversationStoreService();

@@ -10,6 +10,9 @@ import { RuntimeToolBackendService } from '../../../src/execution/runtime/runtim
 describe('RuntimeToolBackendService', () => {
   const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
   const originalFilesystemBackend = process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND;
+  const emptyRuntimeToolsSettingsService = {
+    readConfiguredShellBackend: () => undefined,
+  };
 
   afterEach(() => {
     if (originalShellBackend === undefined) {
@@ -37,6 +40,7 @@ describe('RuntimeToolBackendService', () => {
         createFilesystemBackend('alpha-filesystem'),
         createFilesystemBackend('beta-filesystem'),
       ]),
+      emptyRuntimeToolsSettingsService as never,
     );
 
     expect(service.getShellBackendKind()).toBe('alpha');
@@ -56,6 +60,7 @@ describe('RuntimeToolBackendService', () => {
         createFilesystemBackend('alpha-filesystem'),
         createFilesystemBackend('beta-filesystem'),
       ]),
+      emptyRuntimeToolsSettingsService as never,
     );
 
     expect(service.getShellBackendKind()).toBe('beta');
@@ -73,6 +78,7 @@ describe('RuntimeToolBackendService', () => {
         new RuntimeCommandCaptureService(new RuntimeSessionEnvironmentService()),
       ),
       new RuntimeFilesystemBackendService([createFilesystemBackend('alpha-filesystem')]),
+      emptyRuntimeToolsSettingsService as never,
     );
 
     expect(() => service.getShellBackendDescriptor()).toThrow(
@@ -89,11 +95,29 @@ describe('RuntimeToolBackendService', () => {
         new RuntimeCommandCaptureService(new RuntimeSessionEnvironmentService()),
       ),
       new RuntimeFilesystemBackendService([createFilesystemBackend('alpha-filesystem')]),
+      emptyRuntimeToolsSettingsService as never,
     );
 
     expect(() => service.getFilesystemBackendDescriptor()).toThrow(
       'Unknown runtime filesystem backend: missing-filesystem',
     );
+  });
+
+  it('prefers persisted runtime-tools shell backend over environment routing', () => {
+    process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'alpha';
+    const service = new RuntimeToolBackendService(
+      new RuntimeBackendRoutingService(),
+      new RuntimeCommandService(
+        [createRuntimeBackend('alpha'), createRuntimeBackend('beta')],
+        new RuntimeCommandCaptureService(new RuntimeSessionEnvironmentService()),
+      ),
+      new RuntimeFilesystemBackendService([createFilesystemBackend('alpha-filesystem')]),
+      {
+        readConfiguredShellBackend: () => 'beta',
+      } as never,
+    );
+
+    expect(service.getShellBackendKind()).toBe('beta');
   });
 });
 

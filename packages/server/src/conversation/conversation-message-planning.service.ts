@@ -76,6 +76,10 @@ export class ConversationMessagePlanningService {
   async createStreamPlan(input: { activePersonaId?: string; abortSignal: AbortSignal; conversationId: string; messageId: string; modelId: string; persona?: ResolvedPersonaPlan; providerId: string; userId?: string }): Promise<ConversationStreamPlan> {
     const persona = input.persona ?? this.personaService.readCurrentPersona({ context: createConversationHookContext({ activePersonaId: input.activePersonaId, conversationId: input.conversationId, userId: input.userId }), conversationId: input.conversationId });
     await this.contextGovernanceService.rewriteHistoryBeforeModel({ conversationId: input.conversationId, modelId: input.modelId, providerId: input.providerId, userId: input.userId });
+    const pendingPreModelStop = this.contextGovernanceService.consumePendingPreModelStop(input.conversationId);
+    if (pendingPreModelStop) {
+      throw new Error(pendingPreModelStop);
+    }
     await this.runConversationHistoryRewrite({ activePersonaId: persona.personaId, conversationId: input.conversationId, modelId: input.modelId, providerId: input.providerId, userId: input.userId });
     const historyMessages = await this.buildModelMessages(input.conversationId, input.messageId);
     const internalBeforeModel = await this.contextGovernanceService.applyBeforeModel({ conversationId: input.conversationId, messages: [...persona.beginDialogs, ...historyMessages], modelId: input.modelId, providerId: input.providerId, systemPrompt: persona.prompt, userId: input.userId });

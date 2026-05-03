@@ -6,6 +6,7 @@ import type {
   PluginSubagentInterruptParams,
   PluginSubagentSendInputParams,
   PluginSubagentSpawnParams,
+  PluginSubagentTypeSummary,
   PluginSubagentWaitParams,
 } from "@garlic-claw/shared";
 import { toHostJsonValue } from "../host";
@@ -17,6 +18,16 @@ export interface PluginSubagentConfig {
   targetProviderId?: string;
   targetModelId?: string;
   allowedToolNames?: string[];
+}
+
+interface SubagentToolDefinition {
+  name: "spawn_subagent" | "wait_subagent" | "send_input_subagent" | "interrupt_subagent" | "close_subagent";
+  description: string;
+  parameters: Record<string, {
+    type: string;
+    description: string;
+    required?: true;
+  }>;
 }
 
 export const SUBAGENT_CONFIG_SCHEMA = {
@@ -73,7 +84,7 @@ export const SUBAGENT_CONFIG_SCHEMA = {
   },
 } satisfies PluginConfigSchema;
 
-export const SUBAGENT_TOOL_DEFINITIONS = [
+const BASE_SUBAGENT_TOOL_DEFINITIONS: SubagentToolDefinition[] = [
   {
     name: "spawn_subagent",
     description: "创建一个新的子代理会话，并立刻在后台开始执行。",
@@ -101,7 +112,7 @@ export const SUBAGENT_TOOL_DEFINITIONS = [
       },
       subagentType: {
         type: "string",
-        description: "指定子代理类型 ID",
+        description: "可选。指定子代理类型 ID",
       },
     },
   },
@@ -174,7 +185,34 @@ export const SUBAGENT_TOOL_DEFINITIONS = [
       },
     },
   },
-] as const;
+];
+
+export function buildSubagentToolDefinitions(input: { subagentTypes?: PluginSubagentTypeSummary[] } = {}): SubagentToolDefinition[] {
+  const typeGuide = buildSubagentTypeGuide(input.subagentTypes ?? []);
+  return BASE_SUBAGENT_TOOL_DEFINITIONS.map((tool) => {
+    if (tool.name !== "spawn_subagent") {
+      return {
+        ...tool,
+        description: readSubagentToolDescription(tool.name, typeGuide),
+      };
+    }
+    return {
+      ...tool,
+      description: readSubagentToolDescription(tool.name, typeGuide),
+      parameters: {
+        ...tool.parameters,
+        subagentType: {
+          ...tool.parameters.subagentType,
+          description: typeGuide
+            ? `可选。指定子代理类型 ID。当前可选：${typeGuide}`
+            : tool.parameters.subagentType.description,
+        },
+      },
+    };
+  });
+}
+
+export const SUBAGENT_TOOL_DEFINITIONS = buildSubagentToolDefinitions();
 
 export function readSubagentConfig(value: unknown): PluginSubagentConfig {
   const object = readJsonObjectValue(value);
@@ -258,6 +296,52 @@ function buildSubagentBaseParams(input: { config: PluginSubagentConfig; prompt: 
     messages: [{ role: "user", content: [{ type: "text", text: input.prompt }] }],
     ...(toolNames ? { toolNames } : {}),
   };
+}
+
+function readSubagentToolDescription(toolName: SubagentToolDefinition["name"], typeGuide: string): string {
+  if (toolName === "spawn_subagent") {
+    return [
+      "创建一个新的子代理会话，并立刻在后台开始执行。",
+      "它会立即返回句柄 `{ conversationId, status, title, name? }`，不会直接返回最终正文。",
+      "如果后续需要读取最终文本或错误，请对返回的 `conversationId` 调用 `wait_subagent`；完成后内容会出现在 `result` / `error` 字段。",
+      typeGuide ? `当前可选子代理类型：${typeGuide}` : "",
+    ].filter(Boolean).join(" ");
+  }
+  if (toolName === "wait_subagent") {
+    return "等待一个子代理状态变化，通常用于等待执行完成。返回 `{ conversationId, status, title, name?, result?, error? }`；当 `status=completed` 时直接读取 `result`，若超时但未完成，只会返回当前状态。";
+  }
+  if (toolName === "send_input_subagent") {
+    return "向已有子代理会话继续发送输入，发起下一轮执行。只能对当前不在 `queued/running` 的子代理使用；若仍在运行，会直接报错。返回新的句柄 `{ conversationId, status, title, name? }`。";
+  }
+  if (toolName === "interrupt_subagent") {
+    return "中断正在运行或排队中的子代理。返回更新后的句柄 `{ conversationId, status, title, name? }`。";
+  }
+  return "关闭一个子代理会话，关闭后不再接受新的输入。返回最终句柄 `{ conversationId, status, title, name? }`。";
+}
+
+function buildSubagentTypeGuide(subagentTypes: PluginSubagentTypeSummary[]): string {
+  const entries = subagentTypes
+    .map((entry) => {
+      const id = sanitizeOptionalText(entry.id);
+      const name = sanitizeOptionalText(entry.name);
+      if (!id || !name) {
+        return null;
+      }
+      const description = summarizeSubagentTypeDescription(entry.description);
+      return description ? `\`${id}\`（${name}：${description}）` : `\`${id}\`（${name}）`;
+    })
+    .filter((entry): entry is string => Boolean(entry));
+  return entries.join("；");
+}
+
+function summarizeSubagentTypeDescription(value: unknown): string | null {
+  const text = sanitizeOptionalText(typeof value === "string" ? value : undefined);
+  if (!text) {
+    return null;
+  }
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const sentence = normalized.split("。")[0]?.trim() ?? normalized;
+  return sentence || normalized;
 }
 
 function readOptionalToolNames(value: unknown): string[] | undefined {

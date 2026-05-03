@@ -650,7 +650,6 @@ async function runSubagentAutoCompactionSmoke(apiBase, state, input) {
         body: {
           values: {
             contextCompaction: {
-              allowAutoContinue: true,
               compressionThreshold: 60,
               enabled: true,
               keepRecentMessages: 0,

@@ -485,10 +485,9 @@ describe('ContextGovernanceService', () => {
     });
   });
 
-  it('auto compacts history before model execution and short-circuits the current reply when auto continue is disabled', async () => {
+  it('auto compacts history before model execution without fabricating a short-circuit reply', async () => {
     settingsService.updateConfig({
       contextCompaction: {
-        allowAutoContinue: false,
         compressionThreshold: 20,
         enabled: true,
         keepRecentMessages: 1,
@@ -528,14 +527,21 @@ describe('ContextGovernanceService', () => {
     });
 
     expect(aiModelExecutionService.generateText).toHaveBeenCalledTimes(1);
-    expect(beforeModel).toEqual({
-      action: 'short-circuit',
-      assistantContent: '已完成上下文压缩，本轮不继续生成主回复。',
-      assistantParts: [{ text: '已完成上下文压缩，本轮不继续生成主回复。', type: 'text' }],
-      modelId: 'gpt-oss-20b',
-      providerId: 'nvidia',
-      reason: 'context-compaction:auto-stop',
-    });
+    expect(beforeModel.action).toBe('continue');
+    if (beforeModel.action !== 'continue') {
+      throw new Error(`unexpected action: ${beforeModel.action}`);
+    }
+    expect(beforeModel.modelId).toBe('gpt-oss-20b');
+    expect(beforeModel.providerId).toBe('nvidia');
+    expect(beforeModel.systemPrompt).toBe('你是测试助手');
+    expect(beforeModel.messages).toEqual([
+      { content: [{ text: '自动摘要。', type: 'text' }], role: 'assistant' },
+      { content: [{ text: '第三段消息保留给最近窗口。', type: 'text' }], role: 'user' },
+    ]);
+    const history = conversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+      messages: Array<{ content?: string }>;
+    };
+    expect(history.messages.some((message) => message.content === '自动摘要。')).toBe(true);
   });
 
   it('does not let stale provider usage suppress auto compaction threshold checks', async () => {
@@ -604,6 +610,53 @@ describe('ContextGovernanceService', () => {
     expect(history.messages.some((message) => message.content === '自动压缩摘要：当前历史过长，旧 usage 已失效。')).toBe(true);
   });
 
+  it('does not short-circuit the next reply when automatic compaction fails before model execution', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 20,
+        enabled: true,
+        keepRecentMessages: 1,
+        reservedTokens: 900,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '第一段较长的历史消息，用来触发自动压缩阈值。'.repeat(10)),
+      createHistoryMessage('message-2', 'assistant', '第二段较长的历史回复，用来确保压缩候选不为空。'.repeat(10)),
+      createHistoryMessage('message-3', 'user', '第三段消息保留给最近窗口。'),
+    ], 'user-1');
+    aiModelExecutionService.generateText.mockRejectedValueOnce(new Error('compaction api failed'));
+
+    await service.rewriteHistoryBeforeModel({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    await expect(service.applyBeforeModel({
+      conversationId,
+      messages: [
+        { content: 'system prompt', role: 'system' },
+        { content: '继续下一步', role: 'user' },
+      ],
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      systemPrompt: '你是测试助手',
+      userId: 'user-1',
+    })).resolves.toEqual({
+      action: 'continue',
+      messages: [
+        { content: 'system prompt', role: 'system' },
+        { content: '继续下一步', role: 'user' },
+      ],
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      systemPrompt: '你是测试助手',
+    });
+  });
+
   it('surfaces provider token source in the context window preview when the current history matches real usage', async () => {
     const previewMessages = [
       {
@@ -659,6 +712,54 @@ describe('ContextGovernanceService', () => {
     })).resolves.toEqual(expect.objectContaining({
       estimatedTokens: 100,
       includedMessageIds: ['history-1', 'history-2'],
+      source: 'provider',
+    }));
+  });
+
+  it('reuses the latest provider total tokens for context window preview display after history rewrite invalidates the old response signature', async () => {
+    const staleSignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '旧历史',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'stale-history-1',
+        parts: [{ text: '旧历史', type: 'text' as const }],
+        role: 'assistant' as const,
+        status: 'completed' as const,
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+    ]);
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('history-1', 'user', '新的第一条消息'),
+      {
+        ...createHistoryMessage('history-2', 'assistant', '新的第二条消息'),
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                inputTokens: 88,
+                modelId: 'gpt-oss-20b',
+                outputTokens: 12,
+                providerId: 'nvidia',
+                responseHistorySignature: staleSignature,
+                source: 'provider',
+                totalTokens: 100,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+    ], 'user-1');
+
+    await expect(service.getContextWindowPreview({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
+      estimatedTokens: 100,
       source: 'provider',
     }));
   });

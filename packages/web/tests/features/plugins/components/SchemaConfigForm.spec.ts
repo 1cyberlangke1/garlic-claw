@@ -37,6 +37,16 @@ vi.mock('@/modules/plugins/api/plugins', () => ({
       id: 'explore',
       name: '探索',
     },
+    {
+      id: 'review',
+      name: '审阅',
+      description: '优先找风险与缺口',
+    },
+    {
+      id: 'writer',
+      name: '写作',
+      description: '优先产出可复用文本',
+    },
   ]),
 }))
 
@@ -258,6 +268,8 @@ describe('SchemaConfigForm', () => {
     const options = wrapper.findAll('option').map((node) => node.text())
     expect(options).toContain('通用')
     expect(options).toContain('探索')
+    expect(options).toContain('审阅')
+    expect(options).toContain('写作')
     expect(options).toContain('使用默认子代理类型')
   })
 

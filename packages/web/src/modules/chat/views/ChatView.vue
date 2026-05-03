@@ -21,7 +21,7 @@
                 </span>
                 <span
                   class="toolbar-context-progress"
-                  :title="`当前上下文估算占用 ${contextUsageSummary.percent}%`"
+                  :title="`当前上下文占用 ${contextUsageSummary.percent}%`"
                 >
                   <span
                     class="toolbar-context-progress-fill"
