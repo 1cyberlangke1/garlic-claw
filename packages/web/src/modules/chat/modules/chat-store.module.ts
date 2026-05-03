@@ -381,26 +381,37 @@ export function createChatStoreModule() {
       return;
     }
 
-    await Promise.all(
-      input.permissionStateChanged
-        ? [loadConversationRuntimePermissions(conversationId)]
-        : [],
-    );
-  }
-
-  async function refreshConversationTailState(
-    conversationId: string | null = currentConversationId.value,
-  ) {
-    if (!conversationId) {
-      return;
+    let permissionRefreshFailed = false;
+    if (input.permissionStateChanged) {
+      try {
+        await loadConversationRuntimePermissions(conversationId);
+      } catch {
+        permissionRefreshFailed = true;
+      }
     }
-
-    await tryLoadConversationContextWindow(conversationId);
     if (currentConversationId.value !== conversationId) {
       return;
     }
+    await resumeQueuedSendRequestsIfIdle(conversationId);
+    if (permissionRefreshFailed && currentConversationId.value === conversationId) {
+      scheduleChatRecoveryWithState(streamState, loadConversationRecoverySnapshot);
+    }
+  }
 
-    await loadConversationRuntimePermissions(conversationId);
+  async function refreshConversationStoppedState(
+    conversationId: string | null = currentConversationId.value,
+  ) {
+    if (!conversationId) {
+      return false;
+    }
+
+    await loadConversationWindowSnapshot(conversationId);
+    if (currentConversationId.value !== conversationId) {
+      return false;
+    }
+
+    await loadConversationRuntimePermissions(conversationId).catch(() => undefined);
+    return true;
   }
 
   async function loadConversationWindowSnapshot(conversationId: string) {
@@ -409,6 +420,11 @@ export function createChatStoreModule() {
       return;
     }
     await loadConversationDetail(conversationId);
+  }
+
+  async function loadConversationRecoverySnapshot(conversationId: string) {
+    await loadConversationWindowSnapshot(conversationId);
+    await resumeQueuedSendRequestsIfIdle(conversationId);
   }
 
   async function loadConversations() {
@@ -484,7 +500,7 @@ export function createChatStoreModule() {
         ...readModelSelectionRefreshInput(messages.value),
       });
       await tryLoadConversationContextWindow(id);
-      scheduleChatRecoveryWithState(streamState, loadConversationWindowSnapshot);
+      scheduleChatRecoveryWithState(streamState, loadConversationRecoverySnapshot);
       await drainQueuedSendRequests();
     } catch {
       if (
@@ -621,7 +637,7 @@ export function createChatStoreModule() {
     }
 
     await dispatchRetryMessage(streamState, messageId, {
-      loadConversationDetail: loadConversationWindowSnapshot,
+      loadConversationDetail: loadConversationRecoverySnapshot,
       refreshConversationSummary: () =>
         refreshConversationSummary(conversationId),
       refreshConversationState: (input) =>
@@ -698,14 +714,35 @@ export function createChatStoreModule() {
     abortChatStream(streamState);
     discardPendingMessageUpdates(streamState);
     stopChatRecovery(streamState);
-    await stopConversationMessageRecord(
-      conversationId,
-      messageId,
-    );
     if (currentConversationId.value === conversationId) {
       applyStoppedStreamingMessage(messageId);
-      await refreshConversationTailState(conversationId);
       syncChatStreamingState(streamState);
+    }
+    const stopRequestSettled = await stopConversationMessageRecord(
+      conversationId,
+      messageId,
+    )
+      .then(() => true)
+      .catch(() => false);
+    let stopStateSynchronized = false;
+    if (
+      currentConversationId.value === conversationId
+      && !streaming.value
+    ) {
+      stopStateSynchronized = await refreshConversationStoppedState(conversationId)
+        .catch(() => false);
+      if (
+        currentConversationId.value === conversationId
+        && (!stopStateSynchronized || streaming.value)
+      ) {
+        scheduleChatRecoveryWithState(streamState, loadConversationRecoverySnapshot);
+      }
+    }
+    if (
+      currentConversationId.value === conversationId
+      && !streaming.value
+      && (stopRequestSettled || stopStateSynchronized)
+    ) {
       await drainQueuedSendRequests();
     }
   }
@@ -831,7 +868,7 @@ export function createChatStoreModule() {
         }
         writeQueuedSendRequests(conversationId, nextQueuedRequests.slice(1));
         await dispatchSendMessage(streamState, nextRequest.input, {
-          loadConversationDetail: loadConversationWindowSnapshot,
+          loadConversationDetail: loadConversationRecoverySnapshot,
           refreshConversationSummary: () =>
             refreshConversationSummary(nextRequest.conversationId),
           refreshConversationState: (input) =>
@@ -841,6 +878,19 @@ export function createChatStoreModule() {
     } finally {
       drainingQueuedSendRequests = false;
     }
+  }
+
+  async function resumeQueuedSendRequestsIfIdle(
+    conversationId: string | null = currentConversationId.value,
+  ) {
+    if (
+      !conversationId
+      || currentConversationId.value !== conversationId
+      || streaming.value
+    ) {
+      return;
+    }
+    await drainQueuedSendRequests();
   }
 
   return {
@@ -913,7 +963,7 @@ export function createChatStoreModule() {
     replaceMessages(snapshot.messages);
     syncChatStreamingState(streamState);
     if (snapshot.conversationId) {
-      scheduleChatRecoveryWithState(streamState, loadConversationWindowSnapshot);
+      scheduleChatRecoveryWithState(streamState, loadConversationRecoverySnapshot);
     }
   }
 
