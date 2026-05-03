@@ -42,11 +42,13 @@ describe('McpConfigPanel', () => {
     expect(wrapper.text()).toContain('weather-server')
     expect(wrapper.find('[data-test="mcp-name-input"]').element).toHaveProperty('value', 'weather-server')
     expect(wrapper.find('[data-test="mcp-command-input"]').element).toHaveProperty('value', 'npx')
+    expect(wrapper.find('button[type="submit"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('MCP 日志设置')
     expect(wrapper.text()).not.toContain('MCP 事件日志')
   })
 
-  it('submits create requests with command args and env entries', async () => {
+  it('auto-saves a new server after the draft becomes valid', async () => {
+    vi.useFakeTimers()
     hoisted.state = createManagementState()
     hoisted.state.snapshot.value = {
       configPath: 'mcp/servers',
@@ -60,7 +62,7 @@ describe('McpConfigPanel', () => {
     await wrapper.get('[data-test="mcp-args-input"]').setValue('-y\ntavily-mcp@latest')
     await wrapper.get('[data-test="mcp-env-key-0"]').setValue('TAVILY_API_KEY')
     await wrapper.get('[data-test="mcp-env-value-0"]').setValue('${TAVILY_API_KEY}')
-    await wrapper.get('form').trigger('submit')
+    await vi.runAllTimersAsync()
 
     expect(hoisted.state?.createServer).toHaveBeenCalledWith({
       name: 'tavily',
@@ -73,6 +75,8 @@ describe('McpConfigPanel', () => {
         maxFileSizeMb: 1,
       },
     })
+    expect(hoisted.state?.refresh).toHaveBeenCalledWith('tavily')
+    vi.useRealTimers()
   })
 
   it('saves event log settings for the selected server', async () => {
@@ -140,6 +144,205 @@ describe('McpConfigPanel', () => {
     expect(wrapper.text()).not.toContain('MCP Logs')
     expect(wrapper.find('[data-test="mcp-name-input"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('MCP 日志设置')
+  })
+
+  it('does not overwrite an edited env value with the stale selected server snapshot before auto-save catches up', async () => {
+    vi.useFakeTimers()
+    hoisted.state = createManagementState()
+    hoisted.state.snapshot.value = {
+      configPath: 'mcp/servers',
+      servers: [
+        {
+          name: 'tavily',
+          command: 'npx',
+          args: ['-y', 'tavily-mcp@latest'],
+          env: {
+            TAVILY_API_KEY: '${TAVILY_API_KEY}',
+          },
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
+        },
+      ],
+    }
+    hoisted.state.selectedServerName.value = 'tavily'
+
+    const wrapper = mount(McpConfigPanel, {
+      props: {
+        preferredServerName: 'tavily',
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-test="mcp-env-value-0"]').setValue('real-secret-key')
+
+    hoisted.state.snapshot.value = {
+      configPath: 'mcp/servers',
+      servers: [
+        {
+          name: 'tavily',
+          command: 'npx',
+          args: ['-y', 'tavily-mcp@latest'],
+          env: {
+            TAVILY_API_KEY: '${TAVILY_API_KEY}',
+          },
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
+        },
+      ],
+    }
+    await flushPromises()
+
+    expect((wrapper.get('[data-test="mcp-env-value-0"]').element as HTMLInputElement).value).toBe('real-secret-key')
+
+    await vi.runAllTimersAsync()
+
+    expect(hoisted.state?.updateServer).toHaveBeenCalledWith('tavily', expect.objectContaining({
+      env: {
+        TAVILY_API_KEY: 'real-secret-key',
+      },
+    }))
+    vi.useRealTimers()
+  })
+
+  it('retries auto-save for the same failed draft without requiring the user to edit again', async () => {
+    vi.useFakeTimers()
+    hoisted.state = createManagementState()
+    hoisted.state.snapshot.value = {
+      configPath: 'mcp/servers',
+      servers: [
+        {
+          name: 'tavily',
+          command: 'npx',
+          args: ['-y', 'tavily-mcp@latest'],
+          env: {
+            TAVILY_API_KEY: '${TAVILY_API_KEY}',
+          },
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
+        },
+      ],
+    }
+    hoisted.state.selectedServerName.value = 'tavily'
+    hoisted.state.updateServer
+      .mockRejectedValueOnce(new Error('save failed'))
+      .mockResolvedValueOnce(undefined)
+
+    const wrapper = mount(McpConfigPanel, {
+      props: {
+        preferredServerName: 'tavily',
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-test="mcp-env-value-0"]').setValue('failed-secret')
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+
+    expect(hoisted.state.updateServer).toHaveBeenCalledTimes(1)
+    expect(hoisted.state.updateServer).toHaveBeenLastCalledWith('tavily', expect.objectContaining({
+      env: {
+        TAVILY_API_KEY: 'failed-secret',
+      },
+    }))
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await flushPromises()
+
+    expect(hoisted.state.updateServer).toHaveBeenCalledTimes(2)
+    expect(hoisted.state.updateServer).toHaveBeenLastCalledWith('tavily', expect.objectContaining({
+      env: {
+        TAVILY_API_KEY: 'failed-secret',
+      },
+    }))
+    vi.useRealTimers()
+  })
+
+  it('keeps the saved env value after an explicit refresh replay', async () => {
+    vi.useFakeTimers()
+    hoisted.state = createManagementState()
+    hoisted.state.snapshot.value = {
+      configPath: 'mcp/servers',
+      servers: [
+        {
+          name: 'tavily',
+          command: 'npx',
+          args: ['-y', 'tavily-mcp@latest'],
+          env: {
+            TAVILY_API_KEY: '${TAVILY_API_KEY}',
+          },
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
+        },
+      ],
+    }
+    hoisted.state.selectedServerName.value = 'tavily'
+    hoisted.state.updateServer.mockImplementation(async (_name, payload) => payload)
+
+    const wrapper = mount(McpConfigPanel, {
+      props: {
+        preferredServerName: 'tavily',
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-test="mcp-env-value-0"]').setValue('persisted-secret')
+    await vi.runAllTimersAsync()
+    await flushPromises()
+
+    expect(hoisted.state.updateServer).toHaveBeenCalledWith('tavily', expect.objectContaining({
+      env: {
+        TAVILY_API_KEY: 'persisted-secret',
+      },
+    }))
+    expect(hoisted.state.refresh).toHaveBeenCalledWith('tavily')
+
+    hoisted.state.snapshot.value = {
+      configPath: 'mcp/servers',
+      servers: [
+        {
+          name: 'tavily',
+          command: 'npx',
+          args: ['-y', 'tavily-mcp@latest'],
+          env: {
+            TAVILY_API_KEY: '${TAVILY_API_KEY}',
+          },
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
+        },
+      ],
+    }
+    await flushPromises()
+
+    expect((wrapper.get('[data-test="mcp-env-value-0"]').element as HTMLInputElement).value).toBe('persisted-secret')
+
+    ;(wrapper.vm as unknown as { handleRefresh: () => void }).handleRefresh()
+    expect(hoisted.state.refresh).toHaveBeenCalledTimes(2)
+
+    hoisted.state.snapshot.value = {
+      configPath: 'mcp/servers',
+      servers: [
+        {
+          name: 'tavily',
+          command: 'npx',
+          args: ['-y', 'tavily-mcp@latest'],
+          env: {
+            TAVILY_API_KEY: 'persisted-secret',
+          },
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
+        },
+      ],
+    }
+    await flushPromises()
+
+    expect((wrapper.get('[data-test="mcp-env-value-0"]').element as HTMLInputElement).value).toBe('persisted-secret')
+    vi.useRealTimers()
   })
 })
 

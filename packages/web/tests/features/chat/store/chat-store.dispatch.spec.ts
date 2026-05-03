@@ -624,4 +624,79 @@ describe('dispatchSendMessage', () => {
       }),
     ])
   })
+
+  it('kicks off an immediate detail recovery when send ends but the local stream is still marked active', async () => {
+    vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
+      async (_conversationId, _payload, onEvent) => {
+        onEvent({
+          type: 'message-start',
+          assistantMessage: {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            status: 'pending',
+          },
+        })
+      },
+    )
+    const state = createState()
+    const loadConversationDetail = vi.fn().mockResolvedValue(undefined)
+    const refreshConversationState = vi.fn().mockResolvedValue(undefined)
+
+    await dispatchSendMessage(
+      state,
+      {
+        content: 'hello',
+      },
+      {
+        loadConversationDetail,
+        refreshConversationState,
+      },
+    )
+
+    expect(refreshConversationState).toHaveBeenCalledTimes(1)
+    expect(state.streaming.value).toBe(true)
+    expect(loadConversationDetail).toHaveBeenCalledTimes(1)
+    expect(loadConversationDetail).toHaveBeenCalledWith('conversation-1')
+  })
+
+  it('kicks off an immediate detail recovery when retry ends but the local stream is still marked active', async () => {
+    vi.mocked(chatConversationData.retryConversationMessage).mockImplementation(
+      async (_conversationId, _messageId, _payload, onEvent) => {
+        onEvent({
+          type: 'message-start',
+          assistantMessage: {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            status: 'pending',
+          },
+        })
+      },
+    )
+    const state = createState([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'old',
+        status: 'completed',
+      },
+    ])
+    const loadConversationDetail = vi.fn().mockResolvedValue(undefined)
+    const refreshConversationState = vi.fn().mockResolvedValue(undefined)
+
+    await dispatchRetryMessage(
+      state,
+      'assistant-1',
+      {
+        loadConversationDetail,
+        refreshConversationState,
+      },
+    )
+
+    expect(refreshConversationState).toHaveBeenCalledTimes(1)
+    expect(state.streaming.value).toBe(true)
+    expect(loadConversationDetail).toHaveBeenCalledTimes(1)
+    expect(loadConversationDetail).toHaveBeenCalledWith('conversation-1')
+  })
 })

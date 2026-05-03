@@ -324,7 +324,8 @@ describe('createChatStoreModule', () => {
     })
   })
 
-  it('drains queued messages after the user stops the current reply', async () => {
+  it('waits for the stop request to finish before draining queued messages', async () => {
+    let resolveStop: (() => void) | null = null
     vi.mocked(chatStreamModule.syncChatStreamingState).mockImplementation((state) => {
       state.currentStreamingMessageId.value = null
       state.streaming.value = false
@@ -338,9 +339,13 @@ describe('createChatStoreModule', () => {
         _count: { messages: 1 },
       },
     ] satisfies Conversation[])
-    vi.mocked(chatConversationData.stopConversationMessageRecord).mockResolvedValue({
-      message: 'Generation stopped',
-    })
+    vi.mocked(chatConversationData.stopConversationMessageRecord).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveStop = () => resolve({
+          message: 'Generation stopped',
+        })
+      }),
+    )
     vi.mocked(chatStreamModule.dispatchSendMessage).mockResolvedValue(undefined)
 
     const store = createChatStoreModule()
@@ -369,12 +374,19 @@ describe('createChatStoreModule', () => {
     expect(chatStreamModule.dispatchSendMessage).not.toHaveBeenCalled()
     expect(store.queuedSendCount.value).toBe(1)
 
-    await store.stopStreaming()
+    const stopTask = store.stopStreaming()
+    await Promise.resolve()
 
     expect(chatConversationData.stopConversationMessageRecord).toHaveBeenCalledWith(
       'conversation-1',
       'assistant-1',
     )
+    expect(chatStreamModule.dispatchSendMessage).not.toHaveBeenCalled()
+    expect(store.queuedSendCount.value).toBe(1)
+
+    resolveStop?.()
+    await stopTask
+
     expect(chatStreamModule.dispatchSendMessage).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
@@ -435,6 +447,72 @@ describe('createChatStoreModule', () => {
       }),
     )
     expect(store.queuedSendCount.value).toBe(1)
+  })
+
+  it('drains queued messages after recovery reload marks the conversation idle', async () => {
+    vi.mocked(chatStreamModule.syncChatStreamingState).mockImplementation((state) => {
+      const activeMessage = state.messages.value.find(
+        (message) => message.role === 'assistant'
+          && (message.status === 'pending' || message.status === 'streaming'),
+      )
+      state.currentStreamingMessageId.value = activeMessage?.id ?? null
+      state.streaming.value = Boolean(activeMessage)
+    })
+    vi.mocked(chatConversationData.loadConversationMessages)
+      .mockResolvedValueOnce([
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '仍在恢复中的回复',
+          status: 'streaming',
+          parts: [],
+          toolCalls: [],
+          toolResults: [],
+          error: null,
+          provider: null,
+          model: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '恢复完成后的最终回复',
+          status: 'completed',
+          parts: [],
+          toolCalls: [],
+          toolResults: [],
+          error: null,
+          provider: null,
+          model: null,
+        },
+      ])
+    vi.mocked(chatStreamModule.dispatchSendMessage).mockResolvedValue(undefined)
+
+    const store = createChatStoreModule()
+    await store.selectConversation('conversation-1')
+
+    await store.sendMessage({
+      content: '恢复完成后继续发送',
+    })
+
+    expect(store.streaming.value).toBe(true)
+    expect(store.queuedSendCount.value).toBe(1)
+
+    const recoveryLoadConversationDetail =
+      vi.mocked(chatStreamModule.scheduleChatRecoveryWithState).mock.calls.at(-1)?.[1]
+    expect(recoveryLoadConversationDetail).toBeTypeOf('function')
+
+    await recoveryLoadConversationDetail?.('conversation-1')
+
+    expect(chatStreamModule.dispatchSendMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        content: '恢复完成后继续发送',
+      }),
+      expect.any(Object),
+    )
+    expect(store.queuedSendCount.value).toBe(0)
   })
 
   it('refreshes conversation-related state after a streamed retry finishes', async () => {
@@ -557,6 +635,54 @@ describe('createChatStoreModule', () => {
     ])
   })
 
+  it('still drains queued messages after a normal completion when permission refresh fails', async () => {
+    vi.mocked(chatConversationData.loadConversationList).mockResolvedValue([
+      {
+        id: 'conversation-1',
+        title: '权限失败后的会话',
+        createdAt: '2026-04-18T09:00:00.000Z',
+        updatedAt: '2026-04-18T09:05:00.000Z',
+        _count: { messages: 2 },
+      },
+    ] satisfies Conversation[])
+    vi.mocked(chatConversationData.loadPendingRuntimePermissionsRecord).mockRejectedValue(
+      new Error('permission refresh failed'),
+    )
+    const store = createChatStoreModule()
+    vi.mocked(chatStreamModule.dispatchSendMessage).mockImplementationOnce(
+      async (state, _input, params) => {
+        state.streaming.value = true
+        await store.sendMessage({
+          content: '权限失败后继续发第二条',
+        })
+        state.streaming.value = false
+        await params?.refreshConversationSummary?.()
+        await params?.refreshConversationState?.({
+          summaryRefreshed: true,
+          permissionStateChanged: true,
+        })
+      },
+    )
+    vi.mocked(chatStreamModule.dispatchSendMessage).mockResolvedValueOnce(undefined)
+
+    store.currentConversationId.value = 'conversation-1'
+
+    await store.sendMessage({
+      content: '第一条',
+    })
+
+    expect(chatStreamModule.dispatchSendMessage).toHaveBeenCalledTimes(2)
+    expect(chatStreamModule.dispatchSendMessage).toHaveBeenLastCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        content: '权限失败后继续发第二条',
+      }),
+      expect.any(Object),
+    )
+    expect(store.queuedSendCount.value).toBe(0)
+    expect(chatStreamModule.scheduleChatRecoveryWithState).toHaveBeenCalled()
+  })
+
   it('refreshes derived state after updating and deleting messages', async () => {
     vi.mocked(chatConversationData.loadConversationList).mockResolvedValue([
       {
@@ -627,10 +753,28 @@ describe('createChatStoreModule', () => {
     ])
   })
 
-  it('marks the current assistant as stopped and refreshes only tail state after stop', async () => {
+  it('marks the current assistant as stopped and refreshes conversation detail after stop', async () => {
+    vi.mocked(chatStreamModule.syncChatStreamingState).mockImplementation((state) => {
+      state.currentStreamingMessageId.value = null
+      state.streaming.value = false
+    })
     vi.mocked(chatConversationData.stopConversationMessageRecord).mockResolvedValue({
       message: 'Generation stopped',
     })
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '后端同步后的停止结果',
+        status: 'stopped',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ])
 
     const store = createChatStoreModule()
     store.currentConversationId.value = 'conversation-1'
@@ -665,7 +809,7 @@ describe('createChatStoreModule', () => {
       'assistant-1',
     )
     expect(chatConversationData.loadConversationList).not.toHaveBeenCalled()
-    expect(chatConversationData.loadConversationMessages).not.toHaveBeenCalled()
+    expect(chatConversationData.loadConversationMessages).toHaveBeenCalledWith('conversation-1')
     expect(chatConversationData.loadConversationContextWindowRecord).toHaveBeenCalledWith(
       'conversation-1',
       {
@@ -678,7 +822,7 @@ describe('createChatStoreModule', () => {
     expect(store.messages.value).toEqual([
       expect.objectContaining({
         id: 'assistant-1',
-        content: '已生成的部分回复',
+        content: '后端同步后的停止结果',
         status: 'stopped',
       }),
     ])
@@ -695,6 +839,30 @@ describe('createChatStoreModule', () => {
       state.streaming.value = false
     })
     vi.mocked(chatConversationData.stopConversationMessageRecord).mockResolvedValue(undefined)
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      {
+        id: 'display-result-1',
+        role: 'display',
+        content: 'display result 已停止',
+        status: 'stopped',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: 'system',
+        model: 'context-compaction-command',
+        metadata: {
+          annotations: [
+            {
+              data: { variant: 'result' },
+              owner: 'conversation.display-message',
+              type: 'display-message',
+              version: '1',
+            },
+          ],
+        },
+      },
+    ])
     const store = createChatStoreModule()
     store.currentConversationId.value = 'conversation-1'
     store.currentStreamingMessageId.value = 'display-result-1'
@@ -739,10 +907,228 @@ describe('createChatStoreModule', () => {
     expect(store.messages.value).toEqual([
       expect.objectContaining({
         id: 'display-result-1',
+        content: 'display result 已停止',
         status: 'stopped',
       }),
     ])
     expect(store.queuedSendCount.value).toBe(0)
+  })
+
+  it('keeps queued messages blocked and schedules recovery when stop refresh still returns an active reply', async () => {
+    vi.mocked(chatStreamModule.syncChatStreamingState).mockImplementation((state) => {
+      const activeMessage = state.messages.value.find(
+        (message) => message.role === 'assistant'
+          && (message.status === 'pending' || message.status === 'streaming'),
+      )
+      state.currentStreamingMessageId.value = activeMessage?.id ?? null
+      state.streaming.value = Boolean(activeMessage)
+    })
+    vi.mocked(chatConversationData.stopConversationMessageRecord).mockResolvedValue({
+      message: 'Generation stopped',
+    })
+    vi.mocked(chatConversationData.loadConversationMessages)
+      .mockResolvedValueOnce([
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '停止请求后仍在收尾',
+          status: 'streaming',
+          parts: [],
+          toolCalls: [],
+          toolResults: [],
+          error: null,
+          provider: null,
+          model: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '恢复后的最终停止结果',
+          status: 'stopped',
+          parts: [],
+          toolCalls: [],
+          toolResults: [],
+          error: null,
+          provider: null,
+          model: null,
+        },
+      ])
+    vi.mocked(chatStreamModule.dispatchSendMessage).mockResolvedValue(undefined)
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.currentStreamingMessageId.value = 'assistant-1'
+    store.streaming.value = true
+    store.messages.value = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '正在生成中的回复',
+        status: 'streaming',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ]
+
+    await store.sendMessage({
+      content: '等 stop 真完成再发',
+    })
+
+    await store.stopStreaming()
+
+    expect(store.streaming.value).toBe(true)
+    expect(store.queuedSendCount.value).toBe(1)
+    expect(chatStreamModule.dispatchSendMessage).not.toHaveBeenCalled()
+    expect(chatStreamModule.scheduleChatRecoveryWithState).toHaveBeenCalled()
+
+    const recoveryLoadConversationDetail =
+      vi.mocked(chatStreamModule.scheduleChatRecoveryWithState).mock.calls.at(-1)?.[1]
+    expect(recoveryLoadConversationDetail).toBeTypeOf('function')
+
+    await recoveryLoadConversationDetail?.('conversation-1')
+
+    expect(chatStreamModule.dispatchSendMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        content: '等 stop 真完成再发',
+      }),
+      expect.any(Object),
+    )
+    expect(store.queuedSendCount.value).toBe(0)
+  })
+
+  it('still drains queued messages after stop when message detail is idle but permission refresh fails', async () => {
+    vi.mocked(chatStreamModule.syncChatStreamingState).mockImplementation((state) => {
+      const activeMessage = state.messages.value.find(
+        (message) => message.role === 'assistant'
+          && (message.status === 'pending' || message.status === 'streaming'),
+      )
+      state.currentStreamingMessageId.value = activeMessage?.id ?? null
+      state.streaming.value = Boolean(activeMessage)
+    })
+    vi.mocked(chatConversationData.stopConversationMessageRecord).mockRejectedValue(
+      new Error('stop request failed'),
+    )
+    vi.mocked(chatConversationData.loadPendingRuntimePermissionsRecord).mockRejectedValue(
+      new Error('permission refresh failed'),
+    )
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '后端其实已经停止',
+        status: 'stopped',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ])
+    vi.mocked(chatStreamModule.dispatchSendMessage).mockResolvedValue(undefined)
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.currentStreamingMessageId.value = 'assistant-1'
+    store.streaming.value = true
+    store.messages.value = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '正在生成中的回复',
+        status: 'streaming',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ]
+
+    await store.sendMessage({
+      content: '详情已 idle 就继续发送',
+    })
+
+    await store.stopStreaming()
+
+    expect(chatStreamModule.dispatchSendMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        content: '详情已 idle 就继续发送',
+      }),
+      expect.any(Object),
+    )
+    expect(store.queuedSendCount.value).toBe(0)
+  })
+
+  it('does not schedule recovery for the old conversation when the user switches away during stop sync', async () => {
+    let resolvePermissions: (() => void) | null = null
+    vi.mocked(chatStreamModule.syncChatStreamingState).mockImplementation((state) => {
+      const activeMessage = state.messages.value.find(
+        (message) => message.role === 'assistant'
+          && (message.status === 'pending' || message.status === 'streaming'),
+      )
+      state.currentStreamingMessageId.value = activeMessage?.id ?? null
+      state.streaming.value = Boolean(activeMessage)
+    })
+    vi.mocked(chatConversationData.stopConversationMessageRecord).mockResolvedValue({
+      message: 'Generation stopped',
+    })
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '停止请求后仍在收尾',
+        status: 'streaming',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ])
+    vi.mocked(chatConversationData.loadPendingRuntimePermissionsRecord).mockImplementation(
+      () => new Promise((resolve) => {
+        resolvePermissions = () => resolve([])
+      }),
+    )
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.currentStreamingMessageId.value = 'assistant-1'
+    store.streaming.value = true
+    store.messages.value = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '正在生成中的回复',
+        status: 'streaming',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ]
+
+    const stopTask = store.stopStreaming()
+    await Promise.resolve()
+
+    store.currentConversationId.value = 'conversation-2'
+    resolvePermissions?.()
+    await stopTask
+
+    expect(chatStreamModule.scheduleChatRecoveryWithState).not.toHaveBeenCalled()
   })
 
   it('restores the previous conversation state when switching to another conversation fails', async () => {
@@ -1673,6 +2059,76 @@ describe('createChatStoreModule', () => {
         providerId: 'provider-stream',
       },
     )
+  })
+
+  it('marks the current assistant as stopped before the stop request finishes', async () => {
+    let resolveStop: (() => void) | null = null
+    vi.mocked(chatStreamModule.syncChatStreamingState).mockImplementation((state) => {
+      state.currentStreamingMessageId.value = null
+      state.streaming.value = false
+    })
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '后端最终同步内容',
+        status: 'stopped',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ])
+    vi.mocked(chatConversationData.stopConversationMessageRecord).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveStop = () => resolve({ message: 'Generation stopped' })
+      }),
+    )
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.currentStreamingMessageId.value = 'assistant-1'
+    store.streaming.value = true
+    store.messages.value = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '正在生成中的回复',
+        status: 'streaming',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ]
+
+    const stopTask = store.stopStreaming()
+    await Promise.resolve()
+
+    expect(store.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'assistant-1',
+        status: 'stopped',
+      }),
+    ])
+    expect(store.streaming.value).toBe(false)
+    expect(chatConversationData.loadConversationMessages).not.toHaveBeenCalled()
+
+    resolveStop?.()
+    await stopTask
+
+    expect(chatConversationData.loadConversationMessages).toHaveBeenCalledWith('conversation-1')
+    expect(store.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'assistant-1',
+        content: '后端最终同步内容',
+        status: 'stopped',
+      }),
+    ])
   })
 })
 
