@@ -162,6 +162,13 @@ describe('AiProviderSettingsService runtime config', () => {
 
     const service = new AiProviderSettingsService();
     service.updateHostModelRoutingConfig({
+      chatAutoRetry: {
+        backoffFactor: 3,
+        enabled: true,
+        initialDelayMs: 1500,
+        maxDelayMs: 45000,
+        maxRetries: 4,
+      },
       fallbackChatModels: [
         {
           providerId: 'anthropic',
@@ -181,6 +188,13 @@ describe('AiProviderSettingsService runtime config', () => {
     });
 
     expect(service.getHostModelRoutingConfig()).toEqual({
+      chatAutoRetry: {
+        backoffFactor: 3,
+        enabled: true,
+        initialDelayMs: 1500,
+        maxDelayMs: 45000,
+        maxRetries: 4,
+      },
       fallbackChatModels: [
         {
           providerId: 'anthropic',

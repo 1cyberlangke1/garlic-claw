@@ -44,8 +44,11 @@
                 >
                   {{ readContextVisibilityLabel(row.message) }}
                 </span>
-                <span class="message-status" :class="row.message.status">
-                  {{ statusLabelMap[row.message.status] }}
+                <span
+                  class="message-status"
+                  :class="messageStatusClass(row.message)"
+                >
+                  {{ readStatusLabel(row.message) }}
                 </span>
                 <span
                   v-if="row.message.provider && row.message.model"
@@ -277,12 +280,28 @@
                 <div v-if="row.message.error" class="message-error">
                   错误: {{ row.message.error }}
                 </div>
+
+                <div
+                  v-if="row.message.retryState"
+                  class="message-retry-card"
+                >
+                  <div class="message-retry-title">自动重试</div>
+                  <div class="message-retry-message">
+                    {{ row.message.retryState.message }}
+                  </div>
+                  <div class="message-retry-meta">
+                    <span>{{ readRetryDelayLabel(row.message) }}</span>
+                    <span>{{ `第 ${row.message.retryState.attempt} 次` }}</span>
+                  </div>
+                </div>
               </template>
 
               <span
                 v-if="
-                  row.message.status === 'pending' ||
-                  row.message.status === 'streaming'
+                  !row.message.retryState && (
+                    row.message.status === 'pending' ||
+                    row.message.status === 'streaming'
+                  )
                 "
                 class="cursor"
               >
@@ -711,6 +730,23 @@ function readRoleTitle(message: ChatMessage): string {
   }
 
   return props.assistantPersona?.name?.trim() || "AI";
+}
+
+function readStatusLabel(message: ChatMessage): string {
+  return message.retryState ? "自动重试" : statusLabelMap[message.status];
+}
+
+function messageStatusClass(message: ChatMessage): string {
+  return message.retryState ? "retrying" : message.status;
+}
+
+function readRetryDelayLabel(message: ChatMessage): string {
+  const next = message.retryState?.next;
+  if (typeof next !== "number") {
+    return "即将重试";
+  }
+  const remainingSeconds = Math.max(0, Math.ceil((next - Date.now()) / 1000));
+  return remainingSeconds <= 0 ? "立即重试" : `${remainingSeconds} 秒后`;
 }
 
 function shouldRenderAssistantAvatar(message: ChatMessage): boolean {

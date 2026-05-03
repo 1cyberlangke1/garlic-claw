@@ -69,6 +69,70 @@
         </ul>
       </div>
 
+      <div class="field">
+        <span>聊天自动重试</span>
+        <small>对齐 `opencode` 主会话自动重试语义：同一模型请求失败后退避重试，而不是立刻失败或只走 fallback。</small>
+
+        <div class="config-grid">
+          <label class="config-item">
+            <span>是否启用</span>
+            <select
+              :value="String(chatAutoRetry.enabled)"
+              data-test="auto-retry-enabled"
+              @change="updateAutoRetryEnabled"
+            >
+              <option value="true">启用</option>
+              <option value="false">关闭</option>
+            </select>
+          </label>
+
+          <label class="config-item">
+            <span>最大重试次数</span>
+            <input
+              :value="String(chatAutoRetry.maxRetries)"
+              data-test="auto-retry-max-retries"
+              min="0"
+              type="number"
+              @input="updateAutoRetryInt('maxRetries', $event)"
+            />
+          </label>
+
+          <label class="config-item">
+            <span>首次延迟（毫秒）</span>
+            <input
+              :value="String(chatAutoRetry.initialDelayMs)"
+              data-test="auto-retry-initial-delay"
+              min="0"
+              type="number"
+              @input="updateAutoRetryInt('initialDelayMs', $event)"
+            />
+          </label>
+
+          <label class="config-item">
+            <span>最大延迟（毫秒）</span>
+            <input
+              :value="String(chatAutoRetry.maxDelayMs)"
+              data-test="auto-retry-max-delay"
+              min="0"
+              type="number"
+              @input="updateAutoRetryInt('maxDelayMs', $event)"
+            />
+          </label>
+
+          <label class="config-item">
+            <span>退避倍数</span>
+            <input
+              :value="String(chatAutoRetry.backoffFactor)"
+              data-test="auto-retry-backoff-factor"
+              min="1"
+              step="0.1"
+              type="number"
+              @input="updateAutoRetryFactor"
+            />
+          </label>
+        </div>
+      </div>
+
       <div class="actions">
         <ElButton
           type="primary"
@@ -87,9 +151,11 @@
 import { computed, ref, watch } from 'vue'
 import { ElButton, ElOption, ElSelect } from 'element-plus'
 import type {
+  AiChatAutoRetryConfig,
   AiHostModelRoutingConfig,
   AiModelRouteTarget,
 } from '@garlic-claw/shared'
+import { DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG } from '@garlic-claw/shared'
 
 interface HostModelRoutingOption extends AiModelRouteTarget {
   label: string
@@ -106,6 +172,7 @@ const emit = defineEmits<{
 }>()
 
 const fallbackModels = ref<AiModelRouteTarget[]>([])
+const chatAutoRetry = ref<AiChatAutoRetryConfig>({ ...DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG })
 const pendingFallbackSelection = ref('')
 
 const optionLabelMap = computed(() =>
@@ -116,6 +183,7 @@ watch(
   () => props.config,
   (config) => {
     fallbackModels.value = config.fallbackChatModels.map((target) => ({ ...target }))
+    chatAutoRetry.value = resolveChatAutoRetryConfig(config.chatAutoRetry)
     pendingFallbackSelection.value = ''
   },
   { immediate: true, deep: true },
@@ -159,9 +227,41 @@ function removeFallback(index: number) {
 
 function submit() {
   emit('save', {
+    chatAutoRetry: { ...chatAutoRetry.value },
+    ...(props.config.compressionModel ? { compressionModel: { ...props.config.compressionModel } } : {}),
     fallbackChatModels: fallbackModels.value.map((target) => ({ ...target })),
-    utilityModelRoles: {},
+    utilityModelRoles: cloneUtilityModelRoles(props.config.utilityModelRoles),
   })
+}
+
+function updateAutoRetryEnabled(event: Event) {
+  chatAutoRetry.value = {
+    ...chatAutoRetry.value,
+    enabled: (event.target as HTMLSelectElement).value === 'true',
+  }
+}
+
+function updateAutoRetryInt(
+  key: 'maxRetries' | 'initialDelayMs' | 'maxDelayMs',
+  event: Event,
+) {
+  const parsed = Number.parseInt((event.target as HTMLInputElement).value, 10)
+  chatAutoRetry.value = {
+    ...chatAutoRetry.value,
+    [key]: Number.isFinite(parsed) && parsed >= 0
+      ? parsed
+      : DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG[key],
+  }
+}
+
+function updateAutoRetryFactor(event: Event) {
+  const parsed = Number.parseFloat((event.target as HTMLInputElement).value)
+  chatAutoRetry.value = {
+    ...chatAutoRetry.value,
+    backoffFactor: Number.isFinite(parsed) && parsed >= 1
+      ? parsed
+      : DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG.backoffFactor,
+  }
 }
 
 function resolveLabel(target: AiModelRouteTarget) {
@@ -179,6 +279,21 @@ function decodeTarget(value: string): AiModelRouteTarget | undefined {
   }
 
   return { providerId, modelId }
+}
+
+function resolveChatAutoRetryConfig(config?: AiChatAutoRetryConfig): AiChatAutoRetryConfig {
+  return {
+    ...DEFAULT_AI_CHAT_AUTO_RETRY_CONFIG,
+    ...(config ?? {}),
+  }
+}
+
+function cloneUtilityModelRoles(
+  roles: AiHostModelRoutingConfig['utilityModelRoles'],
+): AiHostModelRoutingConfig['utilityModelRoles'] {
+  return Object.fromEntries(
+    Object.entries(roles).map(([role, target]) => [role, target ? { ...target } : target]),
+  ) as AiHostModelRoutingConfig['utilityModelRoles']
 }
 </script>
 
@@ -221,6 +336,28 @@ function decodeTarget(value: string): AiModelRouteTarget | undefined {
 .field span,
 .field small {
   color: var(--text-muted);
+}
+
+.config-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.config-item {
+  display: grid;
+  gap: 8px;
+}
+
+.config-item select,
+.config-item input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-panel-soft);
+  color: var(--text);
 }
 
 .inline-row {

@@ -181,7 +181,7 @@ describe('ConversationMessageLifecycleService', () => {
       status: 'pending',
     });
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: '你好', role: 'user' }],
       modelId: 'gpt-5.4',
       providerId: 'openai',
@@ -286,7 +286,7 @@ describe('ConversationMessageLifecycleService', () => {
       { image: 'data:image/png;base64,AAAA', mimeType: 'image/png', type: 'image' },
     ]);
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{
         content: [
           { text: '帮我看图', type: 'text' },
@@ -398,7 +398,7 @@ describe('ConversationMessageLifecycleService', () => {
       status: 'completed',
     });
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: 'hook 改写后的用户消息', role: 'user' }],
       modelId: 'gpt-5.4',
       providerId: 'openai',
@@ -419,7 +419,7 @@ describe('ConversationMessageLifecycleService', () => {
 
     expect(readConversation(conversationStore).messages[0]).toMatchObject({ content: 'hook 改写后的入站消息', role: 'user' });
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: 'hook 改写后的入站消息', role: 'user' }],
       modelId: 'claude-3-7-sonnet',
       providerId: 'anthropic',
@@ -624,7 +624,7 @@ describe('ConversationMessageLifecycleService', () => {
 
     expect(pluginDispatch.invokeHook).toHaveBeenCalledWith(expect.objectContaining({ hookName: 'chat:before-model', pluginId: 'builtin.before-model-recorder' }));
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: 'hook 改写后的模型输入', role: 'user' }],
       modelId: 'claude-3-7-sonnet',
       providerId: 'anthropic',
@@ -712,7 +712,7 @@ describe('ConversationMessageLifecycleService', () => {
       pluginId: 'builtin.before-model-recorder',
     }));
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [
         {
           content: [
@@ -973,7 +973,7 @@ describe('ConversationMessageLifecycleService', () => {
       }),
     ]))
     expect(aiModelExecutionService.streamText).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: expect.arrayContaining([
         {
           content: [
@@ -1220,7 +1220,7 @@ describe('ConversationMessageLifecycleService', () => {
     expect(started.userMessage).toMatchObject({ role: 'user' });
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' });
     expectStreamInput(aiModelExecutionService.streamText, {
-      allowFallbackChatModels: true,
+      allowFallbackChatModels: false,
       messages: [{ content: '/unknown test', role: 'user' }],
       modelId: 'gpt-5.4',
       providerId: 'openai',

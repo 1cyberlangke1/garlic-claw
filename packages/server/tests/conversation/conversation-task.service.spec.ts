@@ -7,6 +7,7 @@ import {
 import { ConversationTodoService } from '../../src/runtime/host/conversation-todo.service';
 import { ConversationTaskService, type ConversationTaskEvent } from '../../src/conversation/conversation-task.service';
 import { RuntimeToolPermissionService } from '../../src/execution/runtime/runtime-tool-permission.service';
+import { APICallError } from '@ai-sdk/provider';
 
 describe('ConversationTaskService', () => {
   let conversationId: string;
@@ -540,6 +541,98 @@ describe('ConversationTaskService', () => {
     } finally {
       process.off('unhandledRejection', handleUnhandledRejection);
     }
+  });
+
+  it('retries retryable stream failures and resets the assistant snapshot before the next attempt', async () => {
+    service = new ConversationTaskService(
+      conversationMessages,
+      conversationStore,
+      runtimeToolPermissionService,
+      conversationTodos,
+      {
+        getHostModelRoutingConfig: () => ({
+          chatAutoRetry: {
+            backoffFactor: 2,
+            enabled: true,
+            initialDelayMs: 0,
+            maxDelayMs: 0,
+            maxRetries: 1,
+          },
+          fallbackChatModels: [],
+          utilityModelRoles: {},
+        }),
+      } as never,
+    );
+    const assistantMessage = createAssistantMessage(conversationMessages, conversationStore);
+    const events: Array<ConversationTaskEvent | { [key: string]: unknown }> = [];
+    const overloaded = new APICallError({
+      message: 'Provider is overloaded',
+      requestBodyValues: {},
+      responseHeaders: {},
+      statusCode: 429,
+      url: 'https://example.com/v1/chat/completions',
+    });
+    const createStream = jest
+      .fn()
+      .mockResolvedValueOnce({
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        stream: {
+          fullStream: (async function* () {
+            yield delta('第一次');
+            throw overloaded;
+          })(),
+          usage: Promise.reject(overloaded).catch(() => undefined),
+        },
+      })
+      .mockResolvedValueOnce({
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        stream: {
+          fullStream: (async function* () {
+            yield delta('第二次成功');
+          })(),
+        },
+      });
+
+    service.startTask({
+      assistantMessageId: String(assistantMessage.id),
+      conversationId,
+      createStream,
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+    service.subscribe(String(assistantMessage.id), (event) => events.push(event));
+
+    await service.waitForTask(String(assistantMessage.id));
+
+    expect(createStream).toHaveBeenCalledTimes(2);
+    expect(events).toEqual(expect.arrayContaining([
+      { messageId: String(assistantMessage.id), status: 'streaming', type: 'status' },
+      expect.objectContaining({
+        assistantMessage: expect.objectContaining({
+          content: '',
+          error: null,
+          id: String(assistantMessage.id),
+          status: 'pending',
+        }),
+        type: 'message-start',
+      }),
+      expect.objectContaining({
+        attempt: 1,
+        message: 'Provider is overloaded',
+        messageId: String(assistantMessage.id),
+        next: expect.any(Number),
+        type: 'retry',
+      }),
+      { messageId: String(assistantMessage.id), status: 'completed', type: 'finish' },
+    ]));
+    expect(conversationStore.requireConversation(conversationId).messages[0]).toMatchObject({
+      content: '第二次成功',
+      error: null,
+      role: 'assistant',
+      status: 'completed',
+    });
   });
 });
 

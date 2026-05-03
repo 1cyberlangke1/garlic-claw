@@ -133,6 +133,62 @@ describe('applySseEvent', () => {
 
     expect(applySseEvent(messages, event, { requestKind: 'send' })).toEqual(messages)
   })
+
+  it('stores retry state for assistant messages and clears it when the stream resumes', () => {
+    const messages: ChatMessage[] = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        status: 'pending',
+        error: null,
+      },
+    ]
+    const retryEvent = {
+      type: 'retry',
+      messageId: 'assistant-1',
+      attempt: 1,
+      message: 'Provider is overloaded',
+      next: 1_777_000_000_000,
+    } as unknown as SSEEvent
+
+    const retried = applySseEvent(messages, retryEvent, { requestKind: 'send' })
+
+    expect(retried).toEqual([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        status: 'pending',
+        error: null,
+        retryState: {
+          attempt: 1,
+          message: 'Provider is overloaded',
+          next: 1_777_000_000_000,
+        },
+      },
+    ])
+
+    expect(
+      applySseEvent(
+        retried,
+        {
+          type: 'text-delta',
+          messageId: 'assistant-1',
+          text: '恢复输出',
+        },
+        { requestKind: 'send' },
+      ),
+    ).toEqual([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '恢复输出',
+        status: 'streaming',
+        error: null,
+      },
+    ])
+  })
 })
 
 describe('getRetryableMessageId', () => {
