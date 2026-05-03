@@ -8,17 +8,17 @@
     <div class="ai-settings-inner">
       <aside class="ai-settings-sidebar">
         <nav class="sider-menu">
-          <button
+          <ElButton
             v-for="item in navItems"
             :key="item.id"
-            type="button"
             class="menu-item"
+            native-type="button"
             :class="{ active: activeSection === item.id, 'menu-item--divided': item.divided }"
             @click="activeSection = item.id"
           >
             <Icon class="menu-icon" :icon="item.icon" aria-hidden="true" />
             <span class="menu-label">{{ item.label }}</span>
-          </button>
+          </ElButton>
         </nav>
     </aside>
 
@@ -514,10 +514,11 @@ function saveCtx(model: AiModelConfig) {
   border-radius: 8px;
   padding: 0 20px;
   background: transparent;
+  box-shadow: none;
+  margin: 0;
   color: var(--shell-text-secondary, #cbd5e1);
   font-size: 14px;
   text-align: left;
-  cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 .menu-item:hover { background: var(--shell-bg-hover, #334155); color: var(--shell-text, #f1f5f9); }

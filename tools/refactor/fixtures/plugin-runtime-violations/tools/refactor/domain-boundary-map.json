@@ -2,7 +2,7 @@
   "plugin-runtime": {
     "owners": {
       "chat-hook-adapter": [
-        "packages/server/src/plugin/plugin-chat-runtime.facade.ts"
+        "packages/server/src/modules/plugin/plugin-chat-runtime.facade.ts"
       ],
       "dispatch": [
         "packages/server/src/plugin-runtime/plugin-runtime-automation.facade.ts",

@@ -78,20 +78,20 @@
                   当前消息里的图片会保留，本次只修改文本内容。
                 </div>
                 <div class="editor-actions">
-                  <button
-                    type="button"
+                  <ElButton
+                    native-type="button"
                     class="action-button save-button"
                     @click="saveEdit(row.message)"
                   >
                     保存
-                  </button>
-                  <button
-                    type="button"
+                  </ElButton>
+                  <ElButton
+                    native-type="button"
                     class="action-button cancel-button"
                     @click="cancelEdit"
                   >
                     取消
-                  </button>
+                  </ElButton>
                 </div>
               </div>
 
@@ -296,38 +296,38 @@
               v-if="row.message.id && editingMessageId !== row.message.id"
               class="message-actions"
             >
-              <button
+              <ElButton
                 v-if="row.message.id && shouldShowUsageInfoToggle(row.message)"
-                type="button"
+                native-type="button"
                 class="action-text usage-info-toggle"
                 :aria-expanded="isUsageDetailsExpanded(row.message)"
                 @click="toggleUsageDetails(row.message.id)"
               >
                 [i]
-              </button>
-              <button
+              </ElButton>
+              <ElButton
                 v-if="row.message.role === 'user'"
-                type="button"
+                native-type="button"
                 class="action-text edit-text"
                 @click="startEdit(row.message)"
               >
                 修改
-              </button>
-              <button
+              </ElButton>
+              <ElButton
                 v-else-if="shouldShowRetryAction(row.message)"
-                type="button"
+                native-type="button"
                 class="action-text retry-text"
                 @click="emit('retry-message', row.message.id)"
               >
                 重试
-              </button>
-              <button
-                type="button"
+              </ElButton>
+              <ElButton
+                native-type="button"
                 class="action-text delete-text"
                 @click="emit('delete-message', row.message.id)"
               >
                 删除
-              </button>
+              </ElButton>
             </div>
             <div
               v-if="isUsageDetailsExpanded(row.message) && readAssistantUsage(row.message)"
@@ -363,6 +363,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElButton } from 'element-plus'
 import { useVirtualizer } from "@tanstack/vue-virtual";
 import {
   computed,

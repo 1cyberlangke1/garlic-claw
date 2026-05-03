@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ElButton } from 'element-plus'
 import { computed } from 'vue'
 
 interface HeaderViewOption {
@@ -54,11 +55,11 @@ function handleSelect(value: string, disabled?: boolean) {
     role="radiogroup"
     :aria-label="ariaLabel"
   >
-    <button
+    <ElButton
       v-for="option in options"
       :key="option.value"
-      type="button"
       class="segmented-switch__option"
+      native-type="button"
       :class="{
         'is-active': modelValue === option.value,
         'is-disabled': option.disabled,
@@ -70,7 +71,7 @@ function handleSelect(value: string, disabled?: boolean) {
       @click="handleSelect(option.value, option.disabled)"
     >
       <span class="segmented-switch__label">{{ option.label }}</span>
-    </button>
+    </ElButton>
   </div>
 </template>
 
@@ -102,8 +103,6 @@ function handleSelect(value: string, disabled?: boolean) {
 }
 
 .segmented-switch__option {
-  appearance: none;
-  -webkit-appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -115,12 +114,12 @@ function handleSelect(value: string, disabled?: boolean) {
   border-right: 1px solid var(--el-border-color, var(--border));
   background: transparent;
   box-shadow: none;
+  margin: 0;
   color: var(--el-text-color-regular, var(--text-muted));
   font-size: 14px;
   line-height: 1.2;
   white-space: nowrap;
   text-align: center;
-  cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 

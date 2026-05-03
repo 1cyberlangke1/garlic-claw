@@ -5,17 +5,17 @@
         <div class="brand-block">
           <h1>聊天工作台</h1>
         </div>
-        <button type="button" class="new-chat-button" @click="newChat">
+        <ElButton class="new-chat-button" native-type="button" @click="newChat">
           新对话
-        </button>
+        </ElButton>
       </header>
 
       <div class="conversation-list">
-        <button
+        <ElButton
           v-for="conversation in visibleConversations"
           :key="conversation.id"
-          type="button"
           class="conversation-item"
+          native-type="button"
           :data-id="conversation.id"
           :class="{ active: conversation.id === chat.currentConversationId }"
           @click="chat.selectConversation(conversation.id)"
@@ -29,7 +29,7 @@
           >
             ×
           </span>
-        </button>
+        </ElButton>
       </div>
 
       <footer class="rail-footer" />
@@ -42,6 +42,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElButton } from 'element-plus'
 import { useChatStore } from '@/modules/chat/store/chat'
 import ChatView from '@/modules/chat/views/ChatView.vue'
 import { computed, onMounted } from 'vue'
@@ -129,6 +130,7 @@ async function newChat() {
   gap: 0.6rem;
   border-radius: var(--radius-sm);
   background: var(--surface-subtle);
+  box-shadow: none;
   color: var(--text);
   padding: 0.7rem 0.85rem;
 }

@@ -12,11 +12,11 @@
       @keydown="handleKeydown"
     />
     <div v-if="showSuggestions && filteredSuggestions.length > 0" class="suggestions">
-      <button
+      <ElButton
         v-for="(item, index) in filteredSuggestions"
         :key="`${item.providerId}/${item.modelId}`"
-        type="button"
         class="suggestion-item"
+        native-type="button"
         :class="{ selected: index === selectedIndex }"
         @mousedown.prevent="selectSuggestion(item)"
         @mouseenter="selectedIndex = index"
@@ -26,14 +26,14 @@
         <span v-if="item.capabilities.reasoning" class="capability-tag">推理</span>
         <span v-if="item.capabilities.toolCall" class="capability-tag">工具</span>
         <span v-if="item.capabilities.input.image" class="capability-tag">图片</span>
-      </button>
+      </ElButton>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ElInput } from 'element-plus'
+import { ElButton, ElInput } from 'element-plus'
 import type { AiModelCapabilities } from '@garlic-claw/shared'
 import {
   listAiModels,
@@ -271,9 +271,10 @@ defineExpose({
   padding: 10px 12px;
   border: none;
   background: transparent;
+  box-shadow: none;
+  margin: 0;
   color: var(--text);
   text-align: left;
-  cursor: pointer;
 }
 
 .suggestion-item:hover,

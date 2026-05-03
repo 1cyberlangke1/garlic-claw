@@ -22,17 +22,18 @@
       <aside class="tools-sidebar">
         <nav class="detail-nav" aria-label="工具治理面板切换">
           <div class="detail-nav-group">
-            <button
+            <ElButton
               v-for="panel in availablePanels"
               :key="panel.value"
-              type="button"
+              class="detail-nav-button"
+              native-type="button"
               :title="panel.label"
               :class="{ active: activePanel === panel.value }"
               @click="activePanel = panel.value"
             >
               <Icon class="nav-icon" :icon="panel.icon" aria-hidden="true" />
               <span class="nav-label">{{ panel.label }}</span>
-            </button>
+            </ElButton>
           </div>
         </nav>
       </aside>
@@ -333,32 +334,34 @@ function readPreferredPanel(): ToolPanelId | null {
   gap: 6px;
 }
 
-.detail-nav button {
-  appearance: none;
-  -webkit-appearance: none;
+.detail-nav :deep(.detail-nav-button.el-button) {
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 12px;
   width: 100%;
   min-height: 52px;
   padding: 0 20px;
   border-radius: 8px;
-  border: none;
+  border-color: transparent;
   background: transparent;
+  box-shadow: none;
+  margin: 0;
   color: var(--shell-text-secondary, var(--text-muted));
   font-size: 14px;
   text-align: left;
-  cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.detail-nav button:hover {
+.detail-nav :deep(.detail-nav-button.el-button:hover) {
+  border-color: transparent;
   background: var(--shell-bg-hover, #334155);
   color: var(--shell-text, var(--text));
 }
 
-.detail-nav button.active {
+.detail-nav :deep(.detail-nav-button.el-button.active) {
+  border-color: transparent;
   color: var(--shell-active, var(--accent));
   background: color-mix(in srgb, var(--shell-active, var(--accent)) 10%, transparent);
 }
@@ -461,7 +464,7 @@ function readPreferredPanel(): ToolPanelId | null {
     gap: 4px;
   }
 
-  .detail-nav button {
+  .detail-nav :deep(.detail-nav-button.el-button) {
     min-height: 40px;
     padding: 0 14px;
     white-space: nowrap;

@@ -1,15 +1,15 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { AiManagementModule } from '../ai-management/ai-management.module';
-import { AuthModule } from '../auth/auth.module';
+import { AiManagementModule } from '../modules/ai-management/ai-management.module';
+import { AuthModule } from '../modules/auth/auth.module';
 import { CoreRuntimeModule } from '../core/runtime/core-runtime.module';
-import { ConversationModule } from '../conversation/conversation.module';
-import { ExecutionApiModule } from '../execution/execution-api.module';
-import { HealthModule } from '../health/health.module';
-import { PersonaModule } from '../persona/persona.module';
-import { PluginApiModule } from '../plugin/plugin-api.module';
-import { PluginWsModule } from '../plugin/ws/plugin-ws.module';
-import { HostApiModule } from '../runtime/host/host-api.module';
+import { ConversationModule } from '../modules/conversation/conversation.module';
+import { ExecutionApiModule } from '../modules/execution/execution-api.module';
+import { HealthModule } from '../modules/health/health.module';
+import { PersonaModule } from '../modules/persona/persona.module';
+import { PluginApiModule } from '../modules/plugin/plugin-api.module';
+import { PluginWsModule } from '../modules/plugin/ws/plugin-ws.module';
+import { HostApiModule } from '../modules/runtime/host/host-api.module';
 
 @Module({
   imports: [
