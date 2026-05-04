@@ -264,4 +264,81 @@ describe('usePersonaSettings', () => {
     expect(state.currentPersona.value?.personaId).toBe('persona.writer')
     expect(state.currentConversationTitle.value).toBe('第二个对话')
   })
+
+  it('applies the selected persona to all checked conversations', async () => {
+    mockConversations.value = [
+      {
+        id: 'conversation-1',
+        title: '当前对话',
+        createdAt: '2026-03-30T12:00:00.000Z',
+        updatedAt: '2026-03-30T12:00:00.000Z',
+      },
+      {
+        id: 'conversation-2',
+        title: '第二个对话',
+        createdAt: '2026-03-30T12:01:00.000Z',
+        updatedAt: '2026-03-30T12:01:00.000Z',
+      },
+    ]
+    vi.mocked(personaData.loadPersonas).mockResolvedValue([
+      createPersona('builtin.default-assistant', '默认助手'),
+      createPersona('persona.writer', 'Writer'),
+    ])
+    vi.mocked(personaData.loadCurrentPersona)
+      .mockResolvedValueOnce(createCurrentPersona('builtin.default-assistant'))
+      .mockResolvedValueOnce(createCurrentPersona('persona.writer'))
+    vi.mocked(personaData.loadPersona)
+      .mockResolvedValueOnce(createPersonaDetail('builtin.default-assistant', '默认助手'))
+      .mockResolvedValueOnce(createPersonaDetail('persona.writer', 'Writer'))
+    vi.mocked(personaData.activateConversationPersona).mockResolvedValue(
+      createCurrentPersona('persona.writer'),
+    )
+
+    const state = await mountPersonaSettingsHarness()
+    await state.selectPersona('persona.writer')
+    state.selectAllBatchConversations()
+
+    await state.applySelectedPersonaToBatch()
+
+    expect(personaData.activateConversationPersona).toHaveBeenCalledTimes(2)
+    expect(personaData.activateConversationPersona).toHaveBeenNthCalledWith(1, 'conversation-1', 'persona.writer')
+    expect(personaData.activateConversationPersona).toHaveBeenNthCalledWith(2, 'conversation-2', 'persona.writer')
+    expect(state.batchApplyResult.value).toEqual({
+      appliedConversationCount: 2,
+      failedConversationIds: [],
+      personaName: 'Writer',
+    })
+    expect(state.currentPersona.value?.personaId).toBe('persona.writer')
+  })
+
+  it('loads a preset draft into the editor', async () => {
+    vi.mocked(personaData.loadPersonas).mockResolvedValue([
+      createPersona('builtin.default-assistant', '默认助手'),
+    ])
+    vi.mocked(personaData.loadCurrentPersona).mockResolvedValue(
+      createCurrentPersona('builtin.default-assistant'),
+    )
+    vi.mocked(personaData.loadPersona).mockResolvedValue(
+      createPersonaDetail('builtin.default-assistant', '默认助手'),
+    )
+
+    const state = await mountPersonaSettingsHarness()
+
+    state.loadPresetDraft({
+      beginDialogs: [{ role: 'assistant', content: '先输出结论。' }],
+      description: '适合快速评审',
+      name: '严格审阅者',
+      prompt: '优先指出高风险问题。',
+      toolInput: 'memory.search',
+      toolMode: 'selected',
+    })
+
+    expect(state.editorMode.value).toBe('create')
+    expect(state.selectedPersonaId.value).toBeNull()
+    expect(state.editorDraft.value.name).toBe('严格审阅者')
+    expect(state.editorDraft.value.prompt).toBe('优先指出高风险问题。')
+    expect(state.editorDraft.value.toolMode).toBe('selected')
+    expect(state.editorDraft.value.toolInput).toBe('memory.search')
+    expect(state.editorDraft.value.beginDialogs).toEqual([{ role: 'assistant', content: '先输出结论。' }])
+  })
 })

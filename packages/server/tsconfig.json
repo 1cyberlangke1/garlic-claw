@@ -7,7 +7,7 @@
   },
   "files": [
     "src/main.ts",
-    "src/execution/mcp/mcp-stdio-launcher.ts"
+    "src/modules/execution/mcp/mcp-stdio-launcher.ts"
   ],
   "exclude": ["src/**/*.spec.ts"]
 }

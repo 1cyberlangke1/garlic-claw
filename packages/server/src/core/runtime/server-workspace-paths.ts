@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProjectWorktreeRootService } from '../../execution/project/project-worktree-root.service';
+import { ProjectWorktreeRootService } from '../../modules/execution/project/project-worktree-root.service';
 
 const SERVER_STATE_DIRECTORY = 'server-state';
 const TEST_ARTIFACTS_DIRECTORY = 'test-artifacts';

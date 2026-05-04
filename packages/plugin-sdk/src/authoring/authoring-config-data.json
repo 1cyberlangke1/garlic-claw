@@ -51,7 +51,7 @@
     "items": {
       "defaultTitle": {
         "type": "string",
-        "description": "仍命中该默认标题时才尝试自动改标题",
+        "description": "只有命中该默认标题时才尝试自动改标题",
         "defaultValue": "新的对话"
       },
       "maxMessages": {

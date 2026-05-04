@@ -60,17 +60,17 @@
               无匹配模型。
             </div>
             <div v-else class="model-option-list">
-              <button
+              <ElButton
                 v-for="model in pagedModels"
                 :key="model.modelId"
-                type="button"
                 class="model-option"
+                native-type="button"
                 :class="{ selected: form.modelId === model.modelId }"
                 @click="selectModel(model.modelId)"
               >
                 <strong>{{ model.label.split(' / ').at(-1) ?? model.modelId }}</strong>
                 <span>{{ model.modelId }}</span>
-              </button>
+              </ElButton>
             </div>
 
             <div v-if="filteredModels.length > 0" class="model-picker-actions">
@@ -416,8 +416,9 @@ function submit() {
   background: var(--surface-panel-soft);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  box-shadow: none;
+  margin: 0;
   color: var(--text);
-  cursor: pointer;
   transition: all 0.15s ease;
 }
 
