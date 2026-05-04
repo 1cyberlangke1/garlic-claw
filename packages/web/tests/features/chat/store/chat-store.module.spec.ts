@@ -311,6 +311,46 @@ describe('createChatStoreModule', () => {
     )
   })
 
+  it('reloads the current conversation when an automation run starts it externally', async () => {
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        status: 'pending',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: 'openai',
+        model: 'gpt-5.4',
+      },
+    ])
+    vi.mocked(chatConversationData.readLoadedConversationRunningState).mockReturnValue(true)
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+
+    window.dispatchEvent(new CustomEvent('garlic-claw:automation-run', {
+      detail: {
+        conversationId: 'conversation-1',
+      },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(chatConversationData.loadConversationMessages).toHaveBeenCalledWith('conversation-1')
+    expect(chatStreamModule.attachConversationStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentConversationId: expect.objectContaining({ value: 'conversation-1' }),
+      }),
+      'conversation-1',
+      expect.objectContaining({
+        loadConversationDetail: expect.any(Function),
+        refreshConversationState: expect.any(Function),
+      }),
+    )
+  })
+
   it('refreshes conversation-related state after a streamed send finishes', async () => {
     vi.mocked(chatConversationData.loadConversationList).mockResolvedValue([
       {

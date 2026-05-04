@@ -72,8 +72,12 @@ type ConversationTaskRuntime = Omit<StartConversationTaskInput, 'createStream'> 
 
 interface ConversationTaskHandle {
   abortController: AbortController;
+  cleanups: Array<() => void>;
   completion: Promise<void>;
   listeners: Set<(event: ConversationTaskEvent) => void>;
+  resolveCompletion: () => void;
+  runtime?: ConversationTaskRuntime;
+  settled: boolean;
 }
 
 type ResolvedConversationTaskRetryConfig = AiChatAutoRetryConfig;
@@ -82,6 +86,7 @@ type ResolvedConversationTaskRetryConfig = AiChatAutoRetryConfig;
 export class ConversationTaskService {
   private readonly logger = createServerLogger(ConversationTaskService.name);
   private readonly tasks = new Map<string, ConversationTaskHandle>();
+  private static readonly STOP_TASK_GRACE_MS = 20;
 
   constructor(
     private readonly conversationMessages: ConversationMessageService,
@@ -95,9 +100,18 @@ export class ConversationTaskService {
   startTask(input: StartConversationTaskInput): void {
     if (this.tasks.has(input.assistantMessageId)) {throw new Error(`Conversation task already exists for message ${input.assistantMessageId}`);}
     let resolveCompletion: () => void = () => undefined;
-    const handle: ConversationTaskHandle = { abortController: new AbortController(), completion: new Promise<void>((resolve) => { resolveCompletion = resolve; }), listeners: new Set() };
+    const handle: ConversationTaskHandle = {
+      abortController: new AbortController(),
+      cleanups: [],
+      completion: new Promise<void>((resolve) => { resolveCompletion = resolve; }),
+      listeners: new Set(),
+      resolveCompletion: () => resolveCompletion(),
+      settled: false,
+    };
     this.tasks.set(input.assistantMessageId, handle);
-    setTimeout(() => void this.runTask(handle, input).finally(() => { this.tasks.delete(input.assistantMessageId); resolveCompletion(); }), 0);
+    setTimeout(() => void this.runTask(handle, input).finally(() => {
+      this.finalizeHandle(input.assistantMessageId, handle);
+    }), 0);
   }
 
   subscribe(messageId: string, listener: (event: ConversationTaskEvent) => void): () => void {
@@ -117,7 +131,13 @@ export class ConversationTaskService {
     const task = this.tasks.get(messageId);
     if (!task) {return false;}
     task.abortController.abort(new Error('用户主动停止了本次生成'));
-    await task.completion;
+    const stopCompleted = await Promise.race([
+      task.completion.then(() => true),
+      waitForConversationTaskStopGracePeriod(ConversationTaskService.STOP_TASK_GRACE_MS),
+    ]);
+    if (!stopCompleted) {
+      await this.forceStopTask(messageId, task);
+    }
     return true;
   }
 
@@ -133,6 +153,7 @@ export class ConversationTaskService {
         toolResults: [],
       },
     };
+    task.runtime = runtime;
     const retryConfig = resolveConversationTaskRetryConfig(
       this.aiProviderSettingsService.getHostModelRoutingConfig().chatAutoRetry,
     );
@@ -142,6 +163,7 @@ export class ConversationTaskService {
     const unsubscribeTodo = this.conversationTodos.subscribe(input.conversationId, (event) => {
       this.emit(task, { conversationId: event.sessionId, todos: cloneJsonValue(event.todos), type: 'todo-updated' });
     });
+    task.cleanups.push(unsubscribePermission, unsubscribeTodo);
 
     try {
       let retryAttempt = 0;
@@ -152,7 +174,7 @@ export class ConversationTaskService {
           runtime.requestHistorySignature = streamSource.requestHistorySignature;
           runtime.modelId = streamSource.modelId;
           runtime.providerId = streamSource.providerId;
-          await this.writeTaskSnapshot(runtime, 'streaming');
+          await this.writeTaskSnapshot(task, runtime, 'streaming');
           this.emit(task, { messageId: runtime.assistantMessageId, status: 'streaming', type: 'status' });
 
           for await (const rawPart of stream.fullStream) {
@@ -164,7 +186,7 @@ export class ConversationTaskService {
               }
               continue;
             }
-            await this.writeTaskSnapshot(runtime, 'streaming');
+            await this.writeTaskSnapshot(task, runtime, 'streaming');
             if (stepBoundary.metadataEvent) {
               this.emit(task, stepBoundary.metadataEvent);
             }
@@ -199,18 +221,21 @@ export class ConversationTaskService {
         }
       }
     } finally {
-      unsubscribePermission();
-      unsubscribeTodo();
+      this.releaseHandleCleanups(task);
     }
   }
 
   private async finishTask(task: ConversationTaskHandle, runtime: ConversationTaskRuntime, outcome: ConversationTaskOutcome): Promise<void> {
-    const snapshot = await this.writeTaskSnapshot(runtime, outcome.status, 'error' in outcome ? outcome.error : null);
+    if (task.settled) {
+      return;
+    }
+    const snapshot = await this.writeTaskSnapshot(task, runtime, outcome.status, 'error' in outcome ? outcome.error : null);
     if (outcome.status !== 'completed') {
       this.emitAll(task, [
         { ...('error' in outcome ? { error: outcome.error } : {}), messageId: runtime.assistantMessageId, status: outcome.status, type: 'status' },
         { messageId: runtime.assistantMessageId, status: outcome.status, type: 'finish' },
       ]);
+      this.finalizeHandle(runtime.assistantMessageId, task);
       return;
     }
 
@@ -240,23 +265,19 @@ export class ConversationTaskService {
         stack: error instanceof Error ? error.stack : undefined,
       });
     }
+    this.finalizeHandle(runtime.assistantMessageId, task);
   }
 
-  private async writeTaskSnapshot(runtime: ConversationTaskRuntime, status: ChatMessageStatus, error: string | null = null): Promise<ConversationTaskSnapshot> {
-    const snapshot: ConversationTaskSnapshot = {
-      content: runtime.state.content.trim(),
-      continuationState: {
-        hasAssistantTextOutput: runtime.state.hasAssistantTextOutput,
-        hasToolActivity: runtime.state.hasToolActivity,
-        ...(runtime.state.reachedContextThreshold ? { reachedContextThreshold: true } : {}),
-      },
-      ...(runtime.state.metadata ? { metadata: finalizeConversationTaskMetadata(runtime.state.metadata, status) } : {}),
-      modelId: runtime.modelId,
-      parts: toAssistantParts(runtime.state.content),
-      providerId: runtime.providerId,
-      toolCalls: runtime.state.toolCalls.map((entry) => ({ ...entry })),
-      toolResults: runtime.state.toolResults.map((entry) => ({ ...entry })),
-    };
+  private async writeTaskSnapshot(
+    task: ConversationTaskHandle,
+    runtime: ConversationTaskRuntime,
+    status: ChatMessageStatus,
+    error: string | null = null,
+  ): Promise<ConversationTaskSnapshot> {
+    const snapshot = createConversationTaskSnapshot(runtime, status);
+    if (task.settled) {
+      return snapshot;
+    }
     await this.conversationMessages.writeMessage(runtime.conversationId, runtime.assistantMessageId, readConversationTaskMessageBody(snapshot, status, error));
     return snapshot;
   }
@@ -314,7 +335,7 @@ export class ConversationTaskService {
     delayMs: number,
   ): Promise<void> {
     resetConversationTaskState(runtime);
-    await this.writeTaskSnapshot(runtime, 'pending');
+    await this.writeTaskSnapshot(task, runtime, 'pending');
     const assistantMessage = this.conversationStore.requireConversation(runtime.conversationId).messages.find(
       (entry) => entry.id === runtime.assistantMessageId,
     );
@@ -337,8 +358,49 @@ export class ConversationTaskService {
     });
   }
 
-  private emit(task: ConversationTaskHandle, event: ConversationTaskEvent): void { for (const listener of task.listeners) {listener(event);} }
+  private emit(task: ConversationTaskHandle, event: ConversationTaskEvent): void {
+    if (task.settled) {
+      return;
+    }
+    for (const listener of task.listeners) {listener(event);}
+  }
   private emitAll(task: ConversationTaskHandle, events: readonly ConversationTaskEvent[]): void { events.forEach((event) => this.emit(task, event)); }
+
+  private finalizeHandle(messageId: string, task: ConversationTaskHandle): void {
+    if (task.settled) {
+      return;
+    }
+    task.settled = true;
+    this.releaseHandleCleanups(task);
+    this.tasks.delete(messageId);
+    task.resolveCompletion();
+  }
+
+  private async forceStopTask(messageId: string, task: ConversationTaskHandle): Promise<void> {
+    if (task.settled) {
+      return;
+    }
+    const runtime = task.runtime;
+    if (runtime) {
+      const snapshot = createConversationTaskSnapshot(runtime, 'stopped');
+      await this.conversationMessages.writeMessage(
+        runtime.conversationId,
+        runtime.assistantMessageId,
+        readConversationTaskMessageBody(snapshot, 'stopped'),
+      );
+      this.emitAll(task, [
+        { messageId: runtime.assistantMessageId, status: 'stopped', type: 'status' },
+        { messageId: runtime.assistantMessageId, status: 'stopped', type: 'finish' },
+      ]);
+    }
+    this.finalizeHandle(messageId, task);
+  }
+
+  private releaseHandleCleanups(task: ConversationTaskHandle): void {
+    for (const cleanup of task.cleanups.splice(0)) {
+      cleanup();
+    }
+  }
 
   private async attachResponseHistoryUsageSignature(
     runtime: ConversationTaskRuntime,
@@ -564,6 +626,15 @@ async function waitForConversationTaskRetry(delayMs: number, signal: AbortSignal
   });
 }
 
+async function waitForConversationTaskStopGracePeriod(delayMs: number): Promise<boolean> {
+  if (delayMs <= 0) {
+    return false;
+  }
+  return await new Promise<boolean>((resolve) => {
+    setTimeout(() => resolve(false), delayMs);
+  });
+}
+
 function normalizeRetryInt(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : fallback;
 }
@@ -660,6 +731,26 @@ function formatCustomBlockTitle(key: string): string {
 function toAssistantParts(content: string): ChatMessagePart[] {
   const text = content.trim();
   return text ? [{ text, type: 'text' }] : [];
+}
+
+function createConversationTaskSnapshot(
+  runtime: ConversationTaskRuntime,
+  status: ChatMessageStatus,
+): ConversationTaskSnapshot {
+  return {
+    content: runtime.state.content.trim(),
+    continuationState: {
+      hasAssistantTextOutput: runtime.state.hasAssistantTextOutput,
+      hasToolActivity: runtime.state.hasToolActivity,
+      ...(runtime.state.reachedContextThreshold ? { reachedContextThreshold: true } : {}),
+    },
+    ...(runtime.state.metadata ? { metadata: finalizeConversationTaskMetadata(runtime.state.metadata, status) } : {}),
+    modelId: runtime.modelId,
+    parts: toAssistantParts(runtime.state.content),
+    providerId: runtime.providerId,
+    toolCalls: runtime.state.toolCalls.map((entry) => ({ ...entry })),
+    toolResults: runtime.state.toolResults.map((entry) => ({ ...entry })),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

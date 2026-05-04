@@ -240,10 +240,11 @@ export function scheduleChatRecoveryWithState(
   loadConversationDetail: (conversationId: string) => Promise<void>,
 ) {
   startChatRecoveryPolling({
-    recoveryTimer: state.recoveryTimer,
-    streamController: state.streamController,
     currentConversationId: state.currentConversationId,
     isStreaming: () => state.streaming.value,
+    recoveryTimer: state.recoveryTimer,
+    shouldPollWhenIdle: () => Boolean(state.currentConversationId.value),
+    streamController: state.streamController,
     loadConversationDetail: async (conversationId) => {
       flushPendingMessages(state);
       await loadConversationDetail(conversationId);
