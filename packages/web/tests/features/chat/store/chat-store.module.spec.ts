@@ -13,12 +13,14 @@ vi.mock('@/modules/chat/modules/chat-conversation.data', () => ({
   loadConversationList: vi.fn(),
   loadConversationMessages: vi.fn(),
   loadConversationTodoRecord: vi.fn(),
+  readLoadedConversationRunningState: vi.fn(),
   replyRuntimePermissionRecord: vi.fn(),
   stopConversationMessageRecord: vi.fn(),
   updateConversationMessageRecord: vi.fn(),
 }))
 
 vi.mock('@/modules/chat/modules/chat-stream.module', () => ({
+  attachConversationStream: vi.fn(),
   abortChatStream: vi.fn(),
   discardPendingMessageUpdates: vi.fn(),
   dispatchRetryMessage: vi.fn(),
@@ -62,6 +64,7 @@ describe('createChatStoreModule', () => {
     vi.mocked(chatConversationData.loadConversationList).mockReset().mockResolvedValue([])
     vi.mocked(chatConversationData.loadConversationMessages).mockReset().mockResolvedValue([])
     vi.mocked(chatConversationData.loadConversationTodoRecord).mockReset().mockResolvedValue([])
+    vi.mocked(chatConversationData.readLoadedConversationRunningState).mockReset().mockReturnValue(false)
     vi.mocked(chatConversationData.replyRuntimePermissionRecord).mockReset().mockResolvedValue({
       requestId: 'permission-1',
       resolution: 'approved',
@@ -69,6 +72,7 @@ describe('createChatStoreModule', () => {
     vi.mocked(chatConversationData.stopConversationMessageRecord).mockReset()
     vi.mocked(chatConversationData.updateConversationMessageRecord).mockReset()
     vi.mocked(chatStreamModule.abortChatStream).mockReset()
+    vi.mocked(chatStreamModule.attachConversationStream).mockReset()
     vi.mocked(chatStreamModule.discardPendingMessageUpdates).mockReset()
     vi.mocked(chatStreamModule.dispatchRetryMessage).mockReset().mockResolvedValue(undefined)
     vi.mocked(chatStreamModule.dispatchSendMessage).mockReset().mockResolvedValue(undefined)
@@ -157,6 +161,156 @@ describe('createChatStoreModule', () => {
     expect(chatConversationData.loadPendingRuntimePermissionsRecord).not.toHaveBeenCalled()
   })
 
+  it('attaches a live stream after selecting a running subagent conversation', async () => {
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '继续执行',
+        status: 'completed',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        status: 'streaming',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: 'openai',
+        model: 'gpt-5.4',
+      },
+    ])
+    vi.mocked(chatStreamModule.syncChatStreamingState).mockImplementation((state) => {
+      state.currentStreamingMessageId.value = 'assistant-1'
+      state.streaming.value = true
+    })
+    vi.mocked(chatStreamModule.attachConversationStream).mockImplementation(
+      (state) => {
+        state.streamController.value = new AbortController()
+        return Promise.resolve()
+      },
+    )
+
+    const store = createChatStoreModule()
+
+    await store.selectConversation('conversation-1')
+
+    expect(chatStreamModule.attachConversationStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentConversationId: expect.objectContaining({ value: 'conversation-1' }),
+      }),
+      'conversation-1',
+      expect.objectContaining({
+        loadConversationDetail: expect.any(Function),
+        refreshConversationState: expect.any(Function),
+      }),
+    )
+    expect(chatStreamModule.attachConversationStream.mock.invocationCallOrder[0]).toBeLessThanOrEqual(
+      chatStreamModule.scheduleChatRecoveryWithState.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    )
+  })
+
+  it('attaches a live stream after selecting a running main conversation', async () => {
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '继续执行',
+        status: 'completed',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        status: 'streaming',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: 'openai',
+        model: 'gpt-5.4',
+      },
+    ])
+    vi.mocked(chatStreamModule.syncChatStreamingState).mockImplementation((state) => {
+      state.currentStreamingMessageId.value = 'assistant-1'
+      state.streaming.value = true
+    })
+
+    const store = createChatStoreModule()
+
+    await store.selectConversation('conversation-1')
+
+    expect(chatStreamModule.attachConversationStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentConversationId: expect.objectContaining({ value: 'conversation-1' }),
+      }),
+      'conversation-1',
+      expect.objectContaining({
+        loadConversationDetail: expect.any(Function),
+        refreshConversationState: expect.any(Function),
+      }),
+    )
+  })
+
+  it('attaches a live stream when the server still marks the conversation as running without an active assistant message', async () => {
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '继续执行',
+        status: 'completed',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '首轮完成',
+        status: 'completed',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: 'openai',
+        model: 'gpt-5.4',
+      },
+    ])
+    vi.mocked(chatConversationData.readLoadedConversationRunningState).mockReturnValue(true)
+
+    const store = createChatStoreModule()
+
+    await store.selectConversation('conversation-1')
+
+    expect(chatStreamModule.attachConversationStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentConversationId: expect.objectContaining({ value: 'conversation-1' }),
+      }),
+      'conversation-1',
+      expect.objectContaining({
+        loadConversationDetail: expect.any(Function),
+        refreshConversationState: expect.any(Function),
+      }),
+    )
+  })
+
   it('refreshes conversation-related state after a streamed send finishes', async () => {
     vi.mocked(chatConversationData.loadConversationList).mockResolvedValue([
       {
@@ -226,6 +380,89 @@ describe('createChatStoreModule', () => {
     expect(store.todoItems.value).toEqual([
       expect.objectContaining({
         content: '更新会话摘要',
+      }),
+    ])
+  })
+
+  it('refreshes the conversation snapshot immediately when auto-compaction continuation starts', async () => {
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      {
+        id: 'display-summary-1',
+        role: 'display',
+        content: '压缩摘要：最近任务与约束。',
+        status: 'completed',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+      {
+        id: 'assistant-2',
+        role: 'assistant',
+        content: '',
+        status: 'pending',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: 'provider-stream',
+        model: 'model-stream',
+      },
+    ])
+    vi.mocked(chatConversationData.loadConversationContextWindowRecord).mockResolvedValue({
+      contextLength: 100000,
+      enabled: true,
+      estimatedTokens: 8200,
+      excludedMessageIds: [],
+      frontendMessageWindowSize: 200,
+      includedMessageIds: ['display-summary-1', 'assistant-2'],
+      keepRecentMessages: 0,
+      source: 'provider',
+      slidingWindowUsagePercent: 80,
+      strategy: 'summary',
+    })
+    vi.mocked(chatStreamModule.dispatchSendMessage).mockImplementation(
+      async (_state, _input, params) => {
+        await (params as {
+          refreshConversationSnapshot?: () => Promise<void>;
+        } | undefined)?.refreshConversationSnapshot?.()
+      },
+    )
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.selectedProvider.value = 'provider-stream'
+    store.selectedModel.value = 'model-stream'
+
+    await store.sendMessage({
+      content: '继续执行',
+    })
+
+    expect(chatConversationData.loadConversationContextWindowRecord).toHaveBeenCalledWith(
+      'conversation-1',
+      {
+        modelId: 'model-stream',
+        providerId: 'provider-stream',
+      },
+    )
+    expect(chatConversationData.loadConversationMessages).toHaveBeenCalledWith('conversation-1')
+    expect(store.contextWindowPreview.value).toEqual(
+      expect.objectContaining({
+        estimatedTokens: 8200,
+        strategy: 'summary',
+      }),
+    )
+    expect(store.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'display-summary-1',
+        role: 'display',
+        content: '压缩摘要：最近任务与约束。',
+      }),
+      expect.objectContaining({
+        id: 'assistant-2',
+        role: 'assistant',
       }),
     ])
   })
@@ -1814,6 +2051,35 @@ describe('createChatStoreModule', () => {
     expect(store.selectedProvider.value).toBeNull()
     expect(store.selectedModel.value).toBeNull()
     expect(store.todoItems.value).toEqual([])
+    expect(store.messages.value).toEqual([])
+  })
+
+  it('drops an invalid legacy conversation id locally instead of calling the delete API', async () => {
+    const legacyConversationId = '11111111-1111-4111-8111-111111111111'
+    const store = createChatStoreModule()
+    store.currentConversationId.value = legacyConversationId
+    store.conversations.value = [
+      {
+        id: legacyConversationId,
+        title: '旧会话',
+        createdAt: '2026-04-18T09:00:00.000Z',
+        updatedAt: '2026-04-18T09:00:00.000Z',
+        _count: { messages: 1 },
+      },
+    ]
+    store.selectedProvider.value = 'provider-a'
+    store.selectedModel.value = 'model-a'
+    store.messages.value = [
+      createChatMessage('assistant-1', '旧消息'),
+    ]
+
+    await store.deleteConversation(legacyConversationId)
+
+    expect(chatConversationData.deleteConversationRecord).not.toHaveBeenCalled()
+    expect(store.currentConversationId.value).toBeNull()
+    expect(store.conversations.value).toEqual([])
+    expect(store.selectedProvider.value).toBeNull()
+    expect(store.selectedModel.value).toBeNull()
     expect(store.messages.value).toEqual([])
   })
 

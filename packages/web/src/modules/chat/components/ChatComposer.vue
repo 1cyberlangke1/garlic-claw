@@ -14,9 +14,9 @@
     <div v-if="pendingImages.length > 0" class="pending-images">
       <div v-for="(image, index) in pendingImages" :key="image.id" class="pending-image">
         <img :src="image.image" :alt="image.name" />
-        <button type="button" class="remove-image" @click="$emit('remove-image', index)">
+        <ElButton class="remove-image" native-type="button" circle @click="$emit('remove-image', index)">
           ×
-        </button>
+        </ElButton>
       </div>
     </div>
 
@@ -51,11 +51,11 @@
           @keydown="handleKeydown"
         ></textarea>
         <div v-if="showCommandSuggestions" class="command-suggestions">
-          <button
+          <ElButton
             v-for="(suggestion, index) in commandSuggestions"
             :key="`${suggestion.commandId}:${suggestion.trigger}`"
-            type="button"
             class="command-suggestion-item"
+            native-type="button"
             :class="{ selected: index === selectedCommandSuggestionIndex }"
             @mousedown.prevent="selectCommandSuggestion(suggestion.trigger)"
             @mouseenter="selectedCommandSuggestionIndex = index"
@@ -69,37 +69,38 @@
             >
               {{ suggestion.connected ? '可用' : '离线' }}
             </span>
-          </button>
+          </ElButton>
         </div>
       </div>
       <label class="composer-button upload-button" title="上传图片">
         <input accept="image/*" multiple type="file" @change="$emit('file-change', $event)" />
         <Icon :icon="galleryAddBold" class="button-icon" aria-hidden="true" />
       </label>
-      <button
-        type="button"
+      <ElButton
         class="composer-button send-button"
+        native-type="button"
         title="发送"
         :disabled="!canSend"
         @click="$emit('send')"
       >
         <Icon :icon="plainBold" class="button-icon" aria-hidden="true" />
-      </button>
-      <button
-        type="button"
+      </ElButton>
+      <ElButton
         class="composer-button stop-button"
+        native-type="button"
         title="停止"
         :disabled="!canStop"
         @click="$emit('stop')"
       >
         <Icon :icon="stopBold" class="button-icon" aria-hidden="true" />
-      </button>
+      </ElButton>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, toRefs, watch } from 'vue'
+import { ElButton } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import galleryAddBold from '@iconify-icons/solar/gallery-add-bold'
 import plainBold from '@iconify-icons/solar/plain-bold'
@@ -373,11 +374,13 @@ function selectCommandSuggestion(trigger: string) {
   right: -6px;
   width: 24px;
   height: 24px;
+  min-height: 24px;
+  padding: 0;
   border: none;
   border-radius: 999px;
   background: var(--danger);
+  box-shadow: none;
   color: #fff;
-  cursor: pointer;
 }
 
 .composer {
@@ -416,6 +419,7 @@ function selectCommandSuggestion(trigger: string) {
   padding: 0;
   border-radius: 18px;
   border: 1px solid var(--border);
+  box-shadow: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -478,14 +482,15 @@ function selectCommandSuggestion(trigger: string) {
   grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
   gap: 6px 10px;
   align-items: center;
+  justify-content: stretch;
   width: 100%;
   padding: 10px 12px;
   border: none;
   border-radius: 12px;
   background: transparent;
+  box-shadow: none;
   color: var(--text);
   text-align: left;
-  cursor: pointer;
 }
 
 .command-suggestion-item:hover,

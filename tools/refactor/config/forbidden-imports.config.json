@@ -89,55 +89,55 @@
         {
           "prefix": "../ai-management/ai-management-model-config",
           "filePrefixes": [
-            "packages/server/src/conversation/"
+            "packages/server/src/modules/conversation/"
           ],
           "reason": "conversation owner must not reach ai management model config internals"
         },
         {
           "prefix": "../ai-management/ai-management-settings.store",
           "filePrefixes": [
-            "packages/server/src/conversation/"
+            "packages/server/src/modules/conversation/"
           ],
           "reason": "conversation owner must not reach ai settings store internals"
         },
         {
           "prefix": "../ai-management/ai-provider-catalog",
           "filePrefixes": [
-            "packages/server/src/conversation/"
+            "packages/server/src/modules/conversation/"
           ],
           "reason": "conversation owner must not reach ai provider catalog internals"
         },
         {
           "prefix": "../ai-management/ai-management.types",
           "filePrefixes": [
-            "packages/server/src/conversation/"
+            "packages/server/src/modules/conversation/"
           ],
           "reason": "conversation owner must not reach ai management internal types"
         },
         {
           "prefix": "../conversation/",
           "filePrefixes": [
-            "packages/server/src/ai/",
-            "packages/server/src/ai-management/",
-            "packages/server/src/vision/"
+            "packages/server/src/modules/ai/",
+            "packages/server/src/modules/ai-management/",
+            "packages/server/src/modules/vision/"
           ],
           "reason": "ai owner must not depend on conversation owner"
         },
         {
           "prefix": "../runtime/",
           "filePrefixes": [
-            "packages/server/src/ai/",
-            "packages/server/src/ai-management/",
-            "packages/server/src/vision/"
+            "packages/server/src/modules/ai/",
+            "packages/server/src/modules/ai-management/",
+            "packages/server/src/modules/vision/"
           ],
           "reason": "ai owner must not depend on runtime owner"
         },
         {
           "prefix": "../execution/",
           "filePrefixes": [
-            "packages/server/src/ai/",
-            "packages/server/src/ai-management/",
-            "packages/server/src/vision/"
+            "packages/server/src/modules/ai/",
+            "packages/server/src/modules/ai-management/",
+            "packages/server/src/modules/vision/"
           ],
           "reason": "ai owner must not depend on execution owner"
         }
@@ -159,21 +159,21 @@
         {
           "prefix": "../ai-management/ai-management-model-config",
           "filePrefixes": [
-            "packages/server/src/conversation/"
+            "packages/server/src/modules/conversation/"
           ],
           "reason": "conversation owner must not reach ai management model config internals"
         },
         {
           "prefix": "../ai-management/ai-management-settings.store",
           "filePrefixes": [
-            "packages/server/src/conversation/"
+            "packages/server/src/modules/conversation/"
           ],
           "reason": "conversation owner must not reach ai settings store internals"
         },
         {
           "prefix": "../ai-management/ai-provider-catalog",
           "filePrefixes": [
-            "packages/server/src/conversation/"
+            "packages/server/src/modules/conversation/"
           ],
           "reason": "conversation owner must not reach ai provider catalog internals"
         }

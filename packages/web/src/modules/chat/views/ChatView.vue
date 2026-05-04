@@ -1,106 +1,108 @@
 <template>
   <div class="chat-view">
     <template v-if="chat.currentConversationId">
-      <div class="chat-toolbar">
-        <div class="toolbar-header">
-          <div class="toolbar-model-summary">
-            <div class="toolbar-model-main">
-              <span class="toolbar-model-label">当前模型</span>
-              <strong class="toolbar-model-value">
-                {{ chat.selectedProvider && chat.selectedModel ? `${chat.selectedProvider}/${chat.selectedModel}` : '未在 AI 设置中配置默认模型' }}
-              </strong>
-              <div
-                v-if="contextUsageSummary"
-                class="toolbar-context-usage"
-              >
-                <span class="toolbar-context-usage-percent">
-                  {{ contextUsageSummary.percent }}%
-                </span>
-                <span class="toolbar-context-usage-tokens">
-                  {{ contextUsageSummary.tokenLabel }} / {{ contextUsageSummary.contextLength }}
-                </span>
-                <span
-                  class="toolbar-context-progress"
-                  :title="`当前上下文占用 ${contextUsageSummary.percent}%`"
-                >
-                  <span
-                    class="toolbar-context-progress-fill"
-                    :style="{ width: `${contextUsageSummary.percent}%` }"
-                  ></span>
-                </span>
-              </div>
-              <div v-if="selectedCapabilities" class="toolbar-capability-row">
-                <span v-if="selectedCapabilities.reasoning" class="capability-chip">推理</span>
-                <span v-if="selectedCapabilities.toolCall" class="capability-chip">工具</span>
-                <span v-if="selectedCapabilities.input.image" class="capability-chip">支持图片</span>
-              </div>
-            </div>
-            <RouterLink class="toolbar-settings-link" to="/ai">
-              前往 AI 设置
-            </RouterLink>
-          </div>
-        </div>
-      </div>
-
       <div v-if="subagentTabs.length" class="chat-tabs">
-        <button class="chat-tab" :class="{ active: activeTab === 'main' }" @click="switchToMainConversation">对话</button>
-        <button v-for="s in subagentTabs" :key="s.id" class="chat-tab" :class="{ active: activeTab === s.id }" @click="switchToSubagent(s.id)">
+        <ElButton class="chat-tab" :class="{ active: activeTab === 'main' }" native-type="button" @click="switchToMainConversation">对话</ElButton>
+        <ElButton v-for="s in subagentTabs" :key="s.id" class="chat-tab" :class="{ active: activeTab === s.id }" native-type="button" @click="switchToSubagent(s.id)">
           {{ s.title || '子代理' }}
-        </button>
+        </ElButton>
       </div>
 
-      <section v-if="chat.todoItems.length > 0" class="chat-todo-panel">
-        <div class="chat-todo-header">
-          <h3>当前待办</h3>
-          <span class="chat-todo-count">{{ chat.todoItems.length }}</span>
-        </div>
-        <div class="chat-todo-list">
-          <div
-            v-for="(item, index) in chat.todoItems"
-            :key="`${index}-${item.content}`"
-            class="chat-todo-item"
-            :class="[`status-${item.status}`, `priority-${item.priority}`]"
-          >
-            <span class="chat-todo-state">{{ readTodoStatusLabel(item.status) }}</span>
-            <span class="chat-todo-content">{{ item.content }}</span>
-            <span class="chat-todo-priority">{{ readTodoPriorityLabel(item.priority) }}</span>
+      <div class="chat-stage">
+        <div class="chat-toolbar">
+          <div class="toolbar-header">
+            <div class="toolbar-model-summary">
+              <div class="toolbar-model-main">
+                <span class="toolbar-model-label">当前模型</span>
+                <strong class="toolbar-model-value">
+                  {{ chat.selectedProvider && chat.selectedModel ? `${chat.selectedProvider}/${chat.selectedModel}` : '未在 AI 设置中配置默认模型' }}
+                </strong>
+                <div
+                  v-if="contextUsageSummary"
+                  class="toolbar-context-usage"
+                >
+                  <span class="toolbar-context-usage-percent">
+                    {{ contextUsageSummary.percent }}%
+                  </span>
+                  <span class="toolbar-context-usage-tokens">
+                    {{ contextUsageSummary.tokenLabel }} / {{ contextUsageSummary.contextLength }}
+                  </span>
+                  <span
+                    class="toolbar-context-progress"
+                    :title="`当前上下文占用 ${contextUsageSummary.percent}%`"
+                  >
+                    <span
+                      class="toolbar-context-progress-fill"
+                      :style="{ width: `${contextUsageSummary.percent}%` }"
+                    ></span>
+                  </span>
+                </div>
+                <div v-if="selectedCapabilities" class="toolbar-capability-row">
+                  <span v-if="selectedCapabilities.reasoning" class="capability-chip">推理</span>
+                  <span v-if="selectedCapabilities.toolCall" class="capability-chip">工具</span>
+                  <span v-if="selectedCapabilities.input.image" class="capability-chip">支持图片</span>
+                </div>
+              </div>
+              <RouterLink class="toolbar-settings-link" to="/ai">
+                前往 AI 设置
+              </RouterLink>
+            </div>
           </div>
         </div>
-      </section>
 
-      <ChatRuntimePermissionPanel
-        :requests="pendingRuntimePermissions"
-        @reply="replyRuntimePermission"
-      />
+        <section v-if="chat.todoItems.length > 0" class="chat-todo-panel">
+          <div class="chat-todo-header">
+            <h3>当前待办</h3>
+            <span class="chat-todo-count">{{ chat.todoItems.length }}</span>
+          </div>
+          <div class="chat-todo-list">
+            <div
+              v-for="(item, index) in chat.todoItems"
+              :key="`${index}-${item.content}`"
+              class="chat-todo-item"
+              :class="[`status-${item.status}`, `priority-${item.priority}`]"
+            >
+              <span class="chat-todo-state">{{ readTodoStatusLabel(item.status) }}</span>
+              <span class="chat-todo-content">{{ item.content }}</span>
+              <span class="chat-todo-priority">{{ readTodoPriorityLabel(item.priority) }}</span>
+            </div>
+          </div>
+        </section>
 
-      <ChatMessageList
-        :assistant-persona="currentConversationPersona ? { avatar: currentConversationPersona.avatar, name: currentConversationPersona.name } : null"
-        :context-window-preview="contextWindowPreview"
-        :loading="chat.loading"
-        :messages="displayedMessages"
-        @delete-message="deleteMessage"
-        @retry-message="retryMessage"
-        @update-message="updateMessage"
-      />
+        <ChatRuntimePermissionPanel
+          :requests="pendingRuntimePermissions"
+          @reply="replyRuntimePermission"
+        />
+
+        <ChatMessageList
+          :assistant-persona="currentConversationPersona ? { avatar: currentConversationPersona.avatar, name: currentConversationPersona.name } : null"
+          :context-window-preview="contextWindowPreview"
+          :loading="chat.loading"
+          :messages="displayedMessages"
+          @delete-message="deleteMessage"
+          @retry-message="retryMessage"
+          @update-message="updateMessage"
+        />
 
 
-      <ChatComposer
-        v-model="inputText"
-        :can-send="canSend"
-        :can-stop="chat.canStopStreaming"
-        :command-suggestions="commandSuggestions"
-        :pending-images="pendingImages"
-        :queued-send-count="queuedSendCount"
-        :queued-send-preview-entries="queuedSendPreviewEntries"
-        :streaming="chat.streaming"
-        :upload-notices="uploadNotices"
-        @apply-command-suggestion="applyCommandSuggestion"
-        @file-change="handleFileChange"
-        @pop-queued-send="popQueuedSendTailToInput"
-        @remove-image="removeImage"
-        @send="send"
-        @stop="chat.stopStreaming()"
-      />
+        <ChatComposer
+          v-model="inputText"
+          :can-send="canSend"
+          :can-stop="chat.canStopStreaming"
+          :command-suggestions="commandSuggestions"
+          :pending-images="pendingImages"
+          :queued-send-count="queuedSendCount"
+          :queued-send-preview-entries="queuedSendPreviewEntries"
+          :streaming="chat.streaming"
+          :upload-notices="uploadNotices"
+          @apply-command-suggestion="applyCommandSuggestion"
+          @file-change="handleFileChange"
+          @pop-queued-send="popQueuedSendTailToInput"
+          @remove-image="removeImage"
+          @send="send"
+          @stop="chat.stopStreaming()"
+        />
+      </div>
     </template>
 
     <div v-else class="no-conversation">
@@ -110,6 +112,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElButton } from 'element-plus'
 import ChatComposer from '@/modules/chat/components/ChatComposer.vue'
 import ChatMessageList from '@/modules/chat/components/ChatMessageList.vue'
 import ChatRuntimePermissionPanel from '@/modules/chat/components/ChatRuntimePermissionPanel.vue'
@@ -308,13 +311,62 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
+  padding: 0;
 }
 
-.chat-tabs { display:flex; gap:4px; padding:0 4px; overflow-x:auto; flex-shrink:0; }
-.chat-tab { display:flex; align-items:center; gap:6px; padding:6px 14px; border:1px solid var(--shell-border, #334155); border-radius:8px 8px 0 0; border-bottom:none; background:transparent; color:var(--shell-text-secondary, #cbd5e1); font-size:13px; cursor:pointer; white-space:nowrap; font-family:inherit; transition:all .12s; }
-.chat-tab:hover { background:var(--shell-bg-hover, #334155); color:var(--shell-text, #f1f5f9); }
-.chat-tab.active { background:var(--shell-bg-elevated, #1e293b); color:var(--shell-text, #f1f5f9); border-color:var(--shell-active, #22c55e); }
+.chat-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px 16px;
+}
+
+.chat-tabs {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  background: var(--surface-panel-soft-strong);
+}
+
+.chat-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--surface-subtle);
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  font-family: inherit;
+  transition: background-color .12s ease, color .12s ease;
+}
+
+.chat-tab:last-child {
+  border-right: none;
+}
+
+.chat-tab:hover {
+  background: var(--surface-panel-hover-soft);
+  color: var(--text);
+}
+
+.chat-tab.active {
+  background: var(--surface-panel-strong);
+  color: var(--text);
+  box-shadow: inset 0 2px 0 0 var(--accent);
+}
+
 .chat-toolbar {
   padding: 12px 16px;
   border: 1px solid var(--border);
@@ -437,47 +489,6 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   font-weight: 500;
 }
 
-.service-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.service-label {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.service-chip {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--surface-info-soft);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.service-chip.disabled {
-  background: var(--surface-danger-soft);
-  color: var(--danger);
-}
-
-.service-toggle {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: var(--surface-overlay);
-  color: var(--text);
-  border-radius: 999px;
-  padding: 6px 12px;
-  cursor: pointer;
-}
-
-.service-toggle:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
 .chat-todo-panel {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -562,29 +573,7 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   color: var(--success);
 }
 
-.chat-todo-empty {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.chat-view > :deep(.messages) { flex: 1; min-height: 0; overflow-y: auto; }
-
-.subagent-view { display:flex; flex-direction:column; gap:12px; overflow-y:auto; }
-.subagent-bar { display:flex; align-items:center; gap:10px; padding:8px 14px; background:var(--shell-bg-elevated); border-radius:6px; font-size:14px; color:var(--shell-text); }
-.subagent-status { font-size:11px; padding:1px 8px; border-radius:999px; text-transform:uppercase; }
-.subagent-status.queued,.subagent-status.running { background:rgba(245,158,11,.15); color:#f59e0b; }
-.subagent-status.completed { background:rgba(34,197,94,.1); color:#22c55e; }
-.subagent-status.error { background:rgba(239,68,68,.1); color:#ef4444; }
-.subagent-msgs { display:grid; gap:8px; }
-.subagent-msg { padding:10px 14px; border-radius:6px; background:var(--shell-bg-elevated); }
-.subagent-msg.user { border-left:2px solid #3b82f6; }
-.subagent-msg.assistant { border-left:2px solid #22c55e; }
-.subagent-msg strong { display:block; margin-bottom:4px; font-size:11px; color:var(--shell-text-tertiary); text-transform:uppercase; }
-.subagent-msg pre { margin:0; font-size:13px; color:var(--shell-text); white-space:pre-wrap; word-break:break-word; font-family:inherit; }
-.subagent-tools { display:grid; gap:6px; margin-top:8px; }
-.subagent-tool { padding:8px 12px; border-radius:4px; background:var(--shell-bg); }
-.subagent-tool-name { font-size:11px; color:var(--shell-active); font-weight:500; }
+.chat-stage > :deep(.messages) { flex: 1; min-height: 0; overflow-y: auto; }
 
 .no-conversation {
   display: grid;

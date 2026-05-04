@@ -8,6 +8,7 @@ import type {
   RuntimePermissionDecision,
 } from "@garlic-claw/shared";
 import {
+  attachConversationStream,
   abortChatStream,
   discardPendingMessageUpdates,
   dispatchRetryMessage,
@@ -26,6 +27,7 @@ import {
   loadConversationList,
   loadConversationMessages,
   loadConversationTodoRecord,
+  readLoadedConversationRunningState,
   replyRuntimePermissionRecord,
   stopConversationMessageRecord,
   updateConversationMessageRecord,
@@ -518,6 +520,16 @@ export function createChatStoreModule() {
   }
 
   async function deleteConversation(id: string) {
+    if (!isValidConversationRouteId(id)) {
+      conversations.value = conversations.value.filter(
+        (conversation) => conversation.id !== id,
+      );
+      if (currentConversationId.value === id) {
+        clearCurrentConversationState();
+      }
+      deleteQueuedSendRequests(id);
+      return;
+    }
     if (currentConversationId.value === id) {
       abortChatStream(streamState);
       discardPendingMessageUpdates(streamState);
@@ -638,6 +650,8 @@ export function createChatStoreModule() {
 
     await dispatchRetryMessage(streamState, messageId, {
       loadConversationDetail: loadConversationRecoverySnapshot,
+      refreshConversationSnapshot: () =>
+        loadConversationWindowSnapshot(conversationId),
       refreshConversationSummary: () =>
         refreshConversationSummary(conversationId),
       refreshConversationState: (input) =>
@@ -762,6 +776,22 @@ export function createChatStoreModule() {
 
     replaceMessages(nextMessages);
     syncChatStreamingState(streamState);
+    const conversationStillRunning = readLoadedConversationRunningState(conversationId);
+    if (
+      currentConversationId.value === conversationId
+      && !streamController.value
+      && (streaming.value || conversationStillRunning)
+    ) {
+      void attachConversationStream(streamState, conversationId, {
+        loadConversationDetail: loadConversationRecoverySnapshot,
+        refreshConversationSnapshot: () =>
+          loadConversationWindowSnapshot(conversationId),
+        refreshConversationSummary: () =>
+          refreshConversationSummary(conversationId),
+        refreshConversationState: (input) =>
+          refreshConversationStreamState(conversationId, input),
+      });
+    }
   }
 
   async function loadConversationContextWindow(conversationId: string) {
@@ -869,6 +899,8 @@ export function createChatStoreModule() {
         writeQueuedSendRequests(conversationId, nextQueuedRequests.slice(1));
         await dispatchSendMessage(streamState, nextRequest.input, {
           loadConversationDetail: loadConversationRecoverySnapshot,
+          refreshConversationSnapshot: () =>
+            loadConversationWindowSnapshot(nextRequest.conversationId),
           refreshConversationSummary: () =>
             refreshConversationSummary(nextRequest.conversationId),
           refreshConversationState: (input) =>

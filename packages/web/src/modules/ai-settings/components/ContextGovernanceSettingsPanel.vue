@@ -2,7 +2,6 @@
   <section class="panel-shell">
     <header class="panel-header">
       <div>
-        <span class="panel-kicker">上下文</span>
         <h2>上下文设置</h2>
         <p>配置自动标题、上下文自动管理策略和压缩专用模型。滑动窗口与摘要压缩都会自动管理上下文。</p>
       </div>
@@ -51,11 +50,11 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
-import { ElButton } from 'element-plus'
-import type { JsonObject, PluginConfigSnapshot } from '@garlic-claw/shared'
-import ModelQuickInput from '@/shared/components/ModelQuickInput.vue'
 import SchemaConfigForm from '@/modules/config/components/SchemaConfigForm.vue'
+import ModelQuickInput from '@/shared/components/ModelQuickInput.vue'
+import type { JsonObject, PluginConfigSnapshot } from '@garlic-claw/shared'
+import { ElButton } from 'element-plus'
+import { onBeforeUnmount, ref, watch } from 'vue'
 
 const props = defineProps<{
   snapshot: PluginConfigSnapshot | null

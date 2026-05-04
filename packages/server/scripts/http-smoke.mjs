@@ -22,6 +22,7 @@ const SKILL_DIR_NAME = '.smoke-http-flow';
 const SMOKE_IMAGE_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0p8AAAAASUVORK5CYII=';
 const AUTO_COMPACTION_SUBAGENT_TEXT = '子代理长程压缩 smoke 已整理背景、限制、行动项和待办，并展开较长说明用于自动压缩验证。'.repeat(8);
 const AUTO_COMPACTION_MAIN_TEXT = '主代理长程压缩 smoke 已整合子代理结果、当前限制、下一步动作和验证结论，并保留较长汇总用于自动压缩验证。'.repeat(8);
+const AUTO_COMPACTION_CONTINUATION_TEXT = '本地 smoke 回复: Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.';
 const {
   collectServerHttpRoutes,
   collectWebHttpRoutes,
@@ -668,12 +669,12 @@ async function runSubagentAutoCompactionSmoke(apiBase, state, input) {
     });
 
     input.fakeOpenAi.resetChatCompletions();
-    await runSmokeTextChatRoundTrip(apiBase, state, {
+    const { events } = await runSmokeTextChatRoundTrip(apiBase, state, {
       content: '请使用 subagent 工具委派一个探索任务，并在子代理长程压缩 smoke 完成后，继续完成主代理长程压缩 smoke 的最终汇总。',
-      expectedText: AUTO_COMPACTION_MAIN_TEXT,
       headers: input.headers,
       stepName: 'chat.messages.subagent-auto-compaction',
     });
+    assertAutoCompactionSse(events);
 
     await runStep('chat.messages.subagent-auto-compaction.verify-model', async () => {
       const requests = input.fakeOpenAi.readChatCompletions();
@@ -3100,6 +3101,48 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(automation.id === state.automationId, 'Expected automation detail');
   });
 
+  await runStep('automations.update', async () => {
+    const automation = await putJson(apiBase, `/automations/${state.automationId}`, {
+      body: {
+        actions: [
+          {
+            message: '自动化烟测消息（已更新）',
+            target: {
+              id: state.conversationId,
+              type: 'conversation',
+            },
+            type: 'ai_message',
+          },
+          {
+            capability: 'spawn_subagent',
+            params: {
+              description: '自动化烟测任务（已更新）',
+              prompt: '请输出 smoke automation task after update',
+            },
+            sourceId: 'subagent',
+            sourceKind: 'internal',
+            type: 'device_command',
+          },
+        ],
+        name: 'Smoke Automation Updated',
+        trigger: {
+          type: 'manual',
+        },
+      },
+      headers: userHeaders(),
+    });
+    ensure(automation.id === state.automationId, 'Expected automation update to keep the same id');
+    ensure(automation.name === 'Smoke Automation Updated', 'Expected automation update to replace name');
+    ensure(automation.actions[0]?.message === '自动化烟测消息（已更新）', 'Expected automation update to replace ai_message content');
+  });
+
+  await runStep('automations.list.after-update', async () => {
+    const automations = await getJson(apiBase, '/automations', { headers: userHeaders() });
+    const automation = automations.find((entry) => entry.id === state.automationId);
+    ensure(automations.filter((entry) => entry.id === state.automationId).length === 1, 'Expected automation update not to create a duplicate record');
+    ensure(automation?.name === 'Smoke Automation Updated', 'Expected automation list to reflect updated automation');
+  });
+
   await runStep('automations.toggle.false', async () => {
     const toggle = await patchJson(apiBase, `/automations/${state.automationId}/toggle`, {
       headers: userHeaders(),
@@ -3146,8 +3189,8 @@ async function runHttpFlow(apiBase, state, input) {
     const overview = await getJson(apiBase, '/subagents/overview');
     const subagent = overview.subagents.find((entry) => entry.conversationId === state.automationSubagentSessionId);
     ensure(subagent, 'Expected subagent overview to include automation-created conversation projection');
-    ensure(subagent.description === '自动化烟测任务', 'Expected subagent overview to expose persisted subagent description');
-    ensure(subagent.requestPreview === '请输出 smoke automation task', 'Expected subagent overview to keep prompt preview separate from description');
+    ensure(subagent.description === '自动化烟测任务（已更新）', 'Expected subagent overview to expose persisted subagent description');
+    ensure(subagent.requestPreview === '请输出 smoke automation task after update', 'Expected subagent overview to keep prompt preview separate from description');
     ensure(typeof subagent.conversationId === 'string' && subagent.conversationId.length > 0, 'Expected subagent overview to expose conversation id');
     ensure(typeof subagent.messageCount === 'number' && subagent.messageCount >= 1, 'Expected subagent overview to expose message count');
   });
@@ -3155,9 +3198,9 @@ async function runHttpFlow(apiBase, state, input) {
   await runStep('plugins.subagent-detail.success', async () => {
     const subagent = await waitForSubagentTaskCompletion(apiBase, state.automationSubagentSessionId);
     ensure(subagent.conversationId === state.automationSubagentSessionId, 'Expected subagent conversation detail to load');
-    ensure(subagent.description === '自动化烟测任务', 'Expected subagent detail to expose persisted description');
+    ensure(subagent.description === '自动化烟测任务（已更新）', 'Expected subagent detail to expose persisted description');
     ensure(subagent.pluginId === 'subagent', 'Expected subagent detail source id');
-    ensure(subagent.requestPreview === '请输出 smoke automation task', 'Expected subagent detail to keep prompt preview separate from description');
+    ensure(subagent.requestPreview === '请输出 smoke automation task after update', 'Expected subagent detail to keep prompt preview separate from description');
     ensure(typeof subagent.conversationId === 'string' && subagent.conversationId.length > 0, 'Expected subagent detail to expose conversation id');
     ensure(typeof subagent.messageCount === 'number' && subagent.messageCount >= 2, 'Expected subagent detail to expose updated message count');
     ensure(subagent.status === 'completed', 'Expected subagent detail status to be completed');
@@ -4154,6 +4197,57 @@ function assertCompletedSse(events, expectedText) {
     ensure(deltas === expectedText, `Expected SSE text to equal "${expectedText}", events=${serializedEvents}`);
   }
   return deltas;
+}
+
+function assertAutoCompactionSse(events) {
+  const serializedEvents = JSON.stringify(events);
+  const messageStartCount = events.filter((entry) => entry.type === 'message-start').length;
+  const finishCount = events.filter((entry) => entry.type === 'finish').length;
+  const doneIndex = events.findIndex((entry) => entry.type === 'done');
+  const turns = readCompletedSseAssistantTurns(events);
+  ensure(messageStartCount === 2, `Expected auto compaction SSE to include exactly two assistant starts, events=${serializedEvents}`);
+  ensure(finishCount === 2, `Expected auto compaction SSE to include exactly two assistant finishes, events=${serializedEvents}`);
+  ensure(turns.length === 2, `Expected auto compaction SSE to include exactly two completed assistant turns, events=${serializedEvents}`);
+  ensure(doneIndex > turns[1].finishIndex, `Expected SSE [DONE] after continuation finish, events=${serializedEvents}`);
+  ensure(turns[0].text === AUTO_COMPACTION_MAIN_TEXT, `Expected first auto compaction assistant text to equal main summary, events=${serializedEvents}`);
+  ensure(turns[1].text === AUTO_COMPACTION_CONTINUATION_TEXT, `Expected continuation assistant text to equal auto-continue reply, events=${serializedEvents}`);
+  ensure(
+    typeof turns[1].userText === 'string' && turns[1].userText.includes('Continue if you have next steps'),
+    `Expected continuation turn to be triggered by synthetic continue user message, events=${serializedEvents}`,
+  );
+}
+
+function readCompletedSseAssistantTurns(events) {
+  const turns = [];
+  const turnByMessageId = new Map();
+  for (const [index, entry] of events.entries()) {
+    if (entry.type === 'message-start' && typeof entry?.assistantMessage?.id === 'string') {
+      const turn = {
+        finishIndex: -1,
+        messageId: entry.assistantMessage.id,
+        startIndex: index,
+        text: '',
+        userText: typeof entry?.userMessage?.content === 'string' ? entry.userMessage.content : '',
+      };
+      turns.push(turn);
+      turnByMessageId.set(turn.messageId, turn);
+      continue;
+    }
+    if (entry.type === 'text-delta' && typeof entry?.messageId === 'string') {
+      const turn = turnByMessageId.get(entry.messageId);
+      if (turn) {
+        turn.text += entry.text ?? '';
+      }
+      continue;
+    }
+    if (entry.type === 'finish' && typeof entry?.messageId === 'string') {
+      const turn = turnByMessageId.get(entry.messageId);
+      if (turn) {
+        turn.finishIndex = index;
+      }
+    }
+  }
+  return turns.filter((turn) => turn.finishIndex > turn.startIndex);
 }
 
 function getCompletedStepCount() {

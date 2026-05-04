@@ -74,22 +74,39 @@ vi.mock('@/modules/personas/composables/use-persona-settings', () => ({
     currentPersona,
     currentConversationId: ref('conversation-1'),
     currentConversationTitle: ref('当前对话'),
+    availableConversations: ref([
+      {
+        id: 'conversation-1',
+        title: '当前对话',
+        createdAt: '2026-03-30T12:00:00.000Z',
+        updatedAt: '2026-03-30T12:00:00.000Z',
+      },
+    ]),
     hasCurrentConversation: computed(() => true),
     canApplySelectedPersona: computed(() => true),
+    canApplySelectedPersonaToBatch: computed(() => true),
     canDeleteSelectedPersona: computed(() => true),
     selectedPersonaStatus: computed(() => '当前使用：默认助手'),
     editorMode: ref<'create' | 'edit'>('edit'),
     editorDraft,
     deleteResult: ref(null),
+    batchConversationIds: ref<string[]>([]),
+    batchApplyingPersona: ref(false),
+    batchApplyResult: ref(null),
     refreshAll: vi.fn(),
     selectPersona: vi.fn(),
     beginCreatePersona: vi.fn(),
+    loadPresetDraft: vi.fn(),
     resetEditorDraft: vi.fn(),
     addBeginDialog: vi.fn(),
     removeBeginDialog: vi.fn(),
     savePersonaDraft: vi.fn(),
     deleteSelectedPersona: vi.fn(),
     applySelectedPersona: vi.fn(),
+    toggleBatchConversation: vi.fn(),
+    selectAllBatchConversations: vi.fn(),
+    clearBatchConversations: vi.fn(),
+    applySelectedPersonaToBatch: vi.fn(),
   }),
 }))
 
@@ -98,6 +115,9 @@ describe('PersonaSettingsView', () => {
     const wrapper = mount(PersonaSettingsView)
 
     expect(wrapper.text()).toContain('人设管理')
+    expect(wrapper.text()).toContain('人设仓库')
+    expect(wrapper.text()).toContain('批量修改')
+    expect(wrapper.text()).toContain('模板 / 预设')
     expect(wrapper.text()).toContain('当前对话')
     expect(wrapper.text()).toContain('Writer')
     expect(wrapper.text()).toContain('Begin Dialogs')

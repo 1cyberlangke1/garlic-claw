@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ElButton } from 'element-plus'
 import type { RuntimePermissionDecision } from '@garlic-claw/shared'
 import type { ChatPendingRuntimePermission } from '@/modules/chat/store/chat-store.types'
 
@@ -68,30 +69,30 @@ function formatOperationLabel(value: ChatPendingRuntimePermission['operations'][
           <pre v-if="request.metadata !== undefined" class="permission-metadata">{{ JSON.stringify(request.metadata, null, 2) }}</pre>
         </div>
         <div class="permission-actions">
-          <button
-            type="button"
+          <ElButton
             class="permission-action"
+            native-type="button"
             :disabled="request.resolving"
             @click="onReply(request.id, 'once')"
           >
             允许一次
-          </button>
-          <button
-            type="button"
+          </ElButton>
+          <ElButton
             class="permission-action"
+            native-type="button"
             :disabled="request.resolving"
             @click="onReply(request.id, 'always')"
           >
             始终允许
-          </button>
-          <button
-            type="button"
+          </ElButton>
+          <ElButton
             class="permission-action danger"
+            native-type="button"
             :disabled="request.resolving"
             @click="onReply(request.id, 'reject')"
           >
             拒绝
-          </button>
+          </ElButton>
         </div>
       </article>
     </div>
@@ -208,10 +209,10 @@ function formatOperationLabel(value: ChatPendingRuntimePermission['operations'][
 .permission-action {
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: var(--surface-overlay);
+  box-shadow: none;
   color: var(--text);
   border-radius: 999px;
   padding: 6px 12px;
-  cursor: pointer;
 }
 
 .permission-action:disabled {

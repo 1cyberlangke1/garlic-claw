@@ -78,20 +78,20 @@
                   当前消息里的图片会保留，本次只修改文本内容。
                 </div>
                 <div class="editor-actions">
-                  <button
-                    type="button"
+                  <ElButton
+                    native-type="button"
                     class="action-button save-button"
                     @click="saveEdit(row.message)"
                   >
                     保存
-                  </button>
-                  <button
-                    type="button"
+                  </ElButton>
+                  <ElButton
+                    native-type="button"
                     class="action-button cancel-button"
                     @click="cancelEdit"
                   >
                     取消
-                  </button>
+                  </ElButton>
                 </div>
               </div>
 
@@ -136,10 +136,7 @@
                   </details>
                 </div>
                 <template
-                  v-if="
-                    !contextCompactionSummary(row.message) &&
-                      shouldRenderMessageContentBeforeTools(row.message)
-                  "
+                  v-if="shouldRenderMessageContentBeforeTools(row.message)"
                 >
                   <div v-if="row.message.parts?.length" class="message-parts">
                     <template
@@ -229,10 +226,7 @@
                 </div>
 
                 <template
-                  v-if="
-                    !contextCompactionSummary(row.message) &&
-                      shouldRenderMessageContentAfterTools(row.message)
-                  "
+                  v-if="shouldRenderMessageContentAfterTools(row.message)"
                 >
                   <div v-if="row.message.parts?.length" class="message-parts">
                     <template
@@ -296,38 +290,38 @@
               v-if="row.message.id && editingMessageId !== row.message.id"
               class="message-actions"
             >
-              <button
+              <ElButton
                 v-if="row.message.id && shouldShowUsageInfoToggle(row.message)"
-                type="button"
+                native-type="button"
                 class="action-text usage-info-toggle"
                 :aria-expanded="isUsageDetailsExpanded(row.message)"
                 @click="toggleUsageDetails(row.message.id)"
               >
                 [i]
-              </button>
-              <button
+              </ElButton>
+              <ElButton
                 v-if="row.message.role === 'user'"
-                type="button"
+                native-type="button"
                 class="action-text edit-text"
                 @click="startEdit(row.message)"
               >
                 修改
-              </button>
-              <button
-                v-else-if="row.message.role === 'assistant'"
-                type="button"
+              </ElButton>
+              <ElButton
+                v-else-if="shouldShowRetryAction(row.message)"
+                native-type="button"
                 class="action-text retry-text"
                 @click="emit('retry-message', row.message.id)"
               >
                 重试
-              </button>
-              <button
-                type="button"
+              </ElButton>
+              <ElButton
+                native-type="button"
                 class="action-text delete-text"
                 @click="emit('delete-message', row.message.id)"
               >
                 删除
-              </button>
+              </ElButton>
             </div>
             <div
               v-if="isUsageDetailsExpanded(row.message) && readAssistantUsage(row.message)"
@@ -363,6 +357,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElButton } from 'element-plus'
 import { useVirtualizer } from "@tanstack/vue-virtual";
 import {
   computed,
@@ -386,6 +381,7 @@ import type {
   ChatToolCallEntry,
   ChatToolResultEntry,
 } from "@/modules/chat/store/chat";
+import { isTemporaryChatMessageId } from "@/modules/chat/store/chat-store.helpers";
 import { renderMarkdown } from '@/shared/utils/markdown'
 
 interface VisibleMessageRow {
@@ -733,6 +729,10 @@ function readRetryDelayLabel(message: ChatMessage): string {
 
 function shouldRenderAssistantAvatar(message: ChatMessage): boolean {
   return message.role === "assistant";
+}
+
+function shouldShowRetryAction(message: ChatMessage): boolean {
+  return message.role === "assistant" && !isTemporaryChatMessageId(message.id);
 }
 
 function isNonContextMessage(message: ChatMessage): boolean {
@@ -1144,4 +1144,5 @@ function buildUpdatedParts(
 }
 </script>
 
+<style src="../../../shared/styles/markdown.css"></style>
 <style scoped src="../styles/message-list.css"></style>

@@ -13,13 +13,16 @@ import type {
 import {
   retryConversationMessage,
   sendConversationMessage,
+  streamConversationEvents,
 } from "@/modules/chat/modules/chat-conversation.data";
 import {
   startChatRecoveryPolling,
   stopChatRecoveryPolling,
 } from "@/modules/chat/modules/chat-recovery.polling";
 import {
+  dbMessageToChat,
   findActiveAssistantMessageId,
+  isAutoCompactionContinueMessage,
   normalizeSendInput,
 } from "@/modules/chat/store/chat-store.helpers";
 import {
@@ -51,6 +54,7 @@ const DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE = 200;
 
 interface ConversationRefreshParams {
   loadConversationDetail?: ((conversationId: string) => Promise<void>) | undefined;
+  refreshConversationSnapshot?: (() => Promise<void>) | undefined;
   refreshConversationSummary?: (() => Promise<void>) | undefined;
   refreshConversationState?: ((input: {
     summaryRefreshed: boolean;
@@ -140,6 +144,16 @@ function flushPendingMessages(state: ChatStreamState) {
   syncMessageList(state, nextMessages);
 }
 
+function commitMessagesImmediately(
+  state: ChatStreamState,
+  nextMessages: ChatMessage[],
+) {
+  const pendingCommit = getPendingMessageCommit(state);
+  clearPendingCommit(pendingCommit);
+  pendingCommit.nextMessages = null;
+  syncMessageList(state, nextMessages);
+}
+
 function queueMessageCommit(
   state: ChatStreamState,
   nextMessages: ChatMessage[],
@@ -202,6 +216,16 @@ function applyTodoUpdatedEvent(
   state.todoItems.value = event.todos;
 }
 
+function isAutoCompactionContinuationStart(
+  event: SSEEvent,
+): event is Extract<SSEEvent, { type: "message-start" }> {
+  if (event.type !== "message-start" || !event.userMessage) {
+    return false;
+  }
+
+  return isAutoCompactionContinueMessage(dbMessageToChat(event.userMessage));
+}
+
 export function abortChatStream(state: ChatStreamState) {
   state.streamController.value?.abort();
   state.streamController.value = null;
@@ -225,6 +249,27 @@ export function scheduleChatRecoveryWithState(
       await loadConversationDetail(conversationId);
     },
   });
+}
+
+function recoverAttachedConversationImmediately(
+  state: ChatStreamState,
+  conversationId: string,
+  loadConversationDetail: (conversationId: string) => Promise<void>,
+) {
+  if (state.currentConversationId.value !== conversationId) {
+    return;
+  }
+
+  void loadConversationDetail(conversationId)
+    .catch(() => undefined)
+    .finally(() => {
+      if (
+        state.currentConversationId.value === conversationId
+        && !state.streamController.value
+      ) {
+        scheduleChatRecoveryWithState(state, loadConversationDetail);
+      }
+    });
 }
 
 function recoverStreamingConversationImmediately(
@@ -331,11 +376,17 @@ export async function dispatchSendMessage(
           optimisticAssistantId,
         });
         if (event.type === "message-start") {
-          syncMessageList(state, nextMessages);
+          commitMessagesImmediately(state, nextMessages);
+          if (isAutoCompactionContinuationStart(event)) {
+            void params?.refreshConversationSnapshot?.().catch(() => undefined);
+          }
           return;
         }
-
-        queueMessageCommit(state, nextMessages);
+        if (event.type === "text-delta") {
+          queueMessageCommit(state, nextMessages);
+          return;
+        }
+        commitMessagesImmediately(state, nextMessages);
       },
       controller.signal,
     );
@@ -451,11 +502,17 @@ export async function dispatchRetryMessage(
           targetMessageId: messageId,
         });
         if (event.type === "message-start") {
-          syncMessageList(state, nextMessages);
+          commitMessagesImmediately(state, nextMessages);
+          if (isAutoCompactionContinuationStart(event)) {
+            void params?.refreshConversationSnapshot?.().catch(() => undefined);
+          }
           return;
         }
-
-        queueMessageCommit(state, nextMessages);
+        if (event.type === "text-delta") {
+          queueMessageCommit(state, nextMessages);
+          return;
+        }
+        commitMessagesImmediately(state, nextMessages);
       },
       controller.signal,
     );
@@ -487,6 +544,88 @@ export async function dispatchRetryMessage(
       recoverStreamingConversationImmediately(
         state,
         requestConversationId,
+        params?.loadConversationDetail ?? (async () => undefined),
+      );
+    }
+  }
+}
+
+export async function attachConversationStream(
+  state: ChatStreamState,
+  conversationId: string,
+  params?: ConversationRefreshParams,
+) {
+  if (
+    state.currentConversationId.value !== conversationId
+    || state.streamController.value
+  ) {
+    return;
+  }
+
+  const controller = new AbortController();
+  state.streamController.value = controller;
+  stopChatRecovery(state);
+  let didRefreshConversationStateDuringStream = false;
+  let didChangeRuntimePermissionsDuringStream = false;
+
+  try {
+    await streamConversationEvents(
+      conversationId,
+      (event) => {
+        if (state.currentConversationId.value !== conversationId) {
+          return;
+        }
+
+        if (
+          event.type === "permission-request"
+          || event.type === "permission-resolved"
+        ) {
+          didChangeRuntimePermissionsDuringStream = true;
+          applyRuntimePermissionEvent(state, event);
+          return;
+        }
+        if (event.type === "todo-updated") {
+          applyTodoUpdatedEvent(state, event);
+          return;
+        }
+
+        if (!didRefreshConversationStateDuringStream) {
+          didRefreshConversationStateDuringStream = true;
+          void params?.refreshConversationSummary?.().catch(() => undefined);
+        }
+        const nextMessages = applySseEvent(getLatestMessages(state), event, {
+          requestKind: "attach",
+          targetMessageId: state.currentStreamingMessageId.value ?? undefined,
+        });
+        if (event.type === "message-start") {
+          commitMessagesImmediately(state, nextMessages);
+          if (isAutoCompactionContinuationStart(event)) {
+            void params?.refreshConversationSnapshot?.().catch(() => undefined);
+          }
+          return;
+        }
+        if (event.type === "text-delta") {
+          queueMessageCommit(state, nextMessages);
+          return;
+        }
+        commitMessagesImmediately(state, nextMessages);
+      },
+      controller.signal,
+    );
+  } finally {
+    flushPendingMessages(state);
+    if (state.streamController.value === controller) {
+      state.streamController.value = null;
+    }
+
+    void params?.refreshConversationState?.({
+      permissionStateChanged: didChangeRuntimePermissionsDuringStream,
+      summaryRefreshed: didRefreshConversationStateDuringStream,
+    }).catch(() => undefined);
+    if (state.currentConversationId.value === conversationId) {
+      recoverAttachedConversationImmediately(
+        state,
+        conversationId,
         params?.loadConversationDetail ?? (async () => undefined),
       );
     }

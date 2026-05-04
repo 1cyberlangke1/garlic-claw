@@ -6,6 +6,7 @@ import type {
 } from '@garlic-claw/shared'
 import {
   dbMessageToChat,
+  isTemporaryChatMessageId,
   stringifyPayload,
 } from './chat-store.helpers'
 import type { ChatMessage } from './chat-store.types'
@@ -14,7 +15,7 @@ import type { ChatMessage } from './chat-store.types'
  * 一次流式请求在本地的占位上下文。
  */
 export interface StreamEventContext {
-  requestKind: 'send' | 'retry'
+  requestKind: 'attach' | 'send' | 'retry'
   optimisticUserId?: string
   optimisticAssistantId?: string
   targetMessageId?: string
@@ -274,6 +275,7 @@ export function getRetryableMessageId(messages: ChatMessage[]): string | null {
     if (
       message?.role === 'assistant' &&
       message.id &&
+      !isTemporaryChatMessageId(message.id) &&
       ['completed', 'stopped', 'error'].includes(message.status)
     ) {
       return message.id
@@ -303,7 +305,9 @@ function applyMessageStart(
     dbMessageToChat(event.assistantMessage),
     context.requestKind === 'send'
       ? context.optimisticAssistantId
-      : context.targetMessageId,
+      : event.assistantMessage.id === context.targetMessageId
+        ? context.targetMessageId
+        : undefined,
   )
 }
 

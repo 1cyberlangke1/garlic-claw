@@ -33,10 +33,10 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from '@/shared/stores/auth'
 import { ElButton, ElInput } from 'element-plus'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/shared/stores/auth'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -74,8 +74,83 @@ async function handleDevLogin() {
 </script>
 
 <style scoped>
+/* 将仅授权演示保留在本地，这样它就不会泄漏到控制台视图中。 */
+.auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1.5rem;
+  background: transparent;
+}
+
+.auth-card {
+  width: min(380px, 100%);
+  padding: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card-gradient);
+  box-shadow: var(--shadow), 0 0 20px rgba(103, 199, 207, 0.12);
+  backdrop-filter: blur(var(--glass-blur));
+}
+
+.auth-card h1 {
+  margin: 0 0 0.2rem;
+  font-size: 1.6rem;
+  text-align: center;
+}
+
+.auth-card h2 {
+  margin: 0 0 1.5rem;
+  font-size: 1.1rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.auth-card form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.field label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+
 .auth-card :deep(.el-button) {
+  width: 100%;
   margin-left: 0;
   padding: 1.25em 0.7em;
+  font-size: 1rem;
+}
+
+.auth-card :deep(.el-button--primary) {
+  margin-top: 0.15rem;
+}
+
+.auth-card :deep(.dev-login) {
+  margin-top: 0.1rem;
+}
+
+@media (max-width: 480px) {
+  .auth-page {
+    padding: 1rem;
+  }
+
+  .auth-card {
+    padding: 2rem 1.25rem;
+  }
 }
 </style>

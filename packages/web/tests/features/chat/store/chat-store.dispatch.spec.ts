@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@/modules/chat/store/chat-store.types'
 import { BusinessError } from '@/shared/utils/error'
 import {
+  attachConversationStream,
   abortChatStream,
   discardPendingMessageUpdates,
   dispatchSendMessage,
@@ -15,6 +16,7 @@ vi.mock('@/modules/chat/modules/chat-conversation.data', () => ({
   sendConversationMessage: vi.fn(),
   retryConversationMessage: vi.fn(),
   loadConversationMessages: vi.fn(),
+  streamConversationEvents: vi.fn(),
 }))
 
 function createState(messages: ChatMessage[] = []) {
@@ -138,6 +140,356 @@ describe('dispatchSendMessage', () => {
     })
   })
 
+  it('requests an immediate conversation snapshot refresh when auto-compaction continuation starts', async () => {
+    vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
+      async (_conversationId, _payload, onEvent) => {
+        onEvent({
+          type: 'message-start',
+          assistantMessage: {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            status: 'pending',
+          },
+        })
+        onEvent({
+          type: 'message-start',
+          userMessage: {
+            id: 'user-continue-1',
+            role: 'user',
+            content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+            partsJson: JSON.stringify([
+              {
+                type: 'text',
+                text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+              },
+            ]),
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: JSON.stringify({
+              annotations: [
+                {
+                  data: {
+                    role: 'continue',
+                    synthetic: true,
+                    trigger: 'after-response',
+                  },
+                  owner: 'conversation.context-governance',
+                  type: 'context-compaction',
+                  version: '1',
+                },
+              ],
+            }),
+            provider: null,
+            model: null,
+            status: 'completed',
+            error: null,
+            createdAt: '2026-05-03T14:00:00.000Z',
+            updatedAt: '2026-05-03T14:00:00.000Z',
+          },
+          assistantMessage: {
+            id: 'assistant-2',
+            role: 'assistant',
+            content: '',
+            partsJson: null,
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: null,
+            provider: 'demo-provider',
+            model: 'demo-model',
+            status: 'pending',
+            error: null,
+            createdAt: '2026-05-03T14:00:01.000Z',
+            updatedAt: '2026-05-03T14:00:01.000Z',
+          },
+        } as unknown as Parameters<typeof onEvent>[0])
+      },
+    )
+    const state = createState()
+    const refreshConversationSnapshot = vi.fn().mockResolvedValue(undefined)
+
+    const params = {
+      refreshConversationSnapshot,
+    } as Parameters<typeof dispatchSendMessage>[2]
+
+    await dispatchSendMessage(
+      state,
+      {
+        content: 'hello',
+      },
+      params,
+    )
+
+    expect(refreshConversationSnapshot).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes the auto-compaction snapshot before the stream resolves so the summary can appear immediately', async () => {
+    let resolveStream: (() => void) | null = null
+    let refreshHappenedBeforeStreamResolved = false
+    let streamResolved = false
+    vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
+      async (_conversationId, _payload, onEvent) => new Promise<void>((resolve) => {
+        onEvent({
+          type: 'message-start',
+          assistantMessage: {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            status: 'pending',
+          },
+        })
+        onEvent({
+          type: 'message-start',
+          userMessage: {
+            id: 'user-continue-1',
+            role: 'user',
+            content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+            partsJson: JSON.stringify([
+              {
+                type: 'text',
+                text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+              },
+            ]),
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: JSON.stringify({
+              annotations: [
+                {
+                  data: {
+                    role: 'continue',
+                    synthetic: true,
+                    trigger: 'after-response',
+                  },
+                  owner: 'conversation.context-governance',
+                  type: 'context-compaction',
+                  version: '1',
+                },
+              ],
+            }),
+            provider: null,
+            model: null,
+            status: 'completed',
+            error: null,
+            createdAt: '2026-05-03T14:00:00.000Z',
+            updatedAt: '2026-05-03T14:00:00.000Z',
+          },
+          assistantMessage: {
+            id: 'assistant-2',
+            role: 'assistant',
+            content: '',
+            partsJson: null,
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: null,
+            provider: 'demo-provider',
+            model: 'demo-model',
+            status: 'pending',
+            error: null,
+            createdAt: '2026-05-03T14:00:01.000Z',
+            updatedAt: '2026-05-03T14:00:01.000Z',
+          },
+        } as unknown as Parameters<typeof onEvent>[0])
+        resolveStream = () => {
+          streamResolved = true
+          resolve()
+        }
+      }),
+    )
+    const state = createState()
+    const refreshConversationSnapshot = vi.fn().mockImplementation(async () => {
+      refreshHappenedBeforeStreamResolved = !streamResolved
+    })
+
+    const sendTask = dispatchSendMessage(
+      state,
+      {
+        content: 'hello',
+      },
+      {
+        refreshConversationSnapshot,
+      },
+    )
+
+    await Promise.resolve()
+
+    expect(refreshConversationSnapshot).toHaveBeenCalledTimes(1)
+    expect(refreshHappenedBeforeStreamResolved).toBe(true)
+
+    resolveStream?.()
+    await sendTask
+  })
+
+  it('requests an immediate conversation snapshot refresh when retry enters auto-compaction continuation', async () => {
+    vi.mocked(chatConversationData.retryConversationMessage).mockImplementation(
+      async (_conversationId, _messageId, _payload, onEvent) => {
+        onEvent({
+          type: 'message-start',
+          userMessage: {
+            id: 'user-continue-1',
+            role: 'user',
+            content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+            partsJson: JSON.stringify([
+              {
+                type: 'text',
+                text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+              },
+            ]),
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: JSON.stringify({
+              annotations: [
+                {
+                  data: {
+                    role: 'continue',
+                    synthetic: true,
+                    trigger: 'after-response',
+                  },
+                  owner: 'conversation.context-governance',
+                  type: 'context-compaction',
+                  version: '1',
+                },
+              ],
+            }),
+            provider: null,
+            model: null,
+            status: 'completed',
+            error: null,
+            createdAt: '2026-05-03T14:00:00.000Z',
+            updatedAt: '2026-05-03T14:00:00.000Z',
+          },
+          assistantMessage: {
+            id: 'assistant-2',
+            role: 'assistant',
+            content: '',
+            partsJson: null,
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: null,
+            provider: 'demo-provider',
+            model: 'demo-model',
+            status: 'pending',
+            error: null,
+            createdAt: '2026-05-03T14:00:01.000Z',
+            updatedAt: '2026-05-03T14:00:01.000Z',
+          },
+        } as unknown as Parameters<typeof onEvent>[0])
+      },
+    )
+    const state = createState([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'old',
+        status: 'completed',
+      },
+    ])
+    const refreshConversationSnapshot = vi.fn().mockResolvedValue(undefined)
+
+    const params = {
+      refreshConversationSnapshot,
+    } as Parameters<typeof dispatchRetryMessage>[2]
+
+    await dispatchRetryMessage(
+      state,
+      'assistant-1',
+      params,
+    )
+
+    expect(refreshConversationSnapshot).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes the retry auto-compaction snapshot before the stream resolves so the summary can appear immediately', async () => {
+    let resolveStream: (() => void) | null = null
+    let refreshHappenedBeforeStreamResolved = false
+    let streamResolved = false
+    vi.mocked(chatConversationData.retryConversationMessage).mockImplementation(
+      async (_conversationId, _messageId, _payload, onEvent) => new Promise<void>((resolve) => {
+        onEvent({
+          type: 'message-start',
+          userMessage: {
+            id: 'user-continue-1',
+            role: 'user',
+            content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+            partsJson: JSON.stringify([
+              {
+                type: 'text',
+                text: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+              },
+            ]),
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: JSON.stringify({
+              annotations: [
+                {
+                  data: {
+                    role: 'continue',
+                    synthetic: true,
+                    trigger: 'after-response',
+                  },
+                  owner: 'conversation.context-governance',
+                  type: 'context-compaction',
+                  version: '1',
+                },
+              ],
+            }),
+            provider: null,
+            model: null,
+            status: 'completed',
+            error: null,
+            createdAt: '2026-05-03T14:00:00.000Z',
+            updatedAt: '2026-05-03T14:00:00.000Z',
+          },
+          assistantMessage: {
+            id: 'assistant-2',
+            role: 'assistant',
+            content: '',
+            partsJson: null,
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: null,
+            provider: 'demo-provider',
+            model: 'demo-model',
+            status: 'pending',
+            error: null,
+            createdAt: '2026-05-03T14:00:01.000Z',
+            updatedAt: '2026-05-03T14:00:01.000Z',
+          },
+        } as unknown as Parameters<typeof onEvent>[0])
+        resolveStream = () => {
+          streamResolved = true
+          resolve()
+        }
+      }),
+    )
+    const state = createState([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'old',
+        status: 'completed',
+      },
+    ])
+    const refreshConversationSnapshot = vi.fn().mockImplementation(async () => {
+      refreshHappenedBeforeStreamResolved = !streamResolved
+    })
+
+    const retryTask = dispatchRetryMessage(
+      state,
+      'assistant-1',
+      {
+        refreshConversationSnapshot,
+      },
+    )
+
+    await Promise.resolve()
+
+    expect(refreshConversationSnapshot).toHaveBeenCalledTimes(1)
+    expect(refreshHappenedBeforeStreamResolved).toBe(true)
+
+    resolveStream?.()
+    await retryTask
+  })
+
   it('applies message-start immediately so display command messages do not wait for stream completion', async () => {
     let capturedState: ReturnType<typeof createState> | null = null
     vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
@@ -217,6 +569,206 @@ describe('dispatchSendMessage', () => {
       }),
     ])
     expect(capturedState?.streaming.value).toBe(true)
+  })
+
+  it('applies tool events immediately while the stream is still open', async () => {
+    vi.useFakeTimers()
+    let resolveStream: (() => void) | null = null
+    vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
+      async (_conversationId, _payload, onEvent) => new Promise<void>((resolve) => {
+        onEvent({
+          type: 'message-start',
+          assistantMessage: {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            partsJson: null,
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: null,
+            provider: 'demo-provider',
+            model: 'demo-model',
+            status: 'pending',
+            error: null,
+            createdAt: '2026-05-04T12:00:00.000Z',
+            updatedAt: '2026-05-04T12:00:00.000Z',
+          },
+        })
+        onEvent({
+          type: 'tool-call',
+          messageId: 'assistant-1',
+          toolCallId: 'tool-call-1',
+          toolName: 'write',
+          input: {
+            content: 'hello',
+            filePath: 'docs/output.txt',
+          },
+        })
+        onEvent({
+          type: 'tool-result',
+          messageId: 'assistant-1',
+          toolCallId: 'tool-call-1',
+          toolName: 'write',
+          output: {
+            path: 'docs/output.txt',
+            status: 'created',
+          },
+        })
+        onEvent({
+          type: 'finish',
+          messageId: 'assistant-1',
+          status: 'completed',
+        })
+        resolveStream = resolve
+      }),
+    )
+    const state = createState()
+
+    const sendTask = dispatchSendMessage(state, {
+      content: 'hello',
+    })
+    await Promise.resolve()
+
+    expect(state.messages.value).toEqual([
+      expect.objectContaining({
+        role: 'user',
+        content: 'hello',
+      }),
+      expect.objectContaining({
+        id: 'assistant-1',
+        role: 'assistant',
+        status: 'completed',
+        toolCalls: [
+          expect.objectContaining({
+            toolCallId: 'tool-call-1',
+            toolName: 'write',
+          }),
+        ],
+        toolResults: [
+          expect.objectContaining({
+            toolCallId: 'tool-call-1',
+            toolName: 'write',
+          }),
+        ],
+      }),
+    ])
+
+    resolveStream?.()
+    await sendTask
+  })
+
+  it('applies attached tool events immediately while an existing conversation stream is still open', async () => {
+    vi.useFakeTimers()
+    let resolveStream: (() => void) | null = null
+    vi.mocked(chatConversationData.streamConversationEvents).mockImplementation(
+      async (_conversationId, onEvent) => new Promise<void>((resolve) => {
+        onEvent({
+          type: 'tool-call',
+          messageId: 'assistant-1',
+          toolCallId: 'tool-call-1',
+          toolName: 'read',
+          input: {
+            filePath: 'docs/plan.md',
+          },
+        })
+        onEvent({
+          type: 'tool-result',
+          messageId: 'assistant-1',
+          toolCallId: 'tool-call-1',
+          toolName: 'read',
+          output: {
+            content: '阶段计划',
+          },
+        })
+        onEvent({
+          type: 'finish',
+          messageId: 'assistant-1',
+          status: 'completed',
+        })
+        resolveStream = resolve
+      }),
+    )
+    const state = createState([
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '继续执行',
+        status: 'completed',
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        status: 'streaming',
+        toolCalls: [],
+        toolResults: [],
+      },
+    ])
+    state.currentStreamingMessageId.value = 'assistant-1'
+    state.streaming.value = true
+
+    const attachTask = attachConversationStream(state, 'conversation-1')
+    await Promise.resolve()
+
+    expect(state.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'user-1',
+        role: 'user',
+      }),
+      expect.objectContaining({
+        id: 'assistant-1',
+        role: 'assistant',
+        status: 'completed',
+        toolCalls: [
+          expect.objectContaining({
+            toolCallId: 'tool-call-1',
+            toolName: 'read',
+          }),
+        ],
+        toolResults: [
+          expect.objectContaining({
+            toolCallId: 'tool-call-1',
+            toolName: 'read',
+          }),
+        ],
+      }),
+    ])
+
+    resolveStream?.()
+    await attachTask
+  })
+
+  it('reloads conversation detail once after an attached stream ends during an idle continuation gap', async () => {
+    let resolveStream: (() => void) | null = null
+    vi.mocked(chatConversationData.streamConversationEvents).mockImplementation(
+      async (_conversationId, onEvent) => new Promise<void>((resolve) => {
+        onEvent({
+          type: 'finish',
+          messageId: 'assistant-1',
+          status: 'completed',
+        })
+        resolveStream = resolve
+      }),
+    )
+    const state = createState([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '首轮完成',
+        status: 'streaming',
+      },
+    ])
+    state.currentStreamingMessageId.value = 'assistant-1'
+    state.streaming.value = true
+    const loadConversationDetail = vi.fn().mockResolvedValue(undefined)
+
+    const attachTask = attachConversationStream(state, 'conversation-1', {
+      loadConversationDetail,
+    })
+    resolveStream?.()
+    await attachTask
+
+    expect(loadConversationDetail).toHaveBeenCalledWith('conversation-1')
   })
 
   it('swallows summary refresh failures during streaming and still completes final refresh', async () => {

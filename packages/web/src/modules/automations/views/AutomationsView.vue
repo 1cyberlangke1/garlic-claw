@@ -136,17 +136,18 @@
       <aside class="automations-sidebar">
         <nav class="detail-nav" aria-label="自动化面板切换">
           <div class="detail-nav-group">
-            <button
+            <ElButton
               v-for="panel in viewOptions"
               :key="panel.value"
-              type="button"
+              class="detail-nav-button"
+              native-type="button"
               :title="panel.label"
               :class="{ active: currentView === panel.value }"
               @click="handleViewSwitch(panel.value)"
             >
               <Icon class="nav-icon" :icon="panel.icon" aria-hidden="true" />
               <span class="nav-label">{{ panel.label }}</span>
-            </button>
+            </ElButton>
           </div>
         </nav>
       </aside>
@@ -193,14 +194,25 @@
             >
               <div class="card-header">
                 <h3 class="card-title">{{ auto.name }}</h3>
-                <ElButton
-                  size="small"
-                  plain
-                  @click.stop="handleRun(auto.id)"
-                  :disabled="!auto.enabled"
-                >
-                  手动运行
-                </ElButton>
+                <div class="card-actions">
+                  <ElButton
+                    size="small"
+                    plain
+                    @click.stop="handleRun(auto.id)"
+                    :disabled="!auto.enabled"
+                  >
+                    手动运行
+                  </ElButton>
+                  <ElButton
+                    size="small"
+                    plain
+                    type="danger"
+                    data-test="automation-delete-button"
+                    @click.stop="confirmDeleteAutomation(auto.id, auto.name)"
+                  >
+                    删除
+                  </ElButton>
+                </div>
               </div>
 
               <div v-if="auto.actions.length > 0" class="card-detail">
@@ -291,6 +303,7 @@ const {
   logsLoading,
   logEntries,
   handleCreate,
+  handleUpdate,
   handleToggle,
   handleRun,
   handleDelete,
@@ -351,8 +364,22 @@ function closeDialog() {
 }
 
 async function handleSave() {
-  await handleCreate()
+  if (editingAutomation.value) {
+    await handleUpdate(editingAutomation.value.id)
+  } else {
+    await handleCreate()
+  }
   dialogVisible.value = false
+}
+
+function confirmDeleteAutomation(id: string, name: string) {
+  ElMessageBox.confirm(
+    `确定要删除「${name || '未命名自动化'}」吗？删除后无法恢复。`,
+    '删除确认',
+    { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+  )
+    .then(() => handleDelete(id))
+    .catch(() => {})
 }
 
 const swipeState = reactive<Record<string, {
@@ -444,14 +471,7 @@ function onTouchEnd(id: string) {
   }
 
   if (state.offset < -SWIPE_THRESHOLD) {
-    const name = auto.name || '未命名自动化'
-    ElMessageBox.confirm(
-      `确定要删除「${name}」吗？删除后无法恢复。`,
-      '删除确认',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
-    )
-      .then(() => handleDelete(id))
-      .catch(() => {})
+    confirmDeleteAutomation(id, auto.name || '未命名自动化')
     state.offset = 0
     return
   }
@@ -538,32 +558,34 @@ function getRightActionStyle(id: string) {
   gap: 6px;
 }
 
-.detail-nav button {
-  appearance: none;
-  -webkit-appearance: none;
+.detail-nav :deep(.detail-nav-button.el-button) {
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 12px;
   width: 100%;
   min-height: 52px;
   padding: 0 20px;
   border-radius: 8px;
-  border: none;
+  border-color: transparent;
   background: transparent;
+  box-shadow: none;
+  margin: 0;
   color: var(--shell-text-secondary, var(--text-muted));
   font-size: 14px;
   text-align: left;
-  cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.detail-nav button:hover {
+.detail-nav :deep(.detail-nav-button.el-button:hover) {
+  border-color: transparent;
   background: var(--shell-bg-hover, #334155);
   color: var(--shell-text, var(--text));
 }
 
-.detail-nav button.active {
+.detail-nav :deep(.detail-nav-button.el-button.active) {
+  border-color: transparent;
   color: var(--shell-active, var(--accent));
   background: color-mix(in srgb, var(--shell-active, var(--accent)) 10%, transparent);
 }
@@ -914,7 +936,7 @@ function getRightActionStyle(id: string) {
     gap: 4px;
   }
 
-  .detail-nav button {
+  .detail-nav :deep(.detail-nav-button.el-button) {
     min-height: 40px;
     padding: 0 14px;
     white-space: nowrap;

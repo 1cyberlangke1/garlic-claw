@@ -199,7 +199,7 @@ describe('ChatMessageList', () => {
     expect(displayMessage.text()).not.toContain('覆盖 3 条消息')
     expect(displayMessage.text()).not.toContain('Token 估算')
     expect(displayMessage.text()).not.toContain('仅展示，不进入 LLM 上下文')
-    expect(displayMessage.text()).not.toContain('压缩后的历史摘要')
+    expect(displayMessage.text()).toContain('压缩后的历史摘要')
     expect(displayMessage.classes()).toContain('display')
     expect(displayMessage.find('.message-role-avatar-image').exists()).toBe(false)
     expect(displayMessage.find('.retry-text').exists()).toBe(false)
@@ -304,6 +304,35 @@ describe('ChatMessageList', () => {
     expect(assistant.text()).toContain('第 1 次')
     expect(assistant.find('.cursor').exists()).toBe(false)
     expect(assistant.find('.message-error').exists()).toBe(false)
+  })
+
+  it('does not render a retry button for temporary assistant placeholders', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'temp-assistant-1',
+            role: 'assistant',
+            content: '',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'error',
+            error: 'network down',
+          } as never,
+        ],
+      },
+    })
+
+    const assistant = wrapper.find('[data-message-id="temp-assistant-1"]')
+
+    expect(assistant.exists()).toBe(true)
+    expect(assistant.find('.retry-text').exists()).toBe(false)
+    expect(assistant.find('.delete-text').exists()).toBe(true)
   })
 
   it('grays out messages excluded from the current LLM context window without deleting them', () => {
@@ -461,7 +490,7 @@ describe('ChatMessageList', () => {
     expect(summaryMessage.text()).not.toContain('自动触发')
     expect(summaryMessage.text()).not.toContain('openai/gpt-5.4')
     expect(summaryMessage.text()).not.toContain('Token 估算 980 -> 420')
-    expect(summaryMessage.text()).not.toContain('压缩摘要：最近任务与约束。')
+    expect(summaryMessage.text()).toContain('压缩摘要：最近任务与约束。')
   })
 
   it('renders tool calls and tool results as collapsed timeline blocks before the assistant reply', () => {

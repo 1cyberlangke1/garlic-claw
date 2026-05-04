@@ -8,5 +8,13 @@
         "**/coverage": true,
         "**/tmp": true,
         "**/.cache": true
+    },
+    // 禁用所有自动格式化功能
+    "prettier.requireConfig": false,
+    "eslint.format.enable": false,
+    "editor.formatOnSave": false,
+    "editor.codeActionsOnSave": {
+        "source.fixAll": "never",
+        "source.fixAll.eslint": "never"
     }
 }
