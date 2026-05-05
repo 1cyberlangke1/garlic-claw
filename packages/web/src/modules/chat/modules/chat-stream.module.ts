@@ -613,6 +613,14 @@ export async function attachConversationStream(
       },
       controller.signal,
     );
+  } catch (error) {
+    const requestError =
+      error instanceof Error
+        ? error
+        : new Error(typeof error === "string" ? error : "Unknown error");
+    if (!isAbortedAppError(requestError)) {
+      throw requestError;
+    }
   } finally {
     flushPendingMessages(state);
     if (state.streamController.value === controller) {

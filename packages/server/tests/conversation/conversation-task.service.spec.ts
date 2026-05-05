@@ -289,6 +289,24 @@ describe('ConversationTaskService', () => {
 
   it('forces a stuck task into stopped state when the stream ignores abort', async () => {
     const assistantMessage = createAssistantMessage(conversationMessages, conversationStore);
+    let returnCalled = false;
+    let yieldedFirstChunk = false;
+    const stuckIterator: AsyncIterableIterator<unknown> = {
+      async next() {
+        if (!yieldedFirstChunk) {
+          yieldedFirstChunk = true;
+          return { done: false, value: delta('卡住前的片段') };
+        }
+        return await new Promise<IteratorResult<unknown>>(() => undefined);
+      },
+      async return() {
+        returnCalled = true;
+        return { done: true, value: undefined };
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
 
     service.startTask({
       assistantMessageId: String(assistantMessage.id),
@@ -297,10 +315,7 @@ describe('ConversationTaskService', () => {
         modelId: 'gpt-5.4',
         providerId: 'openai',
         stream: {
-          fullStream: (async function* () {
-            yield delta('卡住前的片段');
-            await new Promise<void>(() => undefined);
-          })(),
+          fullStream: stuckIterator,
         },
       }),
       modelId: 'gpt-5.4',
@@ -319,6 +334,7 @@ describe('ConversationTaskService', () => {
       role: 'assistant',
       status: 'stopped',
     });
+    expect(returnCalled).toBe(true);
     expect(service.hasTask(String(assistantMessage.id))).toBe(false);
     expect(readRuntimePermissionListenerCount(runtimeToolPermissionService, conversationId)).toBe(0);
     expect(readConversationTodoListenerCount(conversationTodos, conversationId)).toBe(0);

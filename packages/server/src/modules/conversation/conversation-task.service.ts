@@ -86,6 +86,7 @@ type ResolvedConversationTaskRetryConfig = AiChatAutoRetryConfig;
 export class ConversationTaskService {
   private readonly logger = createServerLogger(ConversationTaskService.name);
   private readonly tasks = new Map<string, ConversationTaskHandle>();
+  private readonly conversationStartListeners = new Map<string, Set<(assistantMessageId: string) => void>>();
   private static readonly STOP_TASK_GRACE_MS = 20;
 
   constructor(
@@ -109,9 +110,22 @@ export class ConversationTaskService {
       settled: false,
     };
     this.tasks.set(input.assistantMessageId, handle);
+    this.emitConversationTaskStart(input.conversationId, input.assistantMessageId);
     setTimeout(() => void this.runTask(handle, input).finally(() => {
       this.finalizeHandle(input.assistantMessageId, handle);
     }), 0);
+  }
+
+  subscribeConversationStart(conversationId: string, listener: (assistantMessageId: string) => void): () => void {
+    const listeners = this.conversationStartListeners.get(conversationId) ?? new Set<(assistantMessageId: string) => void>();
+    listeners.add(listener);
+    this.conversationStartListeners.set(conversationId, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        this.conversationStartListeners.delete(conversationId);
+      }
+    };
   }
 
   subscribe(messageId: string, listener: (event: ConversationTaskEvent) => void): () => void {
@@ -177,7 +191,17 @@ export class ConversationTaskService {
           await this.writeTaskSnapshot(task, runtime, 'streaming');
           this.emit(task, { messageId: runtime.assistantMessageId, status: 'streaming', type: 'status' });
 
-          for await (const rawPart of stream.fullStream) {
+          const iterator = stream.fullStream[Symbol.asyncIterator]();
+          while (true) {
+            const nextPart = await readConversationTaskStreamChunk(iterator, task.abortController.signal);
+            if (nextPart.aborted) {
+              await this.finishTask(task, runtime, { status: 'stopped' });
+              return;
+            }
+            if (nextPart.result.done) {
+              break;
+            }
+            const rawPart = nextPart.result.value;
             const stepBoundary = this.processStepBoundary(runtime, rawPart);
             const events = readConversationTaskEvents(runtime.state, runtime.assistantMessageId, runtime.providerId, rawPart);
             if (events.length === 0 && !stepBoundary.metadataEvent) {
@@ -366,6 +390,16 @@ export class ConversationTaskService {
   }
   private emitAll(task: ConversationTaskHandle, events: readonly ConversationTaskEvent[]): void { events.forEach((event) => this.emit(task, event)); }
 
+  private emitConversationTaskStart(conversationId: string, assistantMessageId: string): void {
+    const listeners = this.conversationStartListeners.get(conversationId);
+    if (!listeners || listeners.size === 0) {
+      return;
+    }
+    for (const listener of listeners) {
+      listener(assistantMessageId);
+    }
+  }
+
   private finalizeHandle(messageId: string, task: ConversationTaskHandle): void {
     if (task.settled) {
       return;
@@ -463,6 +497,55 @@ function normalizeConversationTaskStream(stream: ResolvedConversationTaskStreamS
 
 async function readConversationTaskUsage(usage: Promise<AiModelUsage | undefined> | undefined): Promise<AiModelUsage | undefined> {
   try { return usage ? await usage : undefined; } catch { return undefined; }
+}
+
+async function readConversationTaskStreamChunk(
+  iterator: AsyncIterator<unknown>,
+  signal: AbortSignal,
+): Promise<
+  | { aborted: true }
+  | { aborted: false; result: IteratorResult<unknown> }
+> {
+  if (signal.aborted) {
+    closeConversationTaskStreamIterator(iterator);
+    return { aborted: true };
+  }
+  const nextChunk = Promise.resolve().then(() => iterator.next()).then(
+    (result) => ({ result, type: 'result' as const }),
+    (error) => ({ error, type: 'error' as const }),
+  );
+  const winner = await Promise.race([
+    nextChunk,
+    waitForConversationTaskAbort(signal).then(() => ({ type: 'aborted' as const })),
+  ]);
+  if (winner.type === 'aborted') {
+    closeConversationTaskStreamIterator(iterator);
+    return { aborted: true };
+  }
+  if (winner.type === 'error') {
+    throw winner.error;
+  }
+  return { aborted: false, result: winner.result };
+}
+
+function closeConversationTaskStreamIterator(iterator: AsyncIterator<unknown>): void {
+  try {
+    const returned = iterator.return?.();
+    if (returned && typeof (returned as PromiseLike<unknown>).then === 'function') {
+      void Promise.resolve(returned).catch(() => undefined);
+    }
+  } catch {
+    // 忽略底层 iterator.return() 自身抛出的关闭错误。
+  }
+}
+
+function waitForConversationTaskAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  });
 }
 
 function readSafeTaskValue<T>(value: PromiseLike<T> | T | undefined): Promise<T | undefined> | T | undefined {

@@ -27,6 +27,7 @@ import {
   loadConversationList,
   loadConversationMessages,
   loadConversationTodoRecord,
+  readLoadedConversationKind,
   readLoadedConversationRunningState,
   replyRuntimePermissionRecord,
   stopConversationMessageRecord,
@@ -803,11 +804,13 @@ export function createChatStoreModule() {
 
     replaceMessages(nextMessages);
     syncChatStreamingState(streamState);
+    const loadedConversationKind = readLoadedConversationKind(conversationId);
     const conversationStillRunning = readLoadedConversationRunningState(conversationId);
+    const shouldAttachIdleFutureStart = loadedConversationKind === 'main';
     if (
       currentConversationId.value === conversationId
       && !streamController.value
-      && (streaming.value || conversationStillRunning)
+      && (streaming.value || conversationStillRunning || shouldAttachIdleFutureStart)
     ) {
       void attachConversationStream(streamState, conversationId, {
         loadConversationDetail: loadConversationRecoverySnapshot,
